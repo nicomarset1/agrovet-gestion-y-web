@@ -24,9 +24,7 @@ export const metadata = { title: "Tienda online" };
 
 export default async function StorePage({ searchParams }: { searchParams: Search }) {
   const filters = await searchParams;
-  const products = getProducts(filters);
-  const facets = getCatalogFacets();
-  const branches = getBranches();
+  const [products, facets, branches] = await Promise.all([getProducts(filters), getCatalogFacets(), getBranches()]);
   const selectedCategory = Array.isArray(filters.category) ? filters.category[0] : filters.category;
   const currentCategory = facets.categories.find((item) => item.slug === selectedCategory);
 

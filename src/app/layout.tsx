@@ -27,12 +27,12 @@ export const metadata: Metadata = {
   description: "Tienda online de Agrovet Mar del Plata. Alimentos, accesorios y farmacia para perros y gatos con stock por sucursal.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const syncVersion = getSyncVersion();
+  const syncVersion = await getSyncVersion();
   return (
     <html data-scroll-behavior="smooth" lang="es" className={`${manrope.variable} ${fraunces.variable} antialiased`}>
       <body>

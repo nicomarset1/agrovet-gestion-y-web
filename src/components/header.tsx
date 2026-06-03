@@ -7,10 +7,9 @@ import { CartButton } from "./cart-button";
 import { LiveSearch } from "./live-search";
 import { SmoothAnchor } from "./smooth-anchor";
 
-export function Header() {
+export async function Header() {
   noStore();
-  const menuItems = getCatalogMenu();
-  const searchProducts = getSearchIndex();
+  const [menuItems, searchProducts] = await Promise.all([getCatalogMenu(), getSearchIndex()]);
   return (
     <>
       <div className="topbar">

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { getBranches } from "@/lib/db";
 
-export function Footer() {
-  const branches = getBranches();
+export async function Footer() {
+  const branches = await getBranches();
   return (
     <footer className="footer" id="sucursales">
       <div className="container">

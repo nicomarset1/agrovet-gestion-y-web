@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Registro inválido." }, { status: 400 });
   }
-  deleteOrder(parsed.data.id);
+  await deleteOrder(parsed.data.id);
   revalidatePath("/admin");
   revalidatePath("/");
   revalidatePath("/tienda");

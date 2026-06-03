@@ -5,9 +5,8 @@ import { CategoryCards } from "@/components/category-cards";
 import { ProductCard } from "@/components/product-card";
 import { getBranches, getFeaturedProducts } from "@/lib/db";
 
-export default function Home() {
-  const featured = getFeaturedProducts();
-  const branches = getBranches();
+export default async function Home() {
+  const [featured, branches] = await Promise.all([getFeaturedProducts(), getBranches()]);
   return (
     <>
       <section className="hero">

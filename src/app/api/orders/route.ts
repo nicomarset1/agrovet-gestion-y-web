@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Revisa los datos del pedido." }, { status: 400 });
   }
   try {
-    const order = createOrder(result.data);
+    const order = await createOrder(result.data);
     return Response.json(order, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo reservar stock." }, { status: 409 });

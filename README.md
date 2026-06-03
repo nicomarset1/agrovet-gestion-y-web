@@ -43,4 +43,26 @@ AUTH_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
 DATABASE_URL=postgres://...
 ```
 
-La base local SQLite (`data/agrovet.sqlite`) solo sirve para desarrollo. Para produccion en Vercel se debe usar una base persistente administrada, por ejemplo Postgres.
+La base local SQLite (`data/agrovet.sqlite`) solo sirve para desarrollo. En Vercel la app usa `DATABASE_URL` y guarda todo en Postgres, asi dos computadoras administrando el panel ven el mismo stock, ventas y productos.
+
+### Migrar datos actuales a Postgres
+
+1. Crear una base Postgres administrada, por ejemplo desde Vercel Marketplace, Neon o Supabase.
+2. Configurar `DATABASE_URL` localmente con la URL de esa base.
+3. Ejecutar:
+
+```powershell
+npm run db:migrate:postgres -- --reset
+```
+
+`--reset` vacia la base Postgres antes de copiar los datos de `data/agrovet.sqlite`. Usarlo solo para la primera carga o cuando se quiera reemplazar todo el contenido remoto.
+
+### Vercel
+
+En Project Settings > Environment Variables configurar:
+
+- `ADMIN_PASSWORD`: codigo numerico de 8 a 12 digitos.
+- `AUTH_SECRET`: secreto aleatorio de al menos 32 caracteres.
+- `DATABASE_URL`: conexion Postgres compartida.
+
+Despues de cargar datos y variables, correr `npm run build` localmente y hacer deploy desde Vercel conectado al repositorio.

@@ -10,10 +10,12 @@ export default async function AdminPage({
   searchParams: Promise<{ section?: string; detail?: string; order?: string; branch?: string; flash?: string }>;
 }) {
   await requireAdmin();
-  const { products, branches, orders, wholesaleClients } = getAdminSnapshot();
-  const categories = getCategories();
-  const subcategories = getSubcategories();
-  const resolvedSearchParams = await searchParams;
+  const [{ products, branches, orders, wholesaleClients }, categories, subcategories, resolvedSearchParams] = await Promise.all([
+    getAdminSnapshot(),
+    getCategories(),
+    getSubcategories(),
+    searchParams,
+  ]);
   const section = resolvedSearchParams.section ?? "resumen";
   const detail = resolvedSearchParams.detail ?? null;
   const order = resolvedSearchParams.order ?? null;

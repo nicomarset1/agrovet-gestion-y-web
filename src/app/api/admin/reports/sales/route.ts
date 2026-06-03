@@ -23,7 +23,7 @@ function parsePayment(source: string) {
   return source.toLowerCase().includes("tienda online") ? "web" : "otro";
 }
 
-type ReportOrder = ReturnType<typeof getAdminSnapshot>["orders"][number];
+type ReportOrder = Awaited<ReturnType<typeof getAdminSnapshot>>["orders"][number];
 
 function orderHasBranch(order: ReportOrder, branchId: string) {
   return order.items.some((item) => {
@@ -209,7 +209,7 @@ function buildSalesReportPdf(input: {
 
 export async function GET(request: Request) {
   await requireAdmin();
-  const snapshot = getAdminSnapshot();
+  const snapshot = await getAdminSnapshot();
   const url = new URL(request.url);
   const month = url.searchParams.get("month") || new Date().toISOString().slice(0, 7);
   const branch = url.searchParams.get("branch") || "all";

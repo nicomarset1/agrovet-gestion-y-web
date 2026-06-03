@@ -6,13 +6,13 @@ import { VariantSelector } from "@/components/variant-selector";
 import { getProduct } from "@/lib/db";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const product = getProduct((await params).slug);
+  const product = await getProduct((await params).slug);
   return { title: product?.name ?? "Producto" };
 }
 
 export default async function ProductPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ back?: string }> }) {
-  const product = getProduct((await params).slug);
-  const { back } = await searchParams;
+  const [{ slug }, { back }] = await Promise.all([params, searchParams]);
+  const product = await getProduct(slug);
   const backHref = back?.startsWith("/tienda") ? back : "/tienda";
   if (!product) notFound();
   return (
