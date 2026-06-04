@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpDown, RotateCcw } from "lucide-react";
 import type { Stock } from "@/lib/types";
 import { useToast } from "./toast-provider";
 
@@ -62,7 +63,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const nextQuantity = Math.max(1, quantity);
       const found = items.find((item) => item.variantId === variantId);
       if (found && found.quantity !== nextQuantity) {
-        push({ title: "Cantidad actualizada", message: `${found.name}: ${nextQuantity}`, type: "info" });
+        push({ title: "Cantidad actualizada", message: `${found.name}: ${nextQuantity}`, type: "info", icon: ArrowUpDown });
       }
       setItems((current) => current.map((item) => item.variantId === variantId ? { ...item, quantity: nextQuantity } : item));
     },
@@ -72,7 +73,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setItems((current) => current.filter((item) => item.variantId !== variantId));
     },
     clear: () => {
-      if (items.length) push({ title: "Carrito vaciado", type: "info" });
+      if (items.length) push({ title: "Carrito vaciado", type: "info", icon: RotateCcw });
       setItems([]);
     },
   }), [items, push]);

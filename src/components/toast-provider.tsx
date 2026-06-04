@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, Info, Trash2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { CheckCircle2, Info, XCircle } from "lucide-react";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 type ToastType = "success" | "info" | "danger";
-type Toast = { id: number; title: string; message?: string; type: ToastType };
+type Toast = { id: number; title: string; message?: string; type: ToastType; icon?: LucideIcon };
 type ToastContextValue = { push: (toast: Omit<Toast, "id">) => void };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -27,7 +28,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div className="toast-stack" aria-live="polite">
         {toasts.map((toast) => {
-          const Icon = toast.type === "danger" ? Trash2 : toast.type === "success" ? Check : Info;
+          const Icon = toast.icon ?? (toast.type === "danger" ? XCircle : toast.type === "success" ? CheckCircle2 : Info);
           return (
             <div className={`toast ${toast.type}`} key={toast.id}>
               <span className="toast-icon"><Icon size={17} /></span>
