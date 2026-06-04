@@ -17,6 +17,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+      GDRIVE_RCLONE_CONFIG: ${{ secrets.GDRIVE_RCLONE_CONFIG }}
       GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
 
     steps:
@@ -24,8 +25,10 @@ jobs:
         shell: bash
         run: |
           test -n "$DATABASE_URL" || (echo "DATABASE_URL secret is missing" && exit 1)
-          test -n "$GDRIVE_FOLDER_ID" || (echo "GDRIVE_FOLDER_ID secret is missing" && exit 1)
-          test -n "$GDRIVE_SERVICE_ACCOUNT_JSON" || (echo "GDRIVE_SERVICE_ACCOUNT_JSON secret is missing" && exit 1)
+          if [ -z "$GDRIVE_RCLONE_CONFIG" ]; then
+            test -n "$GDRIVE_FOLDER_ID" || (echo "GDRIVE_FOLDER_ID secret is missing" && exit 1)
+            test -n "$GDRIVE_SERVICE_ACCOUNT_JSON" || (echo "GDRIVE_SERVICE_ACCOUNT_JSON secret is missing" && exit 1)
+          fi
 
       - name: Install backup tools
         shell: bash
@@ -36,16 +39,21 @@ jobs:
       - name: Configure Google Drive access
         shell: bash
         run: |
-          printf '%s' "$GDRIVE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gdrive-service-account.json"
           mkdir -p "$HOME/.config/rclone"
-          {
-            echo "[gdrive]"
-            echo "type = drive"
-            echo "scope = drive"
-            echo "service_account_file = $RUNNER_TEMP/gdrive-service-account.json"
-            echo "root_folder_id = $GDRIVE_FOLDER_ID"
-          } > "$HOME/.config/rclone/rclone.conf"
-          chmod 600 "$RUNNER_TEMP/gdrive-service-account.json" "$HOME/.config/rclone/rclone.conf"
+          if [ -n "$GDRIVE_RCLONE_CONFIG" ]; then
+            printf '%s' "$GDRIVE_RCLONE_CONFIG" > "$HOME/.config/rclone/rclone.conf"
+            chmod 600 "$HOME/.config/rclone/rclone.conf"
+          else
+            printf '%s' "$GDRIVE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gdrive-service-account.json"
+            {
+              echo "[gdrive]"
+              echo "type = drive"
+              echo "scope = drive"
+              echo "service_account_file = $RUNNER_TEMP/gdrive-service-account.json"
+              echo "root_folder_id = $GDRIVE_FOLDER_ID"
+            } > "$HOME/.config/rclone/rclone.conf"
+            chmod 600 "$RUNNER_TEMP/gdrive-service-account.json" "$HOME/.config/rclone/rclone.conf"
+          fi
 
       - name: Create Postgres backup
         shell: bash
@@ -62,6 +70,15 @@ jobs:
           sha256sum "$BACKUP_PATH" > "$BACKUP_PATH.sha256"
           echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
           echo "BACKUP_PATH=$BACKUP_PATH" >> "$GITHUB_ENV"
+
+      - name: Keep temporary GitHub backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup
+          path: |
+            ${{ env.BACKUP_PATH }}
+            ${{ env.BACKUP_PATH }}.sha256
+          retention-days: 14
 
       - name: Upload backup to Google Drive
         shell: bash
