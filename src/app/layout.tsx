@@ -33,8 +33,8 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
   icons: {
-    icon: "/agrovet-logo.png",
-    apple: "/agrovet-logo.png",
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
   },
   openGraph: {
     type: "website",
