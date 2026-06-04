@@ -911,7 +911,7 @@ function ProductModal({
             {availableSubcategories.map((subcategory) => <option key={subcategory.slug} value={subcategory.slug}>{subcategory.name}</option>)}
           </select>
         </label>
-        <label className="admin-field admin-brand-field">
+        <div className="admin-field admin-brand-field">
           <span>Marca</span>
           <input
             className="field"
@@ -966,13 +966,19 @@ function ProductModal({
               </div>
             </div>
           ) : null}
-          {!brandKnown && brandValue.trim() ? (
-            <label className="admin-check">
+        </div>
+        {brandValue.trim() ? (
+          brandKnown ? (
+            <div className="admin-brand-helper">
+              <span className="admin-fixed-badge">Ya está en frecuentes</span>
+            </div>
+          ) : (
+            <label className="admin-check admin-brand-helper">
               <input checked={saveBrandAsFrequent} onChange={(event) => setSaveBrandAsFrequent(event.target.checked)} type="checkbox" />
               <span>Guardar como marca frecuente</span>
             </label>
-          ) : null}
-        </label>
+          )
+        ) : null}
         <label className="admin-field">
           <span>Especie</span>
           <select className="field" defaultValue={product?.species ?? "perro"} name="species">

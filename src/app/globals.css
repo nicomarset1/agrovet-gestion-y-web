@@ -540,7 +540,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-image-preview-frame { position: relative; width: 100%; min-height: 160px; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 16px; border: 1px solid var(--line); background: #f4f5ef; }
 .admin-image-preview-image { object-fit: cover; }
 .admin-image-preview-empty { min-height: 160px; display: grid; place-items: center; border-radius: 16px; border: 1px dashed var(--line); color: var(--muted); background: #fafbf5; font-weight: 700; }
-.admin-brand-field { position: relative; }
+.admin-brand-field { position: relative; display: grid; gap: 10px; }
 .admin-brand-suggestions {
   position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 25;
   display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 14px;
@@ -548,6 +548,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 .admin-brand-suggestions-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 2px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .admin-brand-suggestions-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
+.admin-brand-helper { margin-top: -2px; }
 .admin-brand-suggestion {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center;
   width: 100%; min-height: 42px; padding: 0 8px 0 12px; border-radius: 10px; border: 1px solid transparent;
