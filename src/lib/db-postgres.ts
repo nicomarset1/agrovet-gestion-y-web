@@ -739,9 +739,10 @@ export async function getCatalogFacets() {
   const products = await getProducts();
   const allCategories = await getCategories();
   const allSubcategories = await getSubcategories();
-  const categoriesBySlug = new Map(allCategories.map((category) => [category.slug, category]));
+  const facetCategories = allCategories.filter((category) => !isSpecialCategorySlug(category.slug));
+  const categoriesBySlug = new Map(facetCategories.map((category) => [category.slug, category]));
   const categories = new Map<string, { name: string; count: number; subcategories: Map<string, { name: string; count: number }> }>();
-  for (const category of allCategories) categories.set(category.slug, { name: category.name, count: 0, subcategories: new Map() });
+  for (const category of facetCategories) categories.set(category.slug, { name: category.name, count: 0, subcategories: new Map() });
   for (const subcategory of allSubcategories) {
     if (!subcategory.categorySlug) continue;
     categories.get(subcategory.categorySlug)?.subcategories.set(subcategory.slug, { name: subcategory.name, count: 0 });
@@ -781,7 +782,15 @@ export async function getCatalogFacets() {
     }
   }
   return {
-    categories: [...categories.entries()].map(([slug, value]) => ({ slug, ...value, subcategories: [...value.subcategories.entries()].map(([subSlug, subValue]) => ({ slug: subSlug, ...subValue })) })),
+    categories: [...categories.entries()]
+      .filter(([, value]) => value.count > 0)
+      .map(([slug, value]) => ({
+        slug,
+        ...value,
+        subcategories: [...value.subcategories.entries()]
+          .filter(([, subValue]) => subValue.count > 0)
+          .map(([subSlug, subValue]) => ({ slug: subSlug, ...subValue })),
+      })),
     brands: [...brands.entries()].map(([name, count]) => ({ name, count })),
     lifeStages: [...lifeStages.entries()].map(([name, count]) => ({ name, count })),
     sizes: [...sizes.entries()].map(([name, count]) => ({ name, count })),
