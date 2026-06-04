@@ -909,9 +909,14 @@ function ProductModal({
           <span>Marca</span>
           <input
             className="field"
+            autoComplete="new-password"
+            autoCapitalize="off"
+            autoCorrect="off"
+            data-lpignore="true"
             name="brand"
             placeholder="Marca"
             required
+            spellCheck={false}
             value={brandValue}
             onBlur={() => window.setTimeout(() => setBrandMenuOpen(false), 120)}
             onChange={(event) => {
