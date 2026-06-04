@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { AdminReview, Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, ProductReview, ReviewStatus, SearchIndexItem, Variant, WholesaleClient } from "./types";
 
 const root = process.cwd();
 const dataDir = join(root, "data");
@@ -148,6 +148,16 @@ db.exec(`
     reset_at INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS product_reviews (
+    id INTEGER PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    author_name TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS product_reviews_product_idx ON product_reviews(product_id, status);
 `);
 
 ensureColumn("branches", "map_url", "TEXT NOT NULL DEFAULT ''");
@@ -578,6 +588,44 @@ export function getProduct(slug: string) {
 
 export function getFeaturedProducts() {
   return getProducts().filter((product) => product.featured).slice(0, 4);
+}
+
+export function createReview(input: { productId: number; authorName: string; rating: number; body: string }) {
+  const exists = db.prepare("SELECT 1 FROM products WHERE id = ? AND archived_at = ''").get(input.productId);
+  if (!exists) throw new Error("Producto inexistente.");
+  const info = db.prepare(
+    "INSERT INTO product_reviews (product_id, author_name, rating, body, status) VALUES (?, ?, ?, ?, 'pending')",
+  ).run(input.productId, input.authorName, input.rating, input.body);
+  return { id: Number(info.lastInsertRowid) };
+}
+
+export function getPublishedReviews(productId: number): ProductReview[] {
+  return db.prepare(`
+    SELECT id, product_id AS productId, author_name AS authorName, rating, body, status, created_at AS createdAt
+    FROM product_reviews
+    WHERE product_id = ? AND status = 'published'
+    ORDER BY created_at DESC, id DESC
+  `).all(productId) as ProductReview[];
+}
+
+export function getAdminReviews(): AdminReview[] {
+  return db.prepare(`
+    SELECT r.id, r.product_id AS productId, r.author_name AS authorName, r.rating, r.body, r.status,
+      r.created_at AS createdAt, p.name AS productName, p.slug AS productSlug
+    FROM product_reviews r
+    JOIN products p ON p.id = r.product_id
+    ORDER BY CASE r.status WHEN 'pending' THEN 0 WHEN 'published' THEN 1 ELSE 2 END, r.created_at DESC, r.id DESC
+  `).all() as AdminReview[];
+}
+
+export function setReviewStatus(id: number, status: ReviewStatus) {
+  db.prepare("UPDATE product_reviews SET status = ? WHERE id = ?").run(status, id);
+  bumpSyncVersion();
+}
+
+export function deleteReview(id: number) {
+  db.prepare("DELETE FROM product_reviews WHERE id = ?").run(id);
+  bumpSyncVersion();
 }
 
 export function getCategories() {

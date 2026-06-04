@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
+import { ProductReviews } from "@/components/product-reviews";
 import { VariantSelector } from "@/components/variant-selector";
-import { getProduct } from "@/lib/db";
+import { getProduct, getPublishedReviews } from "@/lib/db";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const product = await getProduct((await params).slug);
@@ -15,6 +16,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   const product = await getProduct(slug);
   const backHref = back?.startsWith("/tienda") ? back : "/tienda";
   if (!product) notFound();
+  const reviews = await getPublishedReviews(product.id);
   return (
     <div className="container product-page">
       <div className="crumbs"><Link className="back-link" href={backHref}>&larr; Volver a productos</Link> / <Link href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link> / {product.name}</div>
@@ -35,6 +37,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
           <VariantSelector product={product} />
         </section>
       </div>
+      <ProductReviews productId={product.id} productSlug={product.slug} reviews={reviews} />
     </div>
   );
 }
