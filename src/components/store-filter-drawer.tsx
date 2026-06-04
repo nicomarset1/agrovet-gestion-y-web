@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type FacetItem = { name: string; count: number };
 type CategoryFacet = FacetItem & { slug: string; subcategories: { slug: string; name: string; count: number }[] };
@@ -107,6 +107,12 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+type DragStartEvent = {
+  clientX: number;
+  preventDefault: () => void;
+  stopPropagation: () => void;
+};
+
 export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters: Filters }) {
   const [open, setOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(() => selected(filters.category));
@@ -124,6 +130,10 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
   const initialMaxPrice = clamp(Number(filters.maxPrice ?? prices.max), initialMinPrice, prices.max);
   const [{ handleA, handleB }, setPriceHandles] = useState({ handleA: initialMinPrice, handleB: initialMaxPrice });
   const [activeHandle, setActiveHandle] = useState<"a" | "b">("b");
+  const [draggingHandle, setDraggingHandle] = useState<"a" | "b" | null>(null);
+  const draggingHandleRef = useRef<"a" | "b" | null>(null);
+  const rangeTrackRef = useRef<HTMLDivElement | null>(null);
+  const [rangeWidth, setRangeWidth] = useState(0);
   const minPrice = Math.min(handleA, handleB);
   const maxPrice = Math.max(handleA, handleB);
   const minHandle = handleA <= handleB ? "a" : "b";
@@ -133,7 +143,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
   const maxPercent = ((maxPrice - prices.min) / rangeSpan) * 100;
   const handleAPercent = ((handleA - prices.min) / rangeSpan) * 100;
   const handleBPercent = ((handleB - prices.min) / rangeSpan) * 100;
-
+  const rangePad = 14;
   const toggleCategory = (slug: string) => {
     setSelectedCategories((current) => {
       const next = current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug];
@@ -147,10 +157,10 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
     setSelectedSubcategories((current) => (current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug]));
   };
 
-  const setHandle = (handle: "a" | "b", value: number) => {
+  const setHandle = useCallback((handle: "a" | "b", value: number) => {
     setActiveHandle(handle);
     setPriceHandles((current) => ({ ...current, [handle === "a" ? "handleA" : "handleB"]: clamp(value, prices.min, prices.max) }));
-  };
+  }, [prices.max, prices.min]);
 
   const setDisplayedMinPrice = (value: number) => {
     setHandle(minHandle, value);
@@ -158,6 +168,57 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
 
   const setDisplayedMaxPrice = (value: number) => {
     setHandle(maxHandle, value);
+  };
+
+  const valueFromClientX = useCallback((clientX: number) => {
+    const element = rangeTrackRef.current;
+    if (!element) return prices.min;
+    const rect = element.getBoundingClientRect();
+    const usableWidth = Math.max(1, rect.width - (rangePad * 2));
+    const x = clamp(clientX - rect.left - rangePad, 0, usableWidth);
+    return Math.round(prices.min + (x / usableWidth) * rangeSpan);
+  }, [prices.min, rangeSpan]);
+
+  const startDrag = (handle: "a" | "b") => (event: DragStartEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    // eslint-disable-next-line react-hooks/refs
+    draggingHandleRef.current = handle;
+    setActiveHandle(handle);
+    setDraggingHandle(handle);
+    // eslint-disable-next-line react-hooks/refs
+    setHandle(handle, valueFromClientX(event.clientX));
+  };
+
+  useEffect(() => {
+    const element = rangeTrackRef.current;
+    if (!element) return;
+    const update = () => setRangeWidth(element.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  const usableWidth = Math.max(1, rangeWidth - (rangePad * 2));
+  const handleALeft = rangePad + (usableWidth * handleAPercent / 100);
+  const handleBLeft = rangePad + (usableWidth * handleBPercent / 100);
+
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>) => {
+    const currentHandle = draggingHandleRef.current;
+    if (!currentHandle) return;
+    setActiveHandle(currentHandle);
+    setHandle(currentHandle, valueFromClientX(event.clientX));
+  };
+
+  const stopDrag = () => {
+    if (!draggingHandleRef.current) return;
+    setDraggingHandle(null);
+    draggingHandleRef.current = null;
   };
 
   return (
@@ -238,6 +299,12 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
             </div>
             <div
               className="dual-range"
+              ref={rangeTrackRef}
+              onMouseMove={moveDrag}
+              onMouseUp={stopDrag}
+              onMouseLeave={stopDrag}
+              onPointerMove={moveDrag}
+              onPointerUp={stopDrag}
               style={{
                 "--handle-a": `${handleAPercent}%`,
                 "--handle-b": `${handleBPercent}%`,
@@ -245,13 +312,37 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
                 "--range-end": `${maxPercent}%`,
               } as CSSProperties}
             >
-              <input aria-label="Perilla de precio A" className={`range-a ${activeHandle === "a" ? "active" : ""}`} max={prices.max} min={prices.min} onChange={(event) => setHandle("a", Number(event.target.value))} step="1" type="range" value={handleA} />
-              <input aria-label="Perilla de precio B" className={`range-b ${activeHandle === "b" ? "active" : ""}`} max={prices.max} min={prices.min} onChange={(event) => setHandle("b", Number(event.target.value))} step="1" type="range" value={handleB} />
               <span aria-hidden="true" className="dual-range-track">
                 <span className="dual-range-fill" />
-                <span className="dual-range-thumb handle-a" />
-                <span className="dual-range-thumb handle-b" />
               </span>
+              <button
+                aria-valuemax={prices.max}
+                aria-valuemin={prices.min}
+                aria-valuenow={handleA}
+                aria-label="Perilla de precio A"
+                className={`dual-range-thumb thumb-a ${activeHandle === "a" || draggingHandle === "a" ? "active" : ""}`}
+                onMouseDown={startDrag("a")}
+                onPointerDown={startDrag("a")}
+                role="slider"
+                style={{ left: `${handleALeft}px` }}
+                type="button"
+              >
+                <span className="dual-range-thumb-core" />
+              </button>
+              <button
+                aria-valuemax={prices.max}
+                aria-valuemin={prices.min}
+                aria-valuenow={handleB}
+                aria-label="Perilla de precio B"
+                className={`dual-range-thumb thumb-b ${activeHandle === "b" || draggingHandle === "b" ? "active" : ""}`}
+                onMouseDown={startDrag("b")}
+                onPointerDown={startDrag("b")}
+                role="slider"
+                style={{ left: `${handleBLeft}px` }}
+                type="button"
+              >
+                <span className="dual-range-thumb-core" />
+              </button>
             </div>
             <div className="price-range-bounds"><span>{formatMoney(prices.min)}</span><span>{formatMoney(prices.max)}</span></div>
           </Section>
@@ -301,3 +392,4 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
     </>
   );
 }
+

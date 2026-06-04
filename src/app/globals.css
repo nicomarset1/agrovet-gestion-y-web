@@ -441,22 +441,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   --range-start: 0%;
   --range-end: 100%;
   --range-pad: 14px;
-  position: relative; width: 100%; max-width: 100%; min-width: 0; height: 34px; margin: 4px 0;
+  position: relative; z-index: 50; width: 100%; max-width: 100%; min-width: 0; height: 44px; margin: 4px 0;
 }
-.dual-range input[type="range"] {
-  position: absolute; inset: 0 var(--range-pad); width: calc(100% - (var(--range-pad) * 2)); margin: 0; background: transparent; pointer-events: none; appearance: none; z-index: 2;
-}
-.dual-range input.range-a { z-index: 3; }
-.dual-range input.range-b { z-index: 4; }
-.dual-range input.active { z-index: 6; }
-.dual-range input[type="range"]::-webkit-slider-thumb {
-  appearance: none; pointer-events: auto; width: 12px; height: 12px; border-radius: 50%; background: transparent; border: 0; box-shadow: none; cursor: grab;
-}
-.dual-range input[type="range"]::-moz-range-thumb {
-  pointer-events: auto; width: 12px; height: 12px; border-radius: 50%; background: transparent; border: 0; box-shadow: none; cursor: grab;
-}
-.dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; border: 0; }
-.dual-range input[type="range"]::-moz-range-track { background: transparent; border: 0; }
 .dual-range-track {
   position: absolute; left: var(--range-pad); right: var(--range-pad); top: 15px; height: 5px;
   border-radius: 999px; background: #f2e1df; pointer-events: none; z-index: 5;
@@ -466,13 +452,20 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   border-radius: inherit; background: var(--forest);
 }
 .dual-range-thumb {
-  display: block;
-  position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: white; border: 3px solid var(--forest);
-  box-shadow: 0 0 0 4px #fff, 0 6px 14px rgba(122, 31, 40, .18); transform: translate(-50%, -50%); pointer-events: none; z-index: 6;
+  position: absolute; top: 50%; width: 44px; height: 44px; margin: 0; padding: 0;
+  border: 0; background: transparent; transform: translate(-50%, -50%); z-index: 6;
+  display: grid; place-items: center; cursor: grab; touch-action: none; user-select: none;
 }
-.dual-range-thumb.handle-a { left: var(--handle-a); }
-.dual-range-thumb.handle-b { left: var(--handle-b); }
+.dual-range-thumb.active { z-index: 8; }
+.dual-range-thumb-core {
+  width: 18px; height: 18px; border-radius: 50%; background: white; border: 3px solid var(--forest);
+  box-shadow: 0 0 0 3px #fff, 0 4px 10px rgba(122, 31, 40, .14);
+}
+.dual-range-thumb:focus-visible .dual-range-thumb-core {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(122, 31, 40, .18), 0 4px 10px rgba(122, 31, 40, .14);
+}
 .price-range-bounds { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 800; }
+.price-range-bounds { position: relative; z-index: 50; }
 .drawer-actions {
   position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   padding-top: 14px; background: linear-gradient(to top, #fff8f7 76%, rgba(251,250,246,0));
