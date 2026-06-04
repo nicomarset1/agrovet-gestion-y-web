@@ -2910,6 +2910,10 @@ export function AdminConsole({
       return matchesQuery && matchesCategory && matchesSubcategory;
     });
   }, [productCategoryFilter, productQuery, productSubcategoryFilter, products]);
+  const productFiltersActive = Boolean(productQuery.trim() || productCategoryFilter || productSubcategoryFilter);
+  const productCountSummary = productFiltersActive
+    ? `${visibleProducts.length} de ${products.length} productos registrados`
+    : `${products.length} productos registrados`;
   const zeroStockProducts = products.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0));
   const lowStockProducts = products.filter((product) => product.variants.some((variant) => {
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
@@ -3053,7 +3057,7 @@ export function AdminConsole({
             <div id="admin-section-productos">
             <SectionHeader
               action={headAction}
-              subtitle="Gestioná el inventario de tu veterinaria"
+              subtitle={`Gestioná el inventario de tu veterinaria. ${productCountSummary}.`}
               title="Productos"
             />
             <div className="admin-toolbar">
