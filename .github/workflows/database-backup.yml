@@ -42,6 +42,13 @@ jobs:
           mkdir -p "$HOME/.config/rclone"
           if [ -n "$GDRIVE_RCLONE_CONFIG" ]; then
             printf '%s' "$GDRIVE_RCLONE_CONFIG" > "$HOME/.config/rclone/rclone.conf"
+            if [ -n "$GDRIVE_FOLDER_ID" ]; then
+              if grep -q '^root_folder_id[[:space:]]*=' "$HOME/.config/rclone/rclone.conf"; then
+                sed -i "s|^root_folder_id[[:space:]]*=.*|root_folder_id = $GDRIVE_FOLDER_ID|" "$HOME/.config/rclone/rclone.conf"
+              else
+                printf '\nroot_folder_id = %s\n' "$GDRIVE_FOLDER_ID" >> "$HOME/.config/rclone/rclone.conf"
+              fi
+            fi
             chmod 600 "$HOME/.config/rclone/rclone.conf"
           else
             printf '%s' "$GDRIVE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gdrive-service-account.json"
