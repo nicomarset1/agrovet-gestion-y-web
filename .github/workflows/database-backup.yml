@@ -1,0 +1,71 @@
+name: Daily database backup
+
+on:
+  schedule:
+    # 00:15 America/Buenos_Aires
+    - cron: "15 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Backup Neon Postgres to Google Drive
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+      GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo "DATABASE_URL secret is missing" && exit 1)
+          test -n "$GDRIVE_FOLDER_ID" || (echo "GDRIVE_FOLDER_ID secret is missing" && exit 1)
+          test -n "$GDRIVE_SERVICE_ACCOUNT_JSON" || (echo "GDRIVE_SERVICE_ACCOUNT_JSON secret is missing" && exit 1)
+
+      - name: Install backup tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client rclone
+
+      - name: Configure Google Drive access
+        shell: bash
+        run: |
+          printf '%s' "$GDRIVE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gdrive-service-account.json"
+          mkdir -p "$HOME/.config/rclone"
+          {
+            echo "[gdrive]"
+            echo "type = drive"
+            echo "scope = drive"
+            echo "service_account_file = $RUNNER_TEMP/gdrive-service-account.json"
+            echo "root_folder_id = $GDRIVE_FOLDER_ID"
+          } > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$RUNNER_TEMP/gdrive-service-account.json" "$HOME/.config/rclone/rclone.conf"
+
+      - name: Create Postgres backup
+        shell: bash
+        run: |
+          BACKUP_DATE="$(TZ=America/Buenos_Aires date +%Y-%m-%d_%H-%M)"
+          BACKUP_FILE="agrovet-postgres-${BACKUP_DATE}.dump"
+          BACKUP_PATH="$RUNNER_TEMP/$BACKUP_FILE"
+          pg_dump --format=custom --no-owner --no-acl --file="$BACKUP_PATH" "$DATABASE_URL"
+          sha256sum "$BACKUP_PATH" > "$BACKUP_PATH.sha256"
+          echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
+          echo "BACKUP_PATH=$BACKUP_PATH" >> "$GITHUB_ENV"
+
+      - name: Upload backup to Google Drive
+        shell: bash
+        run: |
+          rclone copyto "$BACKUP_PATH" "gdrive:$BACKUP_FILE"
+          rclone copyto "$BACKUP_PATH.sha256" "gdrive:$BACKUP_FILE.sha256"
+
+      - name: Remove old Drive backups
+        shell: bash
+        run: |
+          rclone delete "gdrive:" --include "agrovet-postgres-*.dump" --min-age 45d
+          rclone delete "gdrive:" --include "agrovet-postgres-*.dump.sha256" --min-age 45d
