@@ -235,6 +235,16 @@ function rebuildNullableCategoryTables() {
 
 rebuildNullableCategoryTables();
 
+// Índices para las columnas usadas en filtros/joins/orden del catálogo (paridad con Postgres).
+// inventory(variant_id) no hace falta: ya está cubierto por el PRIMARY KEY (variant_id, branch_id).
+db.exec(`
+  CREATE INDEX IF NOT EXISTS products_category_idx ON products(category_id);
+  CREATE INDEX IF NOT EXISTS products_subcategory_idx ON products(subcategory_slug);
+  CREATE INDEX IF NOT EXISTS products_featured_idx ON products(featured);
+  CREATE INDEX IF NOT EXISTS variants_product_idx ON variants(product_id);
+  CREATE INDEX IF NOT EXISTS inventory_branch_idx ON inventory(branch_id);
+`);
+
 const upsertBranch = db.prepare(`
   INSERT INTO branches (id, slug, name, address, phone, map_url, verified)
   VALUES (@id, @slug, @name, @address, @phone, @mapUrl, @verified)
@@ -415,37 +425,59 @@ type VariantRow = {
   quantity: number;
 };
 
-function hydrateProduct(row: ProductRow): Product {
-  const stockRows = db.prepare(`
-    SELECT v.id, v.label, v.sku, v.barcode, v.price_cents AS priceCents, b.id AS branchId, b.name AS branchName,
-      i.quantity
+// Carga variantes + stock de varios productos en UNA sola query (evita el N+1
+// de consultar por cada producto). El orden por product_id, price_cents, b.id
+// preserva el mismo orden de variantes/stocks que la query individual previa.
+function buildVariantsByProduct(productIds: number[]): Map<number, Variant[]> {
+  const result = new Map<number, Variant[]>();
+  if (!productIds.length) return result;
+  const placeholders = productIds.map(() => "?").join(", ");
+  const rows = db.prepare(`
+    SELECT v.product_id AS productId, v.id, v.label, v.sku, v.barcode, v.price_cents AS priceCents,
+      b.id AS branchId, b.name AS branchName, i.quantity
     FROM variants v
     JOIN inventory i ON i.variant_id = v.id
     JOIN branches b ON b.id = i.branch_id
-    WHERE v.product_id = ?
-    ORDER BY v.price_cents, b.id
-  `).all(row.id) as VariantRow[];
-  const variants = new Map<number, Variant>();
-  for (const variant of stockRows) {
-    const current = variants.get(variant.id) ?? {
-      id: variant.id,
-      label: variant.label,
-      sku: variant.sku,
-      barcode: variant.barcode,
-      priceCents: variant.priceCents,
+    WHERE v.product_id IN (${placeholders})
+    ORDER BY v.product_id, v.price_cents, b.id
+  `).all(...productIds) as (VariantRow & { productId: number })[];
+  const grouped = new Map<number, Map<number, Variant>>();
+  for (const row of rows) {
+    let variants = grouped.get(row.productId);
+    if (!variants) { variants = new Map(); grouped.set(row.productId, variants); }
+    const current = variants.get(row.id) ?? {
+      id: row.id,
+      label: row.label,
+      sku: row.sku,
+      barcode: row.barcode,
+      priceCents: row.priceCents,
       stocks: [],
       totalStock: 0,
     };
-    current.stocks.push({ branchId: variant.branchId, branchName: variant.branchName, quantity: variant.quantity });
-    current.totalStock += variant.quantity;
-    variants.set(variant.id, current);
+    current.stocks.push({ branchId: row.branchId, branchName: row.branchName, quantity: row.quantity });
+    current.totalStock += row.quantity;
+    variants.set(row.id, current);
   }
+  for (const [productId, variants] of grouped) result.set(productId, [...variants.values()]);
+  return result;
+}
+
+function toProduct(row: ProductRow, variants: Variant[]): Product {
   return {
     ...row,
     featured: Boolean(row.featured),
     requiresAdvice: Boolean(row.requiresAdvice),
-    variants: [...variants.values()],
+    variants,
   };
+}
+
+function hydrateProducts(rows: ProductRow[]): Product[] {
+  const byProduct = buildVariantsByProduct(rows.map((row) => row.id));
+  return rows.map((row) => toProduct(row, byProduct.get(row.id) ?? []));
+}
+
+function hydrateProduct(row: ProductRow): Product {
+  return toProduct(row, buildVariantsByProduct([row.id]).get(row.id) ?? []);
 }
 
 const specialCategoryOrderSql = specialCategories
@@ -568,7 +600,7 @@ export function getProducts(filters: CatalogFilters = {}) {
   }
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
   const rows = db.prepare(`${baseSelect}${where} ${orderBy}`).all(...params) as ProductRow[];
-  return rows.map(hydrateProduct);
+  return hydrateProducts(rows);
 }
 
 export function getProduct(slug: string) {
@@ -577,7 +609,9 @@ export function getProduct(slug: string) {
 }
 
 export function getFeaturedProducts() {
-  return getProducts().filter((product) => product.featured).slice(0, 4);
+  // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
+  const rows = db.prepare(`${baseSelect} WHERE p.featured = 1 AND p.archived_at = '' ORDER BY p.name LIMIT 4`).all() as ProductRow[];
+  return hydrateProducts(rows);
 }
 
 export function getCategories() {
