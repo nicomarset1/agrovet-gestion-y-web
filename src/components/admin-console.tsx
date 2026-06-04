@@ -826,6 +826,7 @@ function ProductModal({
     [selectedCategory, subcategories],
   );
   const brandKnown = frequentBrands.some((item) => item.toLowerCase() === brandValue.trim().toLowerCase());
+  const brandHasText = Boolean(brandValue.trim());
   const brandSuggestions = useMemo(() => {
     const query = brandValue.trim().toLowerCase();
     const matches = frequentBrands
@@ -967,18 +968,21 @@ function ProductModal({
             </div>
           ) : null}
         </div>
-        {brandValue.trim() ? (
-          brandKnown ? (
-            <div className="admin-brand-helper">
-              <span className="admin-fixed-badge">Ya está en frecuentes</span>
-            </div>
+        <div className="admin-brand-helper">
+          {brandKnown ? (
+            <span className="admin-fixed-badge">Ya está en frecuentes</span>
           ) : (
-            <label className="admin-check admin-brand-helper">
-              <input checked={saveBrandAsFrequent} onChange={(event) => setSaveBrandAsFrequent(event.target.checked)} type="checkbox" />
+            <label className={`admin-check ${!brandHasText ? "is-disabled" : ""}`}>
+              <input
+                checked={saveBrandAsFrequent}
+                disabled={!brandHasText}
+                onChange={(event) => setSaveBrandAsFrequent(event.target.checked)}
+                type="checkbox"
+              />
               <span>Guardar como marca frecuente</span>
             </label>
-          )
-        ) : null}
+          )}
+        </div>
         <label className="admin-field">
           <span>Especie</span>
           <select className="field" defaultValue={product?.species ?? "perro"} name="species">

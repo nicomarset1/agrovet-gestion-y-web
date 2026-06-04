@@ -1116,6 +1116,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   min-height: 46px; display: inline-flex; align-items: center; gap: 10px; padding: 12px 0; color: var(--ink); font-weight: 700;
 }
 .admin-check input { accent-color: var(--forest); }
+.admin-check.is-disabled { opacity: .55; }
+.admin-check.is-disabled input { cursor: not-allowed; }
 .admin-modal-actions {
   grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px;
 }
