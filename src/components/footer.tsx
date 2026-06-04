@@ -9,7 +9,7 @@ export async function Footer() {
         <div className="footer-grid">
           <div>
             <div className="brand">
-              <span className="brand-mark">A</span>
+              <span className="brand-mark" aria-hidden="true" />
               <span className="brand-title">Agrovet<span className="brand-subtitle">Mar del Plata</span></span>
             </div>
             <p className="footer-brand-copy">Alimentos, accesorios y farmacia para perros y gatos. Atención personalizada con respaldo profesional.</p>

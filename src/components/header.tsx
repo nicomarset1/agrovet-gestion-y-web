@@ -27,7 +27,7 @@ export async function Header() {
       <header className="header">
         <div className="container header-main">
           <Link className="brand" href="/">
-            <span className="brand-mark">A</span>
+            <span className="brand-mark" aria-hidden="true" />
             <span className="brand-title">Agrovet<span className="brand-subtitle">Mar del Plata</span></span>
           </Link>
           <CatalogMenu items={menuItems} />

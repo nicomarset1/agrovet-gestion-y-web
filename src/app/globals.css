@@ -69,7 +69,15 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .header { position: sticky; top: 0; z-index: 20; background: rgba(250,247,240,.94); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
 .header-main { display: flex; align-items: center; gap: 18px; min-height: 84px; position: relative; }
 .brand { display: flex; align-items: center; gap: 11px; min-width: 174px; }
-.brand-mark { width: 48px; height: 48px; border-radius: 15px; background: var(--forest); color: var(--lime); display: grid; place-items: center; font-family: var(--font-display); font-size: 25px; font-weight: 700; }
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  display: block;
+  background: #5b0f73 url("/agrovet-logo.jpg") center/cover no-repeat;
+  box-shadow: 0 8px 18px rgba(91, 15, 115, .14);
+  flex-shrink: 0;
+}
 .brand-title { font-weight: 800; font-size: 23px; line-height: 1; }
 .brand-subtitle { display: block; margin-top: 4px; font-size: 11px; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
 .live-search { flex: 1; max-width: 560px; position: relative; z-index: 45; }
@@ -608,7 +616,6 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 
 .footer { background: var(--forest); color: #e4eee5; padding: 42px 0 22px; margin-top: 45px; }
 .footer-grid { display: grid; grid-template-columns: 1.25fr .75fr 1fr .7fr; gap: 34px; }
-.footer .brand-mark { background: var(--lime); color: var(--forest); }
 .footer .brand-subtitle, .footer p { color: #afc7bd; }
 .footer p { line-height: 1.55; font-size: 13px; }
 .footer-brand-copy { margin-top: 12px; }
@@ -755,8 +762,10 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 .admin-brand { display: flex; align-items: center; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .admin-brand-mark {
-  width: 46px; height: 46px; border-radius: 14px; background: var(--forest); color: var(--lime); display: grid; place-items: center;
-  font-family: var(--font-display); font-size: 24px; font-weight: 800;
+  width: 46px; height: 46px; border-radius: 14px; border: 0; padding: 0;
+  display: block; background: #5b0f73 url("/agrovet-logo.jpg") center/cover no-repeat;
+  box-shadow: 0 8px 18px rgba(91, 15, 115, .14);
+  flex-shrink: 0;
 }
 .admin-brand strong { display: block; font-size: 18px; color: var(--ink); }
 .admin-brand span { display: block; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
@@ -1133,7 +1142,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     grid-template-columns: minmax(0, 1fr) auto; align-items: center;
   }
   .brand { min-width: 0; }
-  .brand-mark { width: 42px; height: 42px; border-radius: 12px; }
+.brand-mark { width: 42px; height: 42px; border-radius: 12px; }
   .brand-title { font-size: 20px; }
   .catalog-menu { width: auto; order: initial; grid-column: 2; position: static; }
   .catalog-trigger { width: auto; min-height: 42px; justify-content: center; padding: 0 12px; }
@@ -1373,16 +1382,12 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   width: 46px;
   height: 46px;
   border-radius: 14px;
-  background: var(--forest);
-  color: var(--lime);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 800;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
   border: 0;
   padding: 0;
+  display: block;
+  background: #5b0f73 url("/agrovet-logo.jpg") center/cover no-repeat;
+  box-shadow: 0 8px 18px rgba(91, 15, 115, .14);
+  flex-shrink: 0;
   cursor: pointer;
 }
 

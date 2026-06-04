@@ -3097,7 +3097,7 @@ export function AdminConsole({
     <div className="admin-layout">
       <aside className="admin-sidebar card">
         <div className="admin-brand">
-          <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal">A</button>
+          <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />
           <div>
             <strong>Veterinaria Admin</strong>
             <span>Panel de gestión</span>
