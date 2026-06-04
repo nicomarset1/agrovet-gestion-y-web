@@ -32,6 +32,10 @@ export const metadata: Metadata = {
   applicationName: siteName,
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
   openGraph: {
     type: "website",
     siteName,
@@ -45,6 +49,10 @@ export const metadata: Metadata = {
     title: "Agrovet | Alimentos y cuidado para perros y gatos",
     description,
   },
+};
+
+export const viewport = {
+  themeColor: "#5b0f73",
 };
 
 const organizationJsonLd = {

@@ -1011,7 +1011,7 @@ function ProductModal({
           <span>Descripción</span>
           <textarea className="field" defaultValue={product?.description ?? ""} name="description" placeholder="Descripción del producto" required />
         </label>
-        <input name="color" type="hidden" value={product?.color ?? "#c8161f"} />
+        <input name="color" type="hidden" value={product?.color ?? "#5b0f73"} />
         <label className="admin-field admin-span-2">
           <span>Foto del producto</span>
           <input
@@ -2084,7 +2084,7 @@ function DashboardCharts({
       if (order.branchId === 1) totals["Sucursal Independencia"] += order.totalCents;
       else if (order.branchId === 2) totals["Sucursal Belgrano"] += order.totalCents;
     }
-    const palette = ["#c8161f", "#e12a31", "#8f0d11", "#d64531"];
+    const palette = ["#5b0f73", "#7c3aed", "#8b5cf6", "#a78bfa"];
     const entries = Object.entries(totals);
     const total = entries.reduce((sum, [, current]) => sum + current, 0) || 1;
     return entries.map(([name, value], index) => ({ name, value, percent: Math.round((value / total) * 100), color: palette[index % palette.length] }));

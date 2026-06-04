@@ -39,12 +39,12 @@ export default function NotFound() {
               width: "min(36vw, 320px)",
               aspectRatio: "1",
               borderRadius: "50%",
-              background: "radial-gradient(circle at 30% 30%, rgba(200, 22, 31, .18), rgba(200, 22, 31, .03) 58%, transparent 59%)",
+              background: "radial-gradient(circle at 30% 30%, rgba(91, 15, 115, .18), rgba(91, 15, 115, .03) 58%, transparent 59%)",
               display: "grid",
               placeItems: "center",
             }}
           >
-            <AlertTriangle size={88} strokeWidth={1.7} color="#c8161f" />
+            <AlertTriangle size={88} strokeWidth={1.7} color="#5b0f73" />
           </div>
         </section>
       </div>
