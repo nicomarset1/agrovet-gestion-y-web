@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
 
 const root = process.cwd();
 const dataDir = join(root, "data");
@@ -578,6 +578,35 @@ export function getProduct(slug: string) {
 
 export function getFeaturedProducts() {
   return getProducts().filter((product) => product.featured).slice(0, 4);
+}
+
+const defaultLowStockThreshold = 5;
+
+export function getLowStockThreshold(): number {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = 'low_stock_threshold'").get() as { value?: number } | undefined;
+  return row && Number.isFinite(Number(row.value)) ? Number(row.value) : defaultLowStockThreshold;
+}
+
+export function setLowStockThreshold(value: number) {
+  db.prepare("INSERT INTO app_meta (key, value) VALUES ('low_stock_threshold', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(value);
+}
+
+// Variantes con stock por sucursal <= umbral. Cada fila incluye la "mejor" otra sucursal
+// (donor) para sugerir un traslado, vía subconsultas (sin N+1).
+export function getLowStockItems(threshold: number): LowStockItem[] {
+  return db.prepare(`
+    SELECT v.id AS variantId, p.id AS productId, p.name AS productName, p.slug AS productSlug,
+      v.label, v.sku, b.id AS branchId, b.name AS branchName, i.quantity,
+      (SELECT i2.branch_id FROM inventory i2 WHERE i2.variant_id = v.id AND i2.branch_id <> b.id ORDER BY i2.quantity DESC LIMIT 1) AS donorBranchId,
+      (SELECT b2.name FROM inventory i2 JOIN branches b2 ON b2.id = i2.branch_id WHERE i2.variant_id = v.id AND i2.branch_id <> b.id ORDER BY i2.quantity DESC LIMIT 1) AS donorBranchName,
+      (SELECT MAX(i2.quantity) FROM inventory i2 WHERE i2.variant_id = v.id AND i2.branch_id <> b.id) AS donorQuantity
+    FROM inventory i
+    JOIN variants v ON v.id = i.variant_id
+    JOIN products p ON p.id = v.product_id
+    JOIN branches b ON b.id = i.branch_id
+    WHERE i.quantity <= ? AND p.archived_at = ''
+    ORDER BY i.quantity ASC, p.name, v.label
+  `).all(threshold) as LowStockItem[];
 }
 
 export function getCategories() {

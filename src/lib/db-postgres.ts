@@ -2,7 +2,7 @@
 
 import postgres from "postgres";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
 
 const uncategorizedSubcategorySlug = "sin-subcategoria";
 const uncategorizedSubcategoryName = "Sin subcategorÃ­a";
@@ -472,6 +472,44 @@ export async function getProduct(slug: string) {
 
 export async function getFeaturedProducts() {
   return (await getProducts()).filter((product) => product.featured).slice(0, 4);
+}
+
+const defaultLowStockThreshold = 5;
+
+export async function getLowStockThreshold(): Promise<number> {
+  await ensureSchema();
+  const [row] = await sql`SELECT value FROM app_meta WHERE key = 'low_stock_threshold'`;
+  return row && Number.isFinite(Number(row.value)) ? Number(row.value) : defaultLowStockThreshold;
+}
+
+export async function setLowStockThreshold(value: number) {
+  await ensureSchema();
+  await sql`INSERT INTO app_meta (key, value) VALUES ('low_stock_threshold', ${value}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+}
+
+// Variantes con stock por sucursal <= umbral. Cada fila incluye la "mejor" otra sucursal
+// (donor) para sugerir un traslado, vía subconsultas (sin N+1).
+export async function getLowStockItems(threshold: number): Promise<LowStockItem[]> {
+  await ensureSchema();
+  const rows = await sql`
+    SELECT v.id AS "variantId", p.id AS "productId", p.name AS "productName", p.slug AS "productSlug",
+      v.label, v.sku, b.id AS "branchId", b.name AS "branchName", i.quantity,
+      (SELECT i2.branch_id FROM inventory i2 WHERE i2.variant_id = v.id AND i2.branch_id <> b.id ORDER BY i2.quantity DESC LIMIT 1) AS "donorBranchId",
+      (SELECT b2.name FROM inventory i2 JOIN branches b2 ON b2.id = i2.branch_id WHERE i2.variant_id = v.id AND i2.branch_id <> b.id ORDER BY i2.quantity DESC LIMIT 1) AS "donorBranchName",
+      (SELECT MAX(i2.quantity) FROM inventory i2 WHERE i2.variant_id = v.id AND i2.branch_id <> b.id) AS "donorQuantity"
+    FROM inventory i
+    JOIN variants v ON v.id = i.variant_id
+    JOIN products p ON p.id = v.product_id
+    JOIN branches b ON b.id = i.branch_id
+    WHERE i.quantity <= ${threshold} AND p.archived_at IS NULL
+    ORDER BY i.quantity ASC, p.name, v.label
+  ` as unknown as LowStockItem[];
+  return rows.map((row) => ({
+    ...row,
+    quantity: Number(row.quantity),
+    donorBranchId: row.donorBranchId === null ? null : Number(row.donorBranchId),
+    donorQuantity: row.donorQuantity === null ? null : Number(row.donorQuantity),
+  }));
 }
 
 export async function getCategories() {

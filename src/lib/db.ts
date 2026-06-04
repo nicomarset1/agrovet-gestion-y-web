@@ -167,6 +167,18 @@ export async function deleteOrder(id: number) {
   return (await getDriver()).deleteOrder(id);
 }
 
+export async function getLowStockThreshold() {
+  return (await getDriver()).getLowStockThreshold();
+}
+
+export async function setLowStockThreshold(value: number) {
+  return (await getDriver()).setLowStockThreshold(value);
+}
+
+export async function getLowStockItems(threshold: number) {
+  return (await getDriver()).getLowStockItems(threshold);
+}
+
 export async function getLoginRateLimit(identifier: string) {
   return (await getDriver()).getLoginRateLimit(identifier);
 }

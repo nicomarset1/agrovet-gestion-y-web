@@ -2827,3 +2827,18 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   }
 }
 
+/* ===== Alertas de stock bajo (panel) ===== */
+.lowstock-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.muted { color: var(--muted); }
+.lowstock-threshold { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; padding: 16px 18px; margin-bottom: 16px; }
+.lowstock-threshold label { font-weight: 700; font-size: 13px; display: grid; gap: 6px; }
+.lowstock-threshold .field { width: 120px; }
+.lowstock-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.lowstock-item { padding: 16px 18px; display: grid; gap: 6px; }
+.lowstock-item-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.lowstock-line { margin: 0; }
+.lowstock-suggestion { margin: 0; font-size: 14px; }
+.lowstock-badge { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+.lowstock-badge-low { background: #fff3cd; color: #8a6d00; }
+.lowstock-badge-out { background: #fde2e1; color: #a4232b; }
+
