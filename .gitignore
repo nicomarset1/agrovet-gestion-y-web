@@ -62,3 +62,6 @@ local-server*.log
 
 # public environment template
 !.env.example
+
+.vercel
+.env*

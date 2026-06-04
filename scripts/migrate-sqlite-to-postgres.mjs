@@ -18,17 +18,21 @@ function loadEnvFile(path) {
 
 loadEnvFile(join(root, ".env.local"));
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL no está configurado. Agregalo al entorno o a .env.local antes de migrar.");
+const connectionUrl = process.env.DATABASE_URL_UNPOOLED || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL;
+
+if (!connectionUrl) {
+  throw new Error("DATABASE_URL_UNPOOLED, POSTGRES_URL_NON_POOLING o DATABASE_URL no estÃƒÆ’Ã‚Â¡ configurado. Agregalo al entorno o a .env.local antes de migrar.");
 }
 
 if (!existsSync(sqlitePath)) {
-  throw new Error(`No encontré la base SQLite en ${sqlitePath}`);
+  throw new Error(`No encontrÃƒÆ’Ã‚Â© la base SQLite en ${sqlitePath}`);
 }
 
 const sqlite = new Database(sqlitePath, { readonly: true });
-const sql = postgres(process.env.DATABASE_URL, {
-  ssl: process.env.NODE_ENV === "production" ? "require" : undefined,
+const sql = postgres(connectionUrl, {
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 const schema = `
@@ -108,7 +112,7 @@ const schema = `
     delivery_distance_km DOUBLE PRECISION,
     branch_id INTEGER NOT NULL REFERENCES branches(id),
     total_cents INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Pendiente de confirmación',
+    status TEXT NOT NULL DEFAULT 'Pendiente de confirmaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n',
     source TEXT NOT NULL DEFAULT 'Tienda online',
     payment_method TEXT NOT NULL DEFAULT '',
     paid_cents INTEGER NOT NULL DEFAULT 0,
@@ -209,4 +213,4 @@ await sql.begin(async (tx) => {
 await sql.end();
 sqlite.close();
 
-console.log("Migración terminada.");
+console.log("MigraciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n terminada.");

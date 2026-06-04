@@ -14,7 +14,9 @@ if (!databaseUrl) {
 
 const sql = postgres(databaseUrl, {
   max: 10,
-  ssl: process.env.NODE_ENV === "production" ? "require" : undefined,
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 type Db = typeof sql | postgres.TransactionSql<Record<string, never>>;
