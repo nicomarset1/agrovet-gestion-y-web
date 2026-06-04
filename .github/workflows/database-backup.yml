@@ -55,7 +55,7 @@ jobs:
           BACKUP_PATH="$RUNNER_TEMP/$BACKUP_FILE"
           docker run --rm \
             -e DATABASE_URL \
-            -e BACKUP_FILE \
+            -e BACKUP_FILE="$BACKUP_FILE" \
             -v "$RUNNER_TEMP:/backup" \
             postgres:17-alpine \
             sh -c 'pg_dump --format=custom --no-owner --no-acl --file="/backup/$BACKUP_FILE" "$DATABASE_URL"'
