@@ -30,14 +30,16 @@ export function VariantSelector({ product }: { product: Product }) {
 
   return (
     <div className="card variant-box">
-      <span className="variant-label">Presentación</span>
-      <div className="detail-variant-options">
+      <span className="variant-label" id="variant-label">Presentación</span>
+      <div className="detail-variant-options" role="group" aria-labelledby="variant-label">
         {product.variants.map((item) => (
           <button
             className={`detail-variant-chip ${item.id === variant.id ? "active" : ""}`}
             disabled={item.totalStock === 0}
             key={item.id}
             onClick={() => { setVariantId(item.id); setAdded(false); }}
+            aria-pressed={item.id === variant.id}
+            aria-label={`${item.label}, ${formatPrice(item.priceCents)}${item.totalStock === 0 ? " (sin stock)" : ""}`}
             type="button"
           >
             <strong>{item.label}</strong>

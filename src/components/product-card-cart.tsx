@@ -34,7 +34,7 @@ export function ProductCardCart({ product }: { product: Product }) {
   return (
     <div className="card-cart-control">
       {product.variants.length > 1 ? (
-        <div className="card-variant-options" aria-label={`Elegir presentación de ${product.name}`}>
+        <div className="card-variant-options" role="group" aria-label={`Elegir presentación de ${product.name}`}>
           {product.variants.map((item) => (
             <button
               className={`variant-chip ${item.id === variant.id ? "active" : ""}`}
@@ -44,6 +44,8 @@ export function ProductCardCart({ product }: { product: Product }) {
                 setVariantId(item.id);
                 setAdded(false);
               }}
+              aria-pressed={item.id === variant.id}
+              aria-label={`${item.label}, ${formatPrice(item.priceCents)}${item.totalStock === 0 ? " (sin stock)" : ""}`}
               title={`${item.label} - ${formatPrice(item.priceCents)}`}
               type="button"
             >
@@ -52,7 +54,7 @@ export function ProductCardCart({ product }: { product: Product }) {
           ))}
         </div>
       ) : null}
-      <button className={`card-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem} title={variant.totalStock ? "Agregar al carrito" : "Sin stock"} type="button">
+      <button className={`card-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem} aria-label={variant.totalStock ? `Agregar ${product.name} (${variant.label}) al carrito` : "Sin stock"} title={variant.totalStock ? "Agregar al carrito" : "Sin stock"} type="button">
         {added ? <Check size={18} /> : <ShoppingCart size={17} />}
       </button>
     </div>

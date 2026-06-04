@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createOrder } from "@/lib/db";
+import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const orderSchema = z.object({
   name: z.string().trim().min(3).max(100),
@@ -17,6 +18,10 @@ const orderSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const limit = rateLimit(`orders:${clientKey(request)}`, 10, 60_000);
+  if (limit.limited) {
+    return tooManyRequests(limit.retryAfterSeconds, "Demasiados pedidos seguidos. Probá de nuevo en un momento.");
+  }
   const result = orderSchema.safeParse(await request.json());
   if (!result.success) {
     return Response.json({ error: "Revisa los datos del pedido." }, { status: 400 });

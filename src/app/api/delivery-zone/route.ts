@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const origin = { lat: -38.0033, lon: -57.5596 };
 
@@ -21,6 +22,11 @@ function distanceKm(a: typeof origin, b: typeof origin) {
 }
 
 export async function POST(request: Request) {
+  // Protege el proxy a Nominatim (su politica de uso prohibe trafico abusivo).
+  const limit = rateLimit(`delivery-zone:${clientKey(request)}`, 15, 60_000);
+  if (limit.limited) {
+    return tooManyRequests(limit.retryAfterSeconds, "Demasiadas consultas de zona. Esperá un momento e intentá de nuevo.");
+  }
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) {
     return Response.json({ error: "Direccion invalida." }, { status: 400 });

@@ -2,7 +2,7 @@
 
 import postgres from "postgres";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
 
 const uncategorizedSubcategorySlug = "sin-subcategoria";
 const uncategorizedSubcategoryName = "Sin subcategorÃ­a";
@@ -213,6 +213,7 @@ async function ensureSchema() {
 
       CREATE INDEX IF NOT EXISTS products_category_idx ON products(category_id);
       CREATE INDEX IF NOT EXISTS products_subcategory_idx ON products(subcategory_slug);
+      CREATE INDEX IF NOT EXISTS products_featured_idx ON products(featured);
       CREATE INDEX IF NOT EXISTS variants_product_idx ON variants(product_id);
       CREATE INDEX IF NOT EXISTS inventory_branch_idx ON inventory(branch_id);
       CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at DESC);
@@ -353,32 +354,54 @@ type VariantRow = {
   quantity: number;
 };
 
-async function hydrateProduct(row: ProductRow, db: Db = sql): Promise<Product> {
-  const stockRows = await db`
-    SELECT v.id, v.label, v.sku, v.barcode, v.price_cents AS "priceCents", b.id AS "branchId", b.name AS "branchName",
-      i.quantity
+// Carga variantes + stock de varios productos en UNA sola query (evita el N+1 de
+// disparar una consulta por producto). El orden por product_id, price_cents, b.id
+// preserva el mismo orden de variantes/stocks que la query individual previa.
+async function buildVariantsByProduct(productIds: number[], db: Db = sql): Promise<Map<number, Variant[]>> {
+  const result = new Map<number, Variant[]>();
+  if (!productIds.length) return result;
+  const rows = await db`
+    SELECT v.product_id AS "productId", v.id, v.label, v.sku, v.barcode, v.price_cents AS "priceCents",
+      b.id AS "branchId", b.name AS "branchName", i.quantity
     FROM variants v
     JOIN inventory i ON i.variant_id = v.id
     JOIN branches b ON b.id = i.branch_id
-    WHERE v.product_id = ${row.id}
-    ORDER BY v.price_cents, b.id
-  ` as unknown as VariantRow[];
-  const variants = new Map<number, Variant>();
-  for (const variant of stockRows) {
-    const current = variants.get(variant.id) ?? {
-      id: variant.id,
-      label: variant.label,
-      sku: variant.sku,
-      barcode: variant.barcode,
-      priceCents: Number(variant.priceCents),
+    WHERE v.product_id = ANY(${productIds})
+    ORDER BY v.product_id, v.price_cents, b.id
+  ` as unknown as (VariantRow & { productId: number })[];
+  const grouped = new Map<number, Map<number, Variant>>();
+  for (const row of rows) {
+    let variants = grouped.get(row.productId);
+    if (!variants) { variants = new Map(); grouped.set(row.productId, variants); }
+    const current = variants.get(row.id) ?? {
+      id: row.id,
+      label: row.label,
+      sku: row.sku,
+      barcode: row.barcode,
+      priceCents: Number(row.priceCents),
       stocks: [],
       totalStock: 0,
     };
-    current.stocks.push({ branchId: variant.branchId, branchName: variant.branchName, quantity: Number(variant.quantity) });
-    current.totalStock += Number(variant.quantity);
-    variants.set(variant.id, current);
+    current.stocks.push({ branchId: row.branchId, branchName: row.branchName, quantity: Number(row.quantity) });
+    current.totalStock += Number(row.quantity);
+    variants.set(row.id, current);
   }
-  return { ...row, featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), variants: [...variants.values()] };
+  for (const [productId, variants] of grouped) result.set(productId, [...variants.values()]);
+  return result;
+}
+
+function toProduct(row: ProductRow, variants: Variant[]): Product {
+  return { ...row, featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), variants };
+}
+
+async function hydrateProducts(rows: ProductRow[], db: Db = sql): Promise<Product[]> {
+  const byProduct = await buildVariantsByProduct(rows.map((row) => row.id), db);
+  return rows.map((row) => toProduct(row, byProduct.get(row.id) ?? []));
+}
+
+async function hydrateProduct(row: ProductRow, db: Db = sql): Promise<Product> {
+  const byProduct = await buildVariantsByProduct([row.id], db);
+  return toProduct(row, byProduct.get(row.id) ?? []);
 }
 
 const specialCategoryOrderSql = specialCategories
@@ -463,7 +486,7 @@ export async function getProducts(filters: CatalogFilters = {}) {
     orderBy = "ORDER BY (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
   }
   const rows = await sql.unsafe(`${baseSelect} WHERE ${clauses.join(" AND ")} ${orderBy}`, params as never[]) as unknown as ProductRow[];
-  return Promise.all(rows.map((row) => hydrateProduct(row)));
+  return hydrateProducts(rows);
 }
 
 export async function getProduct(slug: string) {
@@ -473,7 +496,48 @@ export async function getProduct(slug: string) {
 }
 
 export async function getFeaturedProducts() {
-  return (await getProducts()).filter((product) => product.featured).slice(0, 4);
+  await ensureSchema();
+  // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
+  const rows = await sql.unsafe(`${baseSelect} WHERE p.featured = TRUE AND p.archived_at IS NULL ORDER BY p.name LIMIT 4`, [] as never[]) as unknown as ProductRow[];
+  return hydrateProducts(rows);
+}
+
+const defaultLowStockThreshold = 5;
+
+export async function getLowStockThreshold(): Promise<number> {
+  await ensureSchema();
+  const [row] = await sql`SELECT value FROM app_meta WHERE key = 'low_stock_threshold'`;
+  return row && Number.isFinite(Number(row.value)) ? Number(row.value) : defaultLowStockThreshold;
+}
+
+export async function setLowStockThreshold(value: number) {
+  await ensureSchema();
+  await sql`INSERT INTO app_meta (key, value) VALUES ('low_stock_threshold', ${value}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+}
+
+// Variantes con stock por sucursal <= umbral. Cada fila incluye la "mejor" otra sucursal
+// (donor) para sugerir un traslado, vía subconsultas (sin N+1).
+export async function getLowStockItems(threshold: number): Promise<LowStockItem[]> {
+  await ensureSchema();
+  const rows = await sql`
+    SELECT v.id AS "variantId", p.id AS "productId", p.name AS "productName", p.slug AS "productSlug",
+      v.label, v.sku, b.id AS "branchId", b.name AS "branchName", i.quantity,
+      (SELECT i2.branch_id FROM inventory i2 WHERE i2.variant_id = v.id AND i2.branch_id <> b.id ORDER BY i2.quantity DESC LIMIT 1) AS "donorBranchId",
+      (SELECT b2.name FROM inventory i2 JOIN branches b2 ON b2.id = i2.branch_id WHERE i2.variant_id = v.id AND i2.branch_id <> b.id ORDER BY i2.quantity DESC LIMIT 1) AS "donorBranchName",
+      (SELECT MAX(i2.quantity) FROM inventory i2 WHERE i2.variant_id = v.id AND i2.branch_id <> b.id) AS "donorQuantity"
+    FROM inventory i
+    JOIN variants v ON v.id = i.variant_id
+    JOIN products p ON p.id = v.product_id
+    JOIN branches b ON b.id = i.branch_id
+    WHERE i.quantity <= ${threshold} AND p.archived_at IS NULL
+    ORDER BY i.quantity ASC, p.name, v.label
+  ` as unknown as LowStockItem[];
+  return rows.map((row) => ({
+    ...row,
+    quantity: Number(row.quantity),
+    donorBranchId: row.donorBranchId === null ? null : Number(row.donorBranchId),
+    donorQuantity: row.donorQuantity === null ? null : Number(row.donorQuantity),
+  }));
 }
 
 export async function getCategories() {

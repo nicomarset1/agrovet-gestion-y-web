@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   BarChart3,
   Boxes,
   ChevronRight,
@@ -3013,6 +3014,7 @@ export function AdminConsole({
     { id: "clientes", href: sectionHref("clientes"), label: "Clientes", icon: Users },
     { id: "ventas", href: sectionHref("ventas"), label: "Ventas", icon: BarChart3 },
     { id: "ventas-web", href: sectionHref("ventas-web"), label: "Ventas web", icon: Truck },
+    { id: "stock-bajo", href: "/admin/stock-bajo", label: "Stock bajo", icon: AlertTriangle },
   ] as const;
 
   const headAction =

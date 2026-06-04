@@ -66,3 +66,16 @@ En Project Settings > Environment Variables configurar:
 - `DATABASE_URL`: conexion Postgres compartida.
 
 Despues de cargar datos y variables, correr `npm run build` localmente y hacer deploy desde Vercel conectado al repositorio.
+
+### Backups cifrados (opcional)
+
+El workflow `Daily database backup` puede cifrar el dump de Postgres con AES-256 antes de subirlo a Google Drive. Para activarlo, en GitHub > Settings > Secrets and variables > Actions agregar:
+
+- `BACKUP_ENCRYPTION_PASSPHRASE`: passphrase fuerte y aleatoria.
+
+Con el secret definido, los backups se suben como `agrovet-postgres-*.dump.enc` y el workflow `Restore backup test` los descifra automaticamente (usando el mismo secret). Si el secret no esta definido, el comportamiento es el anterior (dump sin cifrar) y el workflow lo avisa con un warning. Guardar la passphrase fuera del repositorio: sin ella los backups cifrados no se pueden restaurar.
+
+### Notas de seguridad
+
+- Las cabeceras `Content-Security-Policy` y `Strict-Transport-Security` se aplican solo en produccion (`next start`/Vercel), no en `next dev`.
+- Los endpoints publicos `POST /api/orders` y `POST /api/delivery-zone` tienen rate-limit en memoria por instancia. Para un limite estricto entre instancias, migrar a Redis/Upstash.
