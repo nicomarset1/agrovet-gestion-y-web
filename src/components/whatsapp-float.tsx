@@ -10,7 +10,7 @@ export function WhatsappFloat() {
   return (
     <a
       className="whatsapp-float"
-      href="https://wa.me/542234935665"
+      href="https://wa.me/5492234251324"
       rel="noreferrer"
       target="_blank"
       aria-label="Hablar por WhatsApp"

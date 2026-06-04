@@ -92,7 +92,7 @@ export default async function PreguntasFrecuentesPage() {
             <h2>Tenes otra consulta?</h2>
             <p>Escribinos por WhatsApp y te ayudamos con productos, stock, retiro, envio o asesoramiento veterinario.</p>
           </div>
-          <Link className="button button-primary" href="https://wa.me/542234935665" rel="noreferrer" target="_blank">WhatsApp</Link>
+          <Link className="button button-primary" href="https://wa.me/5492234251324" rel="noreferrer" target="_blank">WhatsApp</Link>
         </section>
       </div>
     </main>

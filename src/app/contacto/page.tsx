@@ -23,7 +23,7 @@ export default async function ContactoPage() {
             <p>{intro}</p>
           </div>
           <div className="contact-hero-actions">
-            <Link className="button button-primary" href="https://wa.me/542234935665" rel="noreferrer" target="_blank">
+            <Link className="button button-primary" href="https://wa.me/5492234251324" rel="noreferrer" target="_blank">
               <MessageCircle size={18} />
               WhatsApp
             </Link>
@@ -38,7 +38,7 @@ export default async function ContactoPage() {
               <p className="eyebrow">Canal principal</p>
               <h2>WhatsApp</h2>
               <p>Escribinos para consultar stock, pedidos online, retiro por sucursal o zona de envío.</p>
-              <Link className="product-link" href="https://wa.me/542234935665" rel="noreferrer" target="_blank">Enviar mensaje</Link>
+              <Link className="product-link" href="https://wa.me/5492234251324" rel="noreferrer" target="_blank">Enviar mensaje</Link>
             </div>
           </article>
 
@@ -59,8 +59,8 @@ export default async function ContactoPage() {
               <h2>Instagram y Facebook</h2>
               <p>También podés seguir novedades, productos y publicaciones de Agrovet en redes sociales.</p>
               <div className="contact-socials">
-                <Link href="https://www.instagram.com/agrovetmdp/" rel="noreferrer" target="_blank"><AtSign size={16} /> Instagram</Link>
-                <Link href="https://www.facebook.com/search/top?q=agrovet%20mar%20del%20plata" rel="noreferrer" target="_blank"><Share2 size={16} /> Facebook</Link>
+                <Link href="https://www.instagram.com/agrovet_tienda/" rel="noreferrer" target="_blank"><AtSign size={16} /> Instagram</Link>
+                <span className="contact-social-disabled"><Share2 size={16} /> Facebook</span>
               </div>
             </div>
           </article>

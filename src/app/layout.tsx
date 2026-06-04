@@ -71,8 +71,7 @@ const organizationJsonLd = {
     addressCountry: "AR",
   },
   sameAs: [
-    "https://www.instagram.com/agrovetmdp/",
-    "https://www.facebook.com/search/top?q=agrovet%20mar%20del%20plata",
+    "https://www.instagram.com/agrovet_tienda/",
   ],
 };
 

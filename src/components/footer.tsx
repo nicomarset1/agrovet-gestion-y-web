@@ -36,9 +36,9 @@ export async function Footer() {
           <div>
             <h3>Seguinos</h3>
             <div className="footer-links">
-              <Link href="https://www.instagram.com/agrovetmdp/" rel="noreferrer" target="_blank">Instagram</Link>
-              <Link href="https://www.facebook.com/search/top?q=agrovet%20mar%20del%20plata" rel="noreferrer" target="_blank">Facebook</Link>
-              <Link href="https://wa.me/542234935665" rel="noreferrer" target="_blank">WhatsApp</Link>
+              <Link href="https://www.instagram.com/agrovet_tienda/" rel="noreferrer" target="_blank">Instagram</Link>
+              <span className="footer-link-disabled">Facebook</span>
+              <Link href="https://wa.me/5492234251324" rel="noreferrer" target="_blank">WhatsApp</Link>
             </div>
           </div>
         </div>
