@@ -450,23 +450,13 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .dual-range input.range-b { z-index: 4; }
 .dual-range input.active { z-index: 6; }
 .dual-range input[type="range"]::-webkit-slider-thumb {
-  appearance: none; pointer-events: auto; width: 20px; height: 20px; border-radius: 50%; background: white; border: 3px solid var(--forest);
-  box-shadow: 0 6px 14px rgba(122, 31, 40, .18); cursor: grab;
+  appearance: none; pointer-events: auto; width: 12px; height: 12px; border-radius: 50%; background: transparent; border: 0; box-shadow: none; cursor: grab;
 }
 .dual-range input[type="range"]::-moz-range-thumb {
-  pointer-events: auto; width: 20px; height: 20px; border-radius: 50%; background: white; border: 3px solid var(--forest);
-  box-shadow: 0 6px 14px rgba(122, 31, 40, .18); cursor: grab;
+  pointer-events: auto; width: 12px; height: 12px; border-radius: 50%; background: transparent; border: 0; box-shadow: none; cursor: grab;
 }
 .dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; border: 0; }
 .dual-range input[type="range"]::-moz-range-track { background: transparent; border: 0; }
-.dual-range-labels {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;
-  color: var(--muted); font-size: 11px; font-weight: 800;
-}
-.dual-range-label {
-  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px;
-  background: #faf7f6; border: 1px solid var(--line); color: var(--ink);
-}
 .dual-range-track {
   position: absolute; left: var(--range-pad); right: var(--range-pad); top: 15px; height: 5px;
   border-radius: 999px; background: #f2e1df; pointer-events: none; z-index: 5;
@@ -476,7 +466,9 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   border-radius: inherit; background: var(--forest);
 }
 .dual-range-thumb {
-  display: none;
+  display: block;
+  position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: white; border: 3px solid var(--forest);
+  box-shadow: 0 0 0 4px #fff, 0 6px 14px rgba(122, 31, 40, .18); transform: translate(-50%, -50%); pointer-events: none; z-index: 6;
 }
 .dual-range-thumb.handle-a { left: var(--handle-a); }
 .dual-range-thumb.handle-b { left: var(--handle-b); }

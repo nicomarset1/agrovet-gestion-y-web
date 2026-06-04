@@ -236,10 +236,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
                 />
               </label>
             </div>
-            <div className="dual-range-labels" aria-hidden="true">
-              <span className="dual-range-label">Mín {formatMoney(minPrice)}</span>
-              <span className="dual-range-label">Máx {formatMoney(maxPrice)}</span>
-            </div>
             <div
               className="dual-range"
               style={{
