@@ -786,6 +786,7 @@ function ProductModal({
   const [selectedSubcategorySlug, setSelectedSubcategorySlug] = useState(product?.subcategorySlug || UNCATEGORIZED_SUBCATEGORY_SLUG);
   const [brandValue, setBrandValue] = useState(product?.brand ?? "");
   const [saveBrandAsFrequent, setSaveBrandAsFrequent] = useState(false);
+  const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
   const [frequentBrands] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -825,6 +826,13 @@ function ProductModal({
     [selectedCategory, subcategories],
   );
   const brandKnown = frequentBrands.some((item) => item.toLowerCase() === brandValue.trim().toLowerCase());
+  const brandSuggestions = useMemo(() => {
+    const query = brandValue.trim().toLowerCase();
+    const matches = frequentBrands
+      .filter((brand) => !query || brand.toLowerCase().includes(query))
+      .slice(0, 8);
+    return matches;
+  }, [brandValue, frequentBrands]);
   const resolvedSubcategorySlug = selectedCategory
     ? (availableSubcategories.some((subcategory) => subcategory.slug === selectedSubcategorySlug) ? selectedSubcategorySlug : availableSubcategories[0]?.slug ?? UNCATEGORIZED_SUBCATEGORY_SLUG)
     : UNCATEGORIZED_SUBCATEGORY_SLUG;
@@ -897,20 +905,46 @@ function ProductModal({
             {availableSubcategories.map((subcategory) => <option key={subcategory.slug} value={subcategory.slug}>{subcategory.name}</option>)}
           </select>
         </label>
-        <label className="admin-field">
+        <label className="admin-field admin-brand-field">
           <span>Marca</span>
           <input
             className="field"
-            list="frequent-brands"
             name="brand"
             placeholder="Marca"
             required
             value={brandValue}
-            onChange={(event) => setBrandValue(event.target.value)}
+            onBlur={() => window.setTimeout(() => setBrandMenuOpen(false), 120)}
+            onChange={(event) => {
+              setBrandValue(event.target.value);
+              setBrandMenuOpen(true);
+            }}
+            onFocus={() => setBrandMenuOpen(true)}
           />
-          <datalist id="frequent-brands">
-            {frequentBrands.map((brand) => <option key={brand} value={brand} />)}
-          </datalist>
+          {brandMenuOpen && brandSuggestions.length ? (
+            <div className="admin-brand-suggestions">
+              <div className="admin-brand-suggestions-header">
+                <span>Sugerencias</span>
+                <span>{brandSuggestions.length}</span>
+              </div>
+              <div className="admin-brand-suggestions-list" role="listbox" aria-label="Marcas frecuentes">
+                {brandSuggestions.map((brand) => (
+                  <button
+                    className="admin-brand-suggestion"
+                    key={brand}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setBrandValue(brand);
+                      setBrandMenuOpen(false);
+                    }}
+                    type="button"
+                  >
+                    {brand}
+                    <small>Marca guardada</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {!brandKnown && brandValue.trim() ? (
             <label className="admin-check">
               <input checked={saveBrandAsFrequent} onChange={(event) => setSaveBrandAsFrequent(event.target.checked)} type="checkbox" />
