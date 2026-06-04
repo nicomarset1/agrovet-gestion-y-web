@@ -288,7 +288,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .product-card { overflow: hidden; display: flex; flex-direction: column; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; animation: fadeUp .3s ease both; }
 .product-card:hover { transform: translateY(-4px); border-color: #ead4d3; box-shadow: 0 18px 38px rgba(122, 31, 40, .12); }
 .product-art { height: 220px; display: grid; place-items: center; position: relative; background: #f7efee; overflow: hidden; }
-.product-art-image { width: 100%; height: 100%; object-fit: cover; display: block; }
+.product-art-image { object-fit: cover; }
 .product-badge { position: absolute; top: 14px; left: 14px; padding: 6px 10px; border-radius: 99px; background: white; font-size: 11px; font-weight: 800; color: var(--forest); }
 .pack { width: 110px; height: 142px; border-radius: 9px 9px 16px 16px; box-shadow: 0 14px 22px rgba(77, 18, 24,.12); color: white; display: flex; flex-direction: column; justify-content: space-between; padding: 18px 12px 15px; }
 .pack-brand { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
@@ -524,7 +524,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .detail-variant-chip.active span { color: #edd7d6; }
 .detail-variant-chip:disabled { opacity: .42; cursor: not-allowed; text-decoration: line-through; transform: none; }
 .admin-image-preview { display: grid; gap: 12px; }
-.admin-image-preview img { width: 100%; max-height: 240px; object-fit: cover; border-radius: 16px; border: 1px solid var(--line); background: #f4f5ef; }
+.admin-image-preview-frame { position: relative; width: 100%; min-height: 160px; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 16px; border: 1px solid var(--line); background: #f4f5ef; }
+.admin-image-preview-image { object-fit: cover; }
 .admin-image-preview-empty { min-height: 160px; display: grid; place-items: center; border-radius: 16px; border: 1px dashed var(--line); color: var(--muted); background: #fafbf5; font-weight: 700; }
 .variant-price { margin: 18px 0 8px; font-size: 29px; font-weight: 800; }
 .detail-cart-button.added { background: #a53a45; animation: cartCheck .42s ease both; }

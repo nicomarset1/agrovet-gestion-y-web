@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -975,7 +976,20 @@ function ProductModal({
           />
           <input name="imageUrl" type="hidden" value={imageUrl} />
           <div className="admin-image-preview">
-            {imageUrl ? <img alt="Vista previa del producto" src={imageUrl} /> : <div className="admin-image-preview-empty">Subí una imagen para verla aquí</div>}
+            {imageUrl ? (
+              <div className="admin-image-preview-frame">
+                <Image
+                  alt="Vista previa del producto"
+                  className="admin-image-preview-image"
+                  fill
+                  sizes="(max-width: 640px) 100vw, 360px"
+                  src={imageUrl}
+                  unoptimized
+                />
+              </div>
+            ) : (
+              <div className="admin-image-preview-empty">Subí una imagen para verla aquí</div>
+            )}
             {imageUrl ? (
               <button className="button button-light" onClick={() => setImageUrl("")} type="button">Quitar imagen</button>
             ) : null}
