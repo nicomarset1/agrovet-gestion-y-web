@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client rclone
+          sudo apt-get install -y rclone
 
       - name: Configure Google Drive access
         shell: bash
@@ -53,7 +53,12 @@ jobs:
           BACKUP_DATE="$(TZ=America/Buenos_Aires date +%Y-%m-%d_%H-%M)"
           BACKUP_FILE="agrovet-postgres-${BACKUP_DATE}.dump"
           BACKUP_PATH="$RUNNER_TEMP/$BACKUP_FILE"
-          pg_dump --format=custom --no-owner --no-acl --file="$BACKUP_PATH" "$DATABASE_URL"
+          docker run --rm \
+            -e DATABASE_URL \
+            -e BACKUP_FILE \
+            -v "$RUNNER_TEMP:/backup" \
+            postgres:17-alpine \
+            sh -c 'pg_dump --format=custom --no-owner --no-acl --file="/backup/$BACKUP_FILE" "$DATABASE_URL"'
           sha256sum "$BACKUP_PATH" > "$BACKUP_PATH.sha256"
           echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
           echo "BACKUP_PATH=$BACKUP_PATH" >> "$GITHUB_ENV"
