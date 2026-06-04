@@ -459,9 +459,17 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 .dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; border: 0; }
 .dual-range input[type="range"]::-moz-range-track { background: transparent; border: 0; }
+.dual-range-labels {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;
+  color: var(--muted); font-size: 11px; font-weight: 800;
+}
+.dual-range-label {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px;
+  background: #faf7f6; border: 1px solid var(--line); color: var(--ink);
+}
 .dual-range-track {
   position: absolute; left: var(--range-pad); right: var(--range-pad); top: 15px; height: 5px;
-  border-radius: 999px; background: transparent; pointer-events: none; z-index: 5;
+  border-radius: 999px; background: #f2e1df; pointer-events: none; z-index: 5;
 }
 .dual-range-fill {
   position: absolute; left: var(--range-start); right: calc(100% - var(--range-end)); top: 0; bottom: 0;
@@ -535,11 +543,21 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-brand-suggestions-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 2px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .admin-brand-suggestions-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
 .admin-brand-suggestion {
-  width: 100%; min-height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid transparent;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  width: 100%; min-height: 42px; padding: 0 8px 0 12px; border-radius: 10px; border: 1px solid transparent;
   background: #faf7f6; color: var(--ink); font-weight: 700; text-align: left; transition: background .16s ease, border-color .16s ease, transform .16s ease;
 }
-.admin-brand-suggestion:hover, .admin-brand-suggestion:focus-visible { background: #fff; border-color: #e8cdca; transform: translateY(-1px); }
-.admin-brand-suggestion small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.admin-brand-suggestion:hover, .admin-brand-suggestion:focus-within { background: #fff; border-color: #e8cdca; transform: translateY(-1px); }
+.admin-brand-suggestion-main {
+  display: grid; gap: 2px; min-width: 0; border: 0; background: transparent; padding: 8px 0; text-align: left; color: inherit;
+}
+.admin-brand-suggestion-main strong { font-size: 14px; line-height: 1.1; }
+.admin-brand-suggestion-main small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.admin-brand-suggestion-remove {
+  width: 32px; height: 32px; border-radius: 999px; border: 1px solid #ecd3cf; background: white; color: #9c444c;
+  display: grid; place-items: center; transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+.admin-brand-suggestion-remove:hover { background: #fff2f0; border-color: #e4b5b0; transform: scale(1.04); }
 .admin-brand-field input {
   appearance: none;
 }

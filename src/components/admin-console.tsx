@@ -788,7 +788,7 @@ function ProductModal({
   const [saveBrandAsFrequent, setSaveBrandAsFrequent] = useState(false);
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
-  const [frequentBrands] = useState<string[]>(() => {
+  const [frequentBrands, setFrequentBrands] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
       const stored = window.localStorage.getItem("agrovet-frequent-brands");
@@ -833,6 +833,13 @@ function ProductModal({
       .slice(0, 8);
     return matches;
   }, [brandValue, frequentBrands]);
+  const persistFrequentBrands = (next: string[]) => {
+    const normalized = [...new Set(next.map((brand) => brand.trim()).filter(Boolean))].slice(0, 20);
+    setFrequentBrands(normalized);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("agrovet-frequent-brands", JSON.stringify(normalized));
+    }
+  };
   const resolvedSubcategorySlug = selectedCategory
     ? (availableSubcategories.some((subcategory) => subcategory.slug === selectedSubcategorySlug) ? selectedSubcategorySlug : availableSubcategories[0]?.slug ?? UNCATEGORIZED_SUBCATEGORY_SLUG)
     : UNCATEGORIZED_SUBCATEGORY_SLUG;
@@ -845,8 +852,7 @@ function ProductModal({
     >
       <form action={action} className="admin-modal-form" onSubmitCapture={() => {
         if (saveBrandAsFrequent && !brandKnown) {
-          const next = [...new Set([...frequentBrands, brandValue.trim()])].filter(Boolean).slice(0, 20);
-          window.localStorage.setItem("agrovet-frequent-brands", JSON.stringify(next));
+          persistFrequentBrands([...frequentBrands, brandValue.trim()]);
         }
       }}>
         {mode === "edit" && product ? <input name="id" type="hidden" value={product.id} /> : null}
@@ -913,7 +919,6 @@ function ProductModal({
             autoCapitalize="off"
             autoCorrect="off"
             data-lpignore="true"
-            name="brand"
             placeholder="Marca"
             required
             spellCheck={false}
@@ -925,27 +930,38 @@ function ProductModal({
             }}
             onFocus={() => setBrandMenuOpen(true)}
           />
+          <input name="brand" type="hidden" value={brandValue} />
           {brandMenuOpen && brandSuggestions.length ? (
             <div className="admin-brand-suggestions">
               <div className="admin-brand-suggestions-header">
                 <span>Sugerencias</span>
-                <span>{brandSuggestions.length}</span>
+                <button className="mini-button" onMouseDown={(event) => event.preventDefault()} onClick={() => persistFrequentBrands([])} type="button">Vaciar</button>
               </div>
               <div className="admin-brand-suggestions-list" role="listbox" aria-label="Marcas frecuentes">
                 {brandSuggestions.map((brand) => (
-                  <button
-                    className="admin-brand-suggestion"
-                    key={brand}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      setBrandValue(brand);
-                      setBrandMenuOpen(false);
-                    }}
-                    type="button"
-                  >
-                    {brand}
-                    <small>Marca guardada</small>
-                  </button>
+                  <div className="admin-brand-suggestion" key={brand}>
+                    <button
+                      className="admin-brand-suggestion-main"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setBrandValue(brand);
+                        setBrandMenuOpen(false);
+                      }}
+                      type="button"
+                    >
+                      <strong>{brand}</strong>
+                      <small>Marca guardada</small>
+                    </button>
+                    <button
+                      className="admin-brand-suggestion-remove"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => persistFrequentBrands(frequentBrands.filter((item) => item !== brand))}
+                      type="button"
+                      aria-label={`Eliminar ${brand} de marcas frecuentes`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
