@@ -21,7 +21,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function DeliveryZoneChecker() {
+export function DeliveryZoneChecker({ variant = "default" }: { variant?: "default" | "compact" }) {
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<Zone | null>(null);
   const [pending, setPending] = useState(false);
@@ -74,12 +74,12 @@ export function DeliveryZoneChecker() {
   }
 
   return (
-    <div className="delivery-zone-card card">
-      <div className="zone-map" aria-label="Zona de envío gratis">
+    <div className={`delivery-zone-card card${variant === "compact" ? " compact" : ""}`}>
+      {variant === "default" ? <div className="zone-map" aria-label="Zona de envío gratis">
         <span className="zone-circle" />
         <span className="zone-store"><MapPin size={18} /></span>
         {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} style={markerStyle} />}
-      </div>
+      </div> : null}
       <div className="zone-content">
         <p className="eyebrow">Zona de envío</p>
         <h3>Consultá si llegamos a tu dirección</h3>

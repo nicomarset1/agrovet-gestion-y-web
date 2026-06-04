@@ -12,7 +12,7 @@ export async function Footer() {
               <span className="brand-mark">A</span>
               <span className="brand-title">Agrovet<span className="brand-subtitle">Mar del Plata</span></span>
             </div>
-            <p>Alimentos, accesorios y farmacia para perros y gatos. Atención personalizada con respaldo profesional.</p>
+            <p className="footer-brand-copy">Alimentos, accesorios y farmacia para perros y gatos. Atención personalizada con respaldo profesional.</p>
           </div>
           <div>
             <h3>Comprar</h3>
@@ -42,7 +42,7 @@ export async function Footer() {
             </div>
           </div>
         </div>
-        <div className="footer-bottom">Agrovet Mar del Plata. Catálogo y precios de esta demostración deben validarse antes de publicar.</div>
+        <div className="footer-bottom">© 2026 Agrovet Mar del Plata. Sitio creado por Nicolás Marset.</div>
       </div>
     </footer>
   );

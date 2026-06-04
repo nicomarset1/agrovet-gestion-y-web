@@ -912,7 +912,7 @@ export async function updateCategory(input: { id: number; name: string; slug: st
   await sql.begin(async (tx) => {
     const [current] = await tx`SELECT slug FROM categories WHERE id = ${input.id}` as unknown as { slug: string }[];
     if (current && isSpecialCategorySlug(current.slug)) {
-      await tx`UPDATE categories SET name = ${input.name.trim()}, parent_category_id = NULL, show_in_menu = ${Boolean(input.showInMenu)} WHERE id = ${input.id}`;
+      await tx`UPDATE categories SET name = ${input.name.trim()}, description = ${input.description ?? ""}, parent_category_id = NULL, show_in_menu = ${Boolean(input.showInMenu)} WHERE id = ${input.id}`;
       await bumpSyncVersion(tx);
       return;
     }

@@ -647,7 +647,18 @@ function CategoryModal({
               <span>Mostrar en el menú principal</span>
             </label>
           </>
-        ) : null}
+        ) : (
+          <label className="admin-field admin-span-2">
+            <span>Contenido de la página</span>
+            <textarea
+              className="field"
+              defaultValue={category?.description ?? ""}
+              name="description"
+              placeholder="Escribí el texto que se va a mostrar en esta página fija. Separá párrafos con Enter."
+              rows={8}
+            />
+          </label>
+        )}
         {!isFixedSpecialCategory && !showInMenu ? (
           <label className="admin-field admin-span-2">
             <span>Dentro de la categoría del menú</span>

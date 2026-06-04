@@ -183,7 +183,7 @@ const categorySchema = z.object({
   id: z.coerce.number().int().positive().optional(),
   name: z.string().trim().min(2).max(80),
   slug: z.string().trim().min(2).max(80).optional(),
-  description: z.string().trim().max(180).optional(),
+  description: z.string().trim().max(2500).optional(),
   showInMenu: z.enum(["on"]).optional(),
   parentCategoryId: z.coerce.number().int().positive().optional(),
   returnTo: z.string().trim().min(1).optional(),

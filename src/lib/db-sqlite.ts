@@ -259,7 +259,7 @@ const upsertSpecialCategory = db.prepare(`
   INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu)
   VALUES (@id, @slug, @name, @description, NULL, 1)
   ON CONFLICT(slug) DO UPDATE SET
-    description = excluded.description,
+    name = excluded.name,
     parent_category_id = NULL
 `);
 const upsertSubcategory = db.prepare(`
@@ -1012,8 +1012,8 @@ export function createCategory(input: { name: string; slug?: string; description
 export function updateCategory(input: { id: number; name: string; slug: string; description?: string; showInMenu?: boolean; parentCategoryId?: number | null }) {
   const current = db.prepare("SELECT slug FROM categories WHERE id = ?").get(input.id) as { slug: string } | undefined;
   if (current && isSpecialCategorySlug(current.slug)) {
-    db.prepare("UPDATE categories SET name = ?, parent_category_id = NULL, show_in_menu = ? WHERE id = ?")
-      .run(input.name.trim(), input.showInMenu ? 1 : 0, input.id);
+    db.prepare("UPDATE categories SET name = ?, description = ?, parent_category_id = NULL, show_in_menu = ? WHERE id = ?")
+      .run(input.name.trim(), input.description ?? "", input.showInMenu ? 1 : 0, input.id);
     bumpSyncVersion();
     return;
   }
