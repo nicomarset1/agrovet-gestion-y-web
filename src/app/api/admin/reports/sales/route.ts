@@ -192,7 +192,8 @@ function buildSalesReportPdf(input: {
       y = 720;
       tableHeader();
     }
-    const customerLines = wrapText(`${order.customerName} - ${order.source}`, 38);
+    const customerLabel = /^Caja\b/i.test(order.source) ? "Mostrador" : order.customerName;
+    const customerLines = wrapText(`${customerLabel} - ${order.source}`, 38);
     const statusLines = wrapText(order.status, 18);
     const rowHeight = Math.max(28, 14 + Math.max(customerLines.length, statusLines.length) * 10);
     commands.push(drawRect(margin, y - rowHeight + 8, contentWidth, rowHeight, "1 1 1", "0.895 0.920 0.880"));
