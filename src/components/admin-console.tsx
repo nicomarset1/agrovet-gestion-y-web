@@ -941,7 +941,7 @@ function ProductModal({
           <span>Descripción</span>
           <textarea className="field" defaultValue={product?.description ?? ""} name="description" placeholder="Descripción del producto" required />
         </label>
-        <input name="color" type="hidden" value={product?.color ?? "#2d8d75"} />
+        <input name="color" type="hidden" value={product?.color ?? "#b43645"} />
         <label className="admin-field admin-span-2">
           <span>Foto del producto</span>
           <input
@@ -2001,7 +2001,7 @@ function DashboardCharts({
       if (order.branchId === 1) totals["Sucursal Independencia"] += order.totalCents;
       else if (order.branchId === 2) totals["Sucursal Belgrano"] += order.totalCents;
     }
-    const palette = ["#2d8d75", "#88a96d", "#6b8ed6", "#d9964d"];
+    const palette = ["#b43645", "#d05b55", "#8f4e88", "#c9774a"];
     const entries = Object.entries(totals);
     const total = entries.reduce((sum, [, current]) => sum + current, 0) || 1;
     return entries.map(([name, value], index) => ({ name, value, percent: Math.round((value / total) * 100), color: palette[index % palette.length] }));
@@ -2018,8 +2018,8 @@ function DashboardCharts({
         const end = channelStats.slice(0, index + 1).reduce((sum, prev) => sum + prev.percent, 0);
         return `${item.color} ${start}% ${end}%`;
       }).join(", ")})`
-      : "conic-gradient(#dfe6d9 0% 100%)")
-    : "conic-gradient(#dfe6d9 0% 100%)";
+      : "conic-gradient(#f2e1e0 0% 100%)")
+    : "conic-gradient(#f2e1e0 0% 100%)";
   return (
     <div className="admin-chart-grid">
       <section className="card admin-panel">
@@ -3579,5 +3579,6 @@ export function AdminConsole({
     </div>
   );
 }
+
 
 

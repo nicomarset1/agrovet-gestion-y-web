@@ -1,11 +1,11 @@
-import "server-only";
+﻿import "server-only";
 
 import postgres from "postgres";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
 
 const uncategorizedSubcategorySlug = "sin-subcategoria";
-const uncategorizedSubcategoryName = "Sin subcategoría";
+const uncategorizedSubcategoryName = "Sin subcategorÃ­a";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -26,40 +26,40 @@ const branchSeed = [
 ];
 
 const categorySeed = [
-  { id: 1, slug: "alimentos", name: "Alimentos", description: "Nutrición diaria y alimentos especializados.", showInMenu: false },
+  { id: 1, slug: "alimentos", name: "Alimentos", description: "NutriciÃ³n diaria y alimentos especializados.", showInMenu: false },
   { id: 2, slug: "farmacia", name: "Farmacia", description: "Antiparasitarios, tratamiento y cuidado veterinario.", showInMenu: false },
   { id: 3, slug: "accesorios", name: "Accesorios", description: "Paseo, descanso, comederos y complementos.", showInMenu: false },
   { id: 4, slug: "higiene", name: "Higiene y sanitario", description: "Cuidado, limpieza y productos sanitarios.", showInMenu: false },
-  { id: 5, slug: "perro", name: "Perro", description: "Productos y categorías para perros.", showInMenu: true },
-  { id: 6, slug: "gato", name: "Gato", description: "Productos y categorías para gatos.", showInMenu: true },
+  { id: 5, slug: "perro", name: "Perro", description: "Productos y categorÃ­as para perros.", showInMenu: true },
+  { id: 6, slug: "gato", name: "Gato", description: "Productos y categorÃ­as para gatos.", showInMenu: true },
 ];
 
 const specialCategorySeed = specialCategories.map((category, index) => ({
   id: 1001 + index,
   slug: category.slug,
   name: category.name,
-  description: "Página especial del sitio.",
+  description: "PÃ¡gina especial del sitio.",
 }));
 
 const productSeed = [
-  { id: 1, slug: "royal-canin-mini-adult", name: "Mini Adult", brand: "Royal Canin", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "pequeño", need: "", description: "Alimento seco para perros adultos de talla pequeña.", featured: true, requiresAdvice: false, color: "#f3b52e", imageUrl: "" },
-  { id: 2, slug: "pro-plan-adult-sensitive", name: "Adult Sensitive Skin", brand: "Purina Pro Plan", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "mediano", need: "piel-sensible", description: "Nutrición completa para perros adultos con piel sensible.", featured: true, requiresAdvice: false, color: "#173c68", imageUrl: "" },
+  { id: 1, slug: "royal-canin-mini-adult", name: "Mini Adult", brand: "Royal Canin", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "pequeÃ±o", need: "", description: "Alimento seco para perros adultos de talla pequeÃ±a.", featured: true, requiresAdvice: false, color: "#f3b52e", imageUrl: "" },
+  { id: 2, slug: "pro-plan-adult-sensitive", name: "Adult Sensitive Skin", brand: "Purina Pro Plan", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "mediano", need: "piel-sensible", description: "NutriciÃ³n completa para perros adultos con piel sensible.", featured: true, requiresAdvice: false, color: "#173c68", imageUrl: "" },
   { id: 3, slug: "excellent-gato-adulto", name: "Gato Adulto Pollo y Arroz", brand: "Excellent", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento balanceado completo para gatos adultos.", featured: true, requiresAdvice: false, color: "#da7134", imageUrl: "" },
-  { id: 4, slug: "old-prince-cordero", name: "Cordero y Arroz Adulto", brand: "Old Prince", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "mediano", need: "", description: "Fórmula premium para perros adultos.", featured: false, requiresAdvice: false, color: "#7c432e", imageUrl: "" },
-  { id: 5, slug: "bravecto-perro", name: "Bravecto Comprimido", brand: "MSD", categoryId: 2, species: "perro", subcategorySlug: "perro-parasitos", subcategoryName: "Perro / Antiparasitarios", lifeStage: "adulto", size: "todos", need: "antiparasitario", description: "Antiparasitario externo. Administrar bajo indicación profesional.", featured: true, requiresAdvice: true, color: "#e26146", imageUrl: "" },
-  { id: 6, slug: "pipeta-bravecto-gato", name: "Pipeta Bravecto Gato", brand: "MSD", categoryId: 2, species: "gato", subcategorySlug: "gato-parasitos", subcategoryName: "Gato / Antiparasitarios", lifeStage: "adulto", size: "todos", need: "antiparasitario", description: "Pipeta antipulgas para gatos según rango de peso.", featured: false, requiresAdvice: true, color: "#7452ac", imageUrl: "" },
-  { id: 7, slug: "pretal-confort", name: "Pretal Confort Regulable", brand: "Agrovet Select", categoryId: 3, species: "perro", subcategorySlug: "paseo", subcategoryName: "Paseo y seguridad", lifeStage: "", size: "todos", need: "", description: "Pretal acolchado con ajuste seguro y argolla reforzada.", featured: true, requiresAdvice: false, color: "#2d8d75", imageUrl: "" },
+  { id: 4, slug: "old-prince-cordero", name: "Cordero y Arroz Adulto", brand: "Old Prince", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "mediano", need: "", description: "FÃ³rmula premium para perros adultos.", featured: false, requiresAdvice: false, color: "#7c432e", imageUrl: "" },
+  { id: 5, slug: "bravecto-perro", name: "Bravecto Comprimido", brand: "MSD", categoryId: 2, species: "perro", subcategorySlug: "perro-parasitos", subcategoryName: "Perro / Antiparasitarios", lifeStage: "adulto", size: "todos", need: "antiparasitario", description: "Antiparasitario externo. Administrar bajo indicaciÃ³n profesional.", featured: true, requiresAdvice: true, color: "#e26146", imageUrl: "" },
+  { id: 6, slug: "pipeta-bravecto-gato", name: "Pipeta Bravecto Gato", brand: "MSD", categoryId: 2, species: "gato", subcategorySlug: "gato-parasitos", subcategoryName: "Gato / Antiparasitarios", lifeStage: "adulto", size: "todos", need: "antiparasitario", description: "Pipeta antipulgas para gatos segÃºn rango de peso.", featured: false, requiresAdvice: true, color: "#7452ac", imageUrl: "" },
+  { id: 7, slug: "pretal-confort", name: "Pretal Confort Regulable", brand: "Agrovet Select", categoryId: 3, species: "perro", subcategorySlug: "paseo", subcategoryName: "Paseo y seguridad", lifeStage: "", size: "todos", need: "", description: "Pretal acolchado con ajuste seguro y argolla reforzada.", featured: true, requiresAdvice: false, color: "#b43645", imageUrl: "" },
   { id: 8, slug: "rascador-madera", name: "Rascador Torre Compacta", brand: "Agrovet Select", categoryId: 3, species: "gato", subcategorySlug: "gato-hogar", subcategoryName: "Gato / Descanso y juego", lifeStage: "", size: "todos", need: "", description: "Rascador de sisal con plataforma de descanso.", featured: false, requiresAdvice: false, color: "#c28253", imageUrl: "" },
   { id: 9, slug: "comedero-acero", name: "Comedero Acero Inoxidable", brand: "Trixie", categoryId: 3, species: "perro-gato", subcategorySlug: "comedores", subcategoryName: "Comederos y bebederos", lifeStage: "", size: "todos", need: "", description: "Base antideslizante y recipiente lavable.", featured: false, requiresAdvice: false, color: "#71889d", imageUrl: "" },
-  { id: 10, slug: "piedras-sanitarias", name: "Piedras Sanitarias Premium", brand: "Absorsol", categoryId: 4, species: "gato", subcategorySlug: "gato-sanitario", subcategoryName: "Gato / Sanitario", lifeStage: "", size: "todos", need: "", description: "Alta absorción y control de olores.", featured: true, requiresAdvice: false, color: "#53a397", imageUrl: "" },
+  { id: 10, slug: "piedras-sanitarias", name: "Piedras Sanitarias Premium", brand: "Absorsol", categoryId: 4, species: "gato", subcategorySlug: "gato-sanitario", subcategoryName: "Gato / Sanitario", lifeStage: "", size: "todos", need: "", description: "Alta absorciÃ³n y control de olores.", featured: true, requiresAdvice: false, color: "#53a397", imageUrl: "" },
   { id: 11, slug: "shampoo-hipoalergenico", name: "Shampoo Hipoalergenico", brand: "Osspret", categoryId: 4, species: "perro-gato", subcategorySlug: "higiene", subcategoryName: "Higiene y cuidado", lifeStage: "", size: "todos", need: "piel-sensible", description: "Limpieza suave para pieles sensibles.", featured: false, requiresAdvice: false, color: "#3a92b1", imageUrl: "" },
-  { id: 12, slug: "vitalcan-balanced-puppy", name: "Balanced Puppy", brand: "Vitalcan", categoryId: 1, species: "perro", subcategorySlug: "cachorros", subcategoryName: "Perro / Cachorros", lifeStage: "cachorro", size: "mediano", need: "", description: "Nutrición para cachorros en etapa de crecimiento.", featured: false, requiresAdvice: false, color: "#6f9c3f", imageUrl: "" },
-  { id: 13, slug: "eukanuba-cat-adult", name: "Cat Adult", brand: "Eukanuba", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "Nutrición diaria para gatos adultos con alta palatabilidad.", featured: true, requiresAdvice: false, color: "#6b4e8b", imageUrl: "" },
+  { id: 12, slug: "vitalcan-balanced-puppy", name: "Balanced Puppy", brand: "Vitalcan", categoryId: 1, species: "perro", subcategorySlug: "cachorros", subcategoryName: "Perro / Cachorros", lifeStage: "cachorro", size: "mediano", need: "", description: "NutriciÃ³n para cachorros en etapa de crecimiento.", featured: false, requiresAdvice: false, color: "#6f9c3f", imageUrl: "" },
+  { id: 13, slug: "eukanuba-cat-adult", name: "Cat Adult", brand: "Eukanuba", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "NutriciÃ³n diaria para gatos adultos con alta palatabilidad.", featured: true, requiresAdvice: false, color: "#6b4e8b", imageUrl: "" },
   { id: 14, slug: "eukanuba-cat-kitten", name: "Cat Kitten", brand: "Eukanuba", categoryId: 1, species: "gato", subcategorySlug: "gato-cachorros", subcategoryName: "Gato / Cachorros", lifeStage: "cachorro", size: "todos", need: "", description: "Alimento completo para gatitos en crecimiento.", featured: false, requiresAdvice: false, color: "#8c6bb0", imageUrl: "" },
   { id: 15, slug: "vitalcan-balanced-cat-adult", name: "Balanced Cat Adult", brand: "Vitalcan", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento seco para gatos adultos con buen equilibrio nutricional.", featured: true, requiresAdvice: false, color: "#a34853", imageUrl: "" },
   { id: 16, slug: "cat-it-creamy-multipack", name: "Cat It Creamy Multipack", brand: "Catit", categoryId: 1, species: "gato", subcategorySlug: "gato-snacks", subcategoryName: "Gato / Golosinas y snacks", lifeStage: "adulto", size: "todos", need: "", description: "Snack cremoso para premiar y complementar la dieta.", featured: false, requiresAdvice: false, color: "#d68d55", imageUrl: "" },
-  { id: 17, slug: "royal-canin-feline-urinary", name: "Feline Urinary S/O", brand: "Royal Canin", categoryId: 1, species: "gato", subcategorySlug: "gato-terapeuticos", subcategoryName: "Gato / Terapéuticos", lifeStage: "adulto", size: "todos", need: "urinario", description: "Formula veterinaria para soporte urinario felino.", featured: true, requiresAdvice: true, color: "#4f77a8", imageUrl: "" },
-  { id: 18, slug: "lata-vitalcan-cat-adult-salsa", name: "Cat Adult Carne en Salsa", brand: "Vitalcan", categoryId: 1, species: "gato", subcategorySlug: "gato-humedos", subcategoryName: "Gato / Alimentos húmedos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento humedo completo para gatos adultos.", featured: false, requiresAdvice: false, color: "#9e5f40", imageUrl: "" },
+  { id: 17, slug: "royal-canin-feline-urinary", name: "Feline Urinary S/O", brand: "Royal Canin", categoryId: 1, species: "gato", subcategorySlug: "gato-terapeuticos", subcategoryName: "Gato / TerapÃ©uticos", lifeStage: "adulto", size: "todos", need: "urinario", description: "Formula veterinaria para soporte urinario felino.", featured: true, requiresAdvice: true, color: "#4f77a8", imageUrl: "" },
+  { id: 18, slug: "lata-vitalcan-cat-adult-salsa", name: "Cat Adult Carne en Salsa", brand: "Vitalcan", categoryId: 1, species: "gato", subcategorySlug: "gato-humedos", subcategoryName: "Gato / Alimentos hÃºmedos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento humedo completo para gatos adultos.", featured: false, requiresAdvice: false, color: "#9e5f40", imageUrl: "" },
 ];
 
 const variantSeed = [
@@ -170,7 +170,7 @@ async function ensureSchema() {
         delivery_distance_km DOUBLE PRECISION,
         branch_id INTEGER NOT NULL REFERENCES branches(id),
         total_cents INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Pendiente de confirmación',
+        status TEXT NOT NULL DEFAULT 'Pendiente de confirmaciÃ³n',
         source TEXT NOT NULL DEFAULT 'Tienda online',
         payment_method TEXT NOT NULL DEFAULT '',
         paid_cents INTEGER NOT NULL DEFAULT 0,
@@ -384,7 +384,7 @@ const specialCategoryOrderSql = specialCategories
   .join(" ");
 
 const baseSelect = `
-  SELECT p.id, p.slug, p.name, p.brand, COALESCE(c.name, 'Sin categoría') AS category, COALESCE(c.slug, '') AS "categorySlug",
+  SELECT p.id, p.slug, p.name, p.brand, COALESCE(c.name, 'Sin categorÃ­a') AS category, COALESCE(c.slug, '') AS "categorySlug",
     COALESCE(NULLIF(p.subcategory_name, ''), '${uncategorizedSubcategoryName}') AS subcategory,
     COALESCE(NULLIF(p.subcategory_slug, ''), '${uncategorizedSubcategorySlug}') AS "subcategorySlug",
     p.species, p.life_stage AS "lifeStage", p.size, p.need, p.description, p.featured,
@@ -502,7 +502,7 @@ export async function getSubcategories() {
     LEFT JOIN categories c ON c.id = s.category_id
     LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at IS NULL
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
-    ORDER BY COALESCE(c.name, 'Sin categoría'), s.name
+    ORDER BY COALESCE(c.name, 'Sin categorÃ­a'), s.name
   ` as unknown as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number }[];
 }
 
@@ -853,18 +853,18 @@ async function uniqueVariantSku(db: Db, baseSku: string, taken: Set<string>, exc
 async function normalizeCategoryPlacement(db: Db, input: { id?: number; showInMenu?: boolean; parentCategoryId?: number | null }) {
   if (input.showInMenu) return null;
   if (!input.parentCategoryId) return null;
-  if (input.id && input.parentCategoryId === input.id) throw new Error("Una categoría no puede depender de sí misma.");
+  if (input.id && input.parentCategoryId === input.id) throw new Error("Una categorÃ­a no puede depender de sÃ­ misma.");
   const [parent] = await db`SELECT id, slug FROM categories WHERE id = ${input.parentCategoryId} AND show_in_menu = TRUE AND parent_category_id IS NULL` as unknown as { id: number; slug: string }[];
-  if (!parent) throw new Error("Elegí una categoría principal válida.");
-  if (isSpecialCategorySlug(parent.slug)) throw new Error("Las categorías fijas no aceptan categorías internas.");
+  if (!parent) throw new Error("ElegÃ­ una categorÃ­a principal vÃ¡lida.");
+  if (isSpecialCategorySlug(parent.slug)) throw new Error("Las categorÃ­as fijas no aceptan categorÃ­as internas.");
   return input.parentCategoryId;
 }
 
 async function assertProductCategory(db: Db, categoryId: number | null) {
   if (!categoryId) return;
   const [category] = await db`SELECT slug FROM categories WHERE id = ${categoryId}` as unknown as { slug: string }[];
-  if (!category) throw new Error("Elegí una categoría válida.");
-  if (isSpecialCategorySlug(category.slug)) throw new Error("Las páginas fijas no pueden usarse como categoría de producto.");
+  if (!category) throw new Error("ElegÃ­ una categorÃ­a vÃ¡lida.");
+  if (isSpecialCategorySlug(category.slug)) throw new Error("Las pÃ¡ginas fijas no pueden usarse como categorÃ­a de producto.");
 }
 
 async function resolveProductCategory(db: Db, input: { categoryId: number | null; subcategorySlug: string }) {
@@ -874,7 +874,7 @@ async function resolveProductCategory(db: Db, input: { categoryId: number | null
     return { categoryId: input.categoryId, subcategorySlug: uncategorizedSubcategorySlug, subcategoryName: uncategorizedSubcategoryName };
   }
   const subcategory = await getSubcategoryBySlug(input.subcategorySlug, db);
-  if (!subcategory) throw new Error("Subcategoría inválida.");
+  if (!subcategory) throw new Error("SubcategorÃ­a invÃ¡lida.");
   await assertProductCategory(db, subcategory.categoryId);
   return { categoryId: subcategory.categoryId, subcategorySlug: subcategory.slug, subcategoryName: subcategory.name };
 }
@@ -911,7 +911,7 @@ export async function deleteCategory(id: number) {
   await sql.begin(async (tx) => {
     const [category] = await tx`SELECT id, slug FROM categories WHERE id = ${id}` as unknown as { id: number; slug: string }[];
     if (!category) return;
-    if (isSpecialCategorySlug(category.slug)) throw new Error("Esta categoría fija no se puede eliminar.");
+    if (isSpecialCategorySlug(category.slug)) throw new Error("Esta categorÃ­a fija no se puede eliminar.");
     const directSubcategories = await tx`SELECT slug FROM subcategories WHERE category_id = ${id}` as unknown as { slug: string }[];
     await tx`UPDATE categories SET parent_category_id = NULL WHERE parent_category_id = ${id}`;
     await tx`UPDATE subcategories SET category_id = NULL WHERE category_id = ${id}`;
@@ -949,7 +949,7 @@ export async function createSubcategory(input: { categoryId: number; name: strin
   await ensureSchema();
   await sql.begin(async (tx) => {
     const [category] = await tx`SELECT slug FROM categories WHERE id = ${input.categoryId}` as unknown as { slug: string }[];
-    if (category && isSpecialCategorySlug(category.slug)) throw new Error("Las categorías fijas no aceptan subcategorías.");
+    if (category && isSpecialCategorySlug(category.slug)) throw new Error("Las categorÃ­as fijas no aceptan subcategorÃ­as.");
     const slug = await uniqueSlug(tx, "subcategories", slugify(input.name));
     await tx`INSERT INTO subcategories (category_id, slug, name, description) VALUES (${input.categoryId}, ${slug}, ${input.name.trim()}, ${input.description ?? ""})`;
     await bumpSyncVersion(tx);
@@ -960,7 +960,7 @@ export async function updateSubcategory(input: { oldSlug: string; categoryId: nu
   await ensureSchema();
   await sql.begin(async (tx) => {
     const [category] = await tx`SELECT slug FROM categories WHERE id = ${input.categoryId}` as unknown as { slug: string }[];
-    if (category && isSpecialCategorySlug(category.slug)) throw new Error("Las categorías fijas no aceptan subcategorías.");
+    if (category && isSpecialCategorySlug(category.slug)) throw new Error("Las categorÃ­as fijas no aceptan subcategorÃ­as.");
     const nextSlug = await uniqueSlug(tx, "subcategories", slugify(input.name));
     await tx`UPDATE subcategories SET category_id = ${input.categoryId}, slug = ${nextSlug}, name = ${input.name.trim()}, description = ${input.description ?? ""} WHERE slug = ${input.oldSlug}`;
     await tx`UPDATE products SET category_id = ${input.categoryId}, subcategory_slug = ${nextSlug}, subcategory_name = ${input.name.trim()} WHERE subcategory_slug = ${input.oldSlug}`;
@@ -1123,7 +1123,7 @@ async function resolveDeliveryAllocationPlan(items: CartItemPayload[], db: Db) {
       allocations.push({ branchId: branch.branchId, quantity });
       remaining -= quantity;
     }
-    if (remaining > 0) throw new Error("No hay stock suficiente para armar el envío.");
+    if (remaining > 0) throw new Error("No hay stock suficiente para armar el envÃ­o.");
     variantAllocations.push({ variantId: item.variantId, allocations });
   }
   const branchTotals = new Map<number, number>();
@@ -1147,17 +1147,17 @@ export async function createOrder(input: {
   return sql.begin(async (tx) => {
     const deliveryPlan = input.fulfillment === "envio" ? await resolveDeliveryAllocationPlan(input.items, tx) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
-    if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new Error("Sucursal inválida.");
+    if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new Error("Sucursal invÃ¡lida.");
     const source = (input.source ?? "Tienda online").trim() || "Tienda online";
     const isCashSale = source.toLowerCase().startsWith("caja");
-    const status = isCashSale ? "Cerrado" : input.fulfillment === "envio" ? "Pendiente de envío" : "Pendiente de retiro";
+    const status = isCashSale ? "Cerrado" : input.fulfillment === "envio" ? "Pendiente de envÃ­o" : "Pendiente de retiro";
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const [row] = await tx`SELECT price_cents AS "priceCents" FROM variants WHERE id = ${item.variantId}` as unknown as { priceCents?: number }[];
-      if (!row || item.quantity < 1) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+      if (!row || item.quantity < 1) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
-      if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+      if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");
       totalCents += Number(row.priceCents) * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: Number(row.priceCents), allocations });
     }
@@ -1195,9 +1195,9 @@ export async function createWholesaleOrder(input: {
       FROM wholesale_clients
       WHERE id = ${input.clientId}
     ` as unknown as Pick<WholesaleClient, "id" | "businessName" | "contactName" | "phone" | "email" | "address">[];
-    if (!client) throw new Error("Cliente inválido.");
-    if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal inválida.");
-    if (!input.items.length) throw new Error("Agregá productos al pedido.");
+    if (!client) throw new Error("Cliente invÃ¡lido.");
+    if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal invÃ¡lida.");
+    if (!input.items.length) throw new Error("AgregÃ¡ productos al pedido.");
     const merged = new Map<string, { variantId: number; branchId: number; quantity: number }>();
     for (const item of input.items) {
       if (item.quantity < 1) throw new Error("La cantidad debe ser mayor a cero.");
@@ -1215,7 +1215,7 @@ export async function createWholesaleOrder(input: {
         JOIN inventory i ON i.variant_id = v.id AND i.branch_id = ${item.branchId}
         WHERE v.id = ${item.variantId}
       ` as unknown as { priceCents: number; stock: number }[];
-      if (!row) throw new Error("Producto o sucursal inválidos.");
+      if (!row) throw new Error("Producto o sucursal invÃ¡lidos.");
       if (Number(row.stock) < item.quantity) throw new Error("No hay stock suficiente para el pedido mayorista.");
       const line = linesByVariant.get(item.variantId) ?? { variantId: item.variantId, quantity: 0, unitPrice: Number(row.priceCents), allocations: [] };
       line.quantity += item.quantity;
@@ -1250,8 +1250,8 @@ export async function updateOrderPayment(input: { id: number; paidCents: number;
   await ensureSchema();
   await sql.begin(async (tx) => {
     const [order] = await tx`SELECT id, total_cents AS "totalCents", source, payment_method AS "paymentMethod" FROM orders WHERE id = ${input.id}` as unknown as { id: number; totalCents: number; source: string; paymentMethod: string }[];
-    if (!order) throw new Error("Pedido inválido.");
-    if (!/^Mayorista\b/i.test(order.source)) throw new Error("Solo se cierran pagos mayoristas desde esta acción.");
+    if (!order) throw new Error("Pedido invÃ¡lido.");
+    if (!/^Mayorista\b/i.test(order.source)) throw new Error("Solo se cierran pagos mayoristas desde esta acciÃ³n.");
     const paidCents = Math.min(Number(order.totalCents), Math.max(0, Math.round(input.paidCents)));
     await tx`UPDATE orders SET paid_cents = ${paidCents}, payment_method = ${input.paymentMethod?.trim() || order.paymentMethod || "Cuenta corriente"}, status = ${paidCents >= Number(order.totalCents) ? "Cerrado mayorista" : "Cuenta corriente"} WHERE id = ${input.id}`;
     await bumpSyncVersion(tx);
@@ -1288,10 +1288,10 @@ export async function updateOrder(input: {
   await ensureSchema();
   await sql.begin(async (tx) => {
     const [order] = await tx`SELECT id, branch_id AS "branchId", status, payment_method AS "paymentMethod", source FROM orders WHERE id = ${input.id}` as unknown as { id: number; branchId: number; status: string; paymentMethod: string; source: string }[];
-    if (!order) throw new Error("Pedido inválido.");
+    if (!order) throw new Error("Pedido invÃ¡lido.");
     const isCashSale = /^Caja\b/i.test(order.source);
     if (isCashSale && order.branchId !== input.branchId) throw new Error("No se puede cambiar la sucursal de una venta de caja desde este panel.");
-    if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal inválida.");
+    if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal invÃ¡lida.");
     const currentItems = await tx`
       SELECT variant_id AS "variantId", quantity, unit_price_cents AS "unitPriceCents"
       FROM order_items
@@ -1301,7 +1301,7 @@ export async function updateOrder(input: {
     if (!currentItems.length) throw new Error("El pedido no tiene productos.");
     const currentMap = new Map(currentItems.map((item) => [item.variantId, item]));
     const nextItems = input.items.map((item) => ({ variantId: item.variantId, quantity: Math.max(0, Math.round(item.quantity)) }));
-    if (nextItems.length !== currentItems.length) throw new Error("No se puede agregar ni quitar productos desde esta edición.");
+    if (nextItems.length !== currentItems.length) throw new Error("No se puede agregar ni quitar productos desde esta ediciÃ³n.");
     for (const item of nextItems) {
       if (!currentMap.has(item.variantId)) throw new Error("No se puede cambiar la lista de productos del pedido.");
       if (item.quantity < 1) throw new Error("La cantidad de unidades debe ser al menos 1.");
@@ -1321,7 +1321,7 @@ export async function updateOrder(input: {
       for (const item of input.allocations) {
         const totalAllocated = item.allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
         const expected = nextItems.find((nextItem) => nextItem.variantId === item.variantId)?.quantity ?? 0;
-        if (totalAllocated !== expected) throw new Error("La distribución del pedido no coincide con la cantidad total de unidades.");
+        if (totalAllocated !== expected) throw new Error("La distribuciÃ³n del pedido no coincide con la cantidad total de unidades.");
         nextAllocationMap.set(item.variantId, item.allocations);
       }
     }
@@ -1449,3 +1449,4 @@ export async function recordLoginAttempt(identifier: string, success: boolean) {
       updated_at = CURRENT_TIMESTAMP
   `;
 }
+
