@@ -48,7 +48,7 @@ function escapePdf(value: string) {
 
 type PdfCommand = string;
 
-function drawText(text: string, x: number, y: number, size = 10, font: "regular" | "bold" = "regular", color = "0.086 0.243 0.204"): PdfCommand {
+function drawText(text: string, x: number, y: number, size = 10, font: "regular" | "bold" = "regular", color = "0.329 0.086 0.114"): PdfCommand {
   return `BT ${color} rg /${font === "bold" ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdf(text)}) Tj ET`;
 }
 
@@ -124,17 +124,17 @@ function buildSalesReportPdf(input: {
   const pageWidth = 595;
   const contentWidth = pageWidth - margin * 2;
   const makeBasePage = (pageNumber: number) => [
-    drawRect(0, 0, 595, 842, "0.965 0.976 0.945"),
-    drawRect(0, 760, 595, 82, "0.086 0.243 0.204"),
-    drawText("AGROVET", margin, 802, 22, "bold", "0.810 0.941 0.310"),
+    drawRect(0, 0, 595, 842, "0.995 0.966 0.966"),
+    drawRect(0, 760, 595, 82, "0.541 0.133 0.169"),
+    drawText("AGROVET", margin, 802, 22, "bold", "1 0.90 0.92"),
     drawText("Registro profesional de ventas", margin, 780, 13, "regular", "1 1 1"),
-    drawText(`Emitido: ${formatDateTime(new Date().toISOString())}`, 400, 806, 9, "regular", "0.862 0.933 0.894"),
+    drawText(`Emitido: ${formatDateTime(new Date().toISOString())}`, 400, 806, 9, "regular", "0.965 0.846 0.850"),
     drawText(`Pagina ${pageNumber}`, 505, 28, 9),
   ];
   const addSummaryCard = (commands: string[], x: number, y: number, width: number, title: string, value: string, note: string) => {
-    commands.push(drawRect(x, y, width, 82, "1 1 1", "0.830 0.890 0.800"));
+    commands.push(drawRect(x, y, width, 82, "1 1 1", "0.908 0.823 0.823"));
     commands.push(drawText(title.toUpperCase(), x + 16, y + 56, 8, "bold"));
-    commands.push(drawText(value, x + 16, y + 30, 18, "bold", "0.086 0.243 0.204"));
+    commands.push(drawText(value, x + 16, y + 30, 18, "bold", "0.541 0.133 0.169"));
     commands.push(drawText(note, x + 16, y + 14, 8));
   };
 
@@ -153,7 +153,7 @@ function buildSalesReportPdf(input: {
   for (const [name, amount] of branchEntries.slice(0, 6)) {
     commands.push(drawText(name, margin, y, 9));
     commands.push(drawText(formatCurrency(amount), 455, y, 9, "bold"));
-    commands.push(drawRect(margin, y - 8, contentWidth, 0.5, "0.830 0.890 0.800"));
+    commands.push(drawRect(margin, y - 8, contentWidth, 0.5, "0.908 0.823 0.823"));
     y -= 18;
   }
 
@@ -164,14 +164,14 @@ function buildSalesReportPdf(input: {
   for (const [name, amount] of paymentEntries.slice(0, 6)) {
     commands.push(drawText(name, margin, y, 9));
     commands.push(drawText(formatCurrency(amount), 455, y, 9, "bold"));
-    commands.push(drawRect(margin, y - 8, contentWidth, 0.5, "0.830 0.890 0.800"));
+    commands.push(drawRect(margin, y - 8, contentWidth, 0.5, "0.908 0.823 0.823"));
     y -= 18;
   }
 
   commands.push(drawText("Detalle de facturacion", margin, y - 18, 13, "bold"));
   y -= 44;
   const tableHeader = () => {
-    commands.push(drawRect(margin, y - 6, contentWidth, 24, "0.898 0.949 0.875"));
+    commands.push(drawRect(margin, y - 6, contentWidth, 24, "0.980 0.902 0.902"));
     commands.push(drawText("Fecha", margin + 10, y + 2, 8, "bold"));
     commands.push(drawText("Codigo", margin + 82, y + 2, 8, "bold"));
     commands.push(drawText("Cliente / canal", margin + 154, y + 2, 8, "bold"));
@@ -196,12 +196,12 @@ function buildSalesReportPdf(input: {
     const customerLines = wrapText(`${customerLabel} - ${order.source}`, 38);
     const statusLines = wrapText(order.status, 18);
     const rowHeight = Math.max(28, 14 + Math.max(customerLines.length, statusLines.length) * 10);
-    commands.push(drawRect(margin, y - rowHeight + 8, contentWidth, rowHeight, "1 1 1", "0.895 0.920 0.880"));
+    commands.push(drawRect(margin, y - rowHeight + 8, contentWidth, rowHeight, "1 1 1", "0.908 0.823 0.823"));
     commands.push(drawText(formatDateTime(order.createdAt), margin + 10, y - 6, 8));
     commands.push(drawText(order.code, margin + 82, y - 6, 8, "bold"));
     customerLines.slice(0, 2).forEach((line, index) => commands.push(drawText(line, margin + 154, y - 6 - index * 10, 8)));
     statusLines.slice(0, 2).forEach((line, index) => commands.push(drawText(line, margin + 365, y - 6 - index * 10, 8)));
-    commands.push(drawText(formatCurrency(input.amountForOrder(order)), margin + 455, y - 6, 9, "bold", "0.086 0.243 0.204"));
+    commands.push(drawText(formatCurrency(input.amountForOrder(order)), margin + 455, y - 6, 9, "bold", "0.541 0.133 0.169"));
     y -= rowHeight + 4;
   }
   pages.push(commands);
