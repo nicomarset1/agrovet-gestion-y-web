@@ -205,7 +205,9 @@ type DashboardDetail =
   | { type: "branch-stock" };
 
 function toDate(value: string) {
-  return new Date(`${value.replace(" ", "T")}Z`);
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized)) return new Date(normalized);
+  return new Date(`${normalized}Z`);
 }
 
 function formatAdminDateTime(value: string | Date, options: Intl.DateTimeFormatOptions) {
