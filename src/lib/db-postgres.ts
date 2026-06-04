@@ -850,6 +850,24 @@ async function uniqueVariantSku(db: Db, baseSku: string, taken: Set<string>, exc
   }
 }
 
+async function uniqueVariantBarcode(db: Db, baseBarcode: string, taken: Set<string>, excludeId?: number) {
+  const normalized = baseBarcode.trim();
+  if (!normalized) return "";
+  let next = normalized;
+  let suffix = 1;
+  while (true) {
+    const rows = excludeId
+      ? await db`SELECT id FROM variants WHERE barcode = ${next} AND id != ${excludeId}`
+      : await db`SELECT id FROM variants WHERE barcode = ${next}`;
+    if (!taken.has(next) && !rows.length) {
+      taken.add(next);
+      return next;
+    }
+    next = `${normalized}-${suffix}`;
+    suffix += 1;
+  }
+}
+
 async function normalizeCategoryPlacement(db: Db, input: { id?: number; showInMenu?: boolean; parentCategoryId?: number | null }) {
   if (input.showInMenu) return null;
   if (!input.parentCategoryId) return null;
@@ -1015,9 +1033,10 @@ export async function updateProduct(input: {
       WHERE id = ${input.id}
     `;
     const takenSkus = new Set<string>();
+    const takenBarcodes = new Set<string>();
     for (const variant of input.variants) {
       const nextSku = await uniqueVariantSku(tx, variant.sku, takenSkus, variant.id);
-      const nextBarcode = variant.barcode.trim() || nextSku;
+      const nextBarcode = await uniqueVariantBarcode(tx, variant.barcode.trim() || nextSku, takenBarcodes, variant.id);
       let variantId = variant.id;
       if (variantId) {
         await tx`UPDATE variants SET label = ${variant.label.trim()}, sku = ${nextSku}, barcode = ${nextBarcode}, price_cents = ${variant.priceCents} WHERE id = ${variantId}`;
@@ -1070,9 +1089,10 @@ export async function createProduct(input: {
     `;
     const productId = Number(inserted.id);
     const takenSkus = new Set<string>();
+    const takenBarcodes = new Set<string>();
     for (const variant of input.variants) {
       const nextSku = await uniqueVariantSku(tx, variant.sku, takenSkus);
-      const nextBarcode = variant.barcode.trim() || nextSku;
+      const nextBarcode = await uniqueVariantBarcode(tx, variant.barcode.trim() || nextSku, takenBarcodes);
       const [insertedVariant] = await tx`INSERT INTO variants (product_id, label, sku, barcode, price_cents) VALUES (${productId}, ${variant.label.trim()}, ${nextSku}, ${nextBarcode}, ${variant.priceCents}) RETURNING id`;
       const variantId = Number(insertedVariant.id);
       for (const stock of variant.stockByBranch) {

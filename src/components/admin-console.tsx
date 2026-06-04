@@ -1019,7 +1019,7 @@ function ProductModal({
                 value={variant.sku}
                 onChange={(event) => {
                   const value = event.target.value;
-                  setVariantRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, sku: value, barcode: row.barcode.trim() ? row.barcode : value } : row)));
+                  setVariantRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, sku: value } : row)));
                 }}
               />
             </label>

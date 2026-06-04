@@ -333,7 +333,7 @@ function readVariantRows(formData: FormData) {
     id: ids[index] ? Number(ids[index]) : undefined,
     label: labels[index],
     sku: skus[index],
-    barcode: barcodes[index] || skus[index],
+    barcode: barcodes[index] || "",
     price: prices[index],
     stock1: stock1s[index],
     stock2: stock2s[index],

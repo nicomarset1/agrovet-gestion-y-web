@@ -938,6 +938,26 @@ function uniqueVariantSku(baseSku: string, taken: Set<string>, excludeId?: numbe
   }
 }
 
+function uniqueVariantBarcode(baseBarcode: string, taken: Set<string>, excludeId?: number) {
+  const normalized = baseBarcode.trim();
+  if (!normalized) return "";
+  let next = normalized;
+  let suffix = 1;
+  while (true) {
+    const existsInForm = taken.has(next);
+    const query = excludeId
+      ? db.prepare("SELECT id FROM variants WHERE barcode = ? AND id != ?")
+      : db.prepare("SELECT id FROM variants WHERE barcode = ?");
+    const row = excludeId ? query.get(next, excludeId) : query.get(next);
+    if (!existsInForm && !row) {
+      taken.add(next);
+      return next;
+    }
+    next = `${normalized}-${suffix}`;
+    suffix += 1;
+  }
+}
+
 function normalizeCategoryPlacement(input: { id?: number; showInMenu?: boolean; parentCategoryId?: number | null }) {
   if (input.showInMenu) return null;
   if (!input.parentCategoryId) return null;
@@ -1139,9 +1159,10 @@ export function updateProduct(input: {
     const updateVariant = db.prepare("UPDATE variants SET label = ?, sku = ?, barcode = ?, price_cents = ? WHERE id = ?");
     const insertInventory = db.prepare("INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (?, ?, ?) ON CONFLICT(variant_id, branch_id) DO UPDATE SET quantity = excluded.quantity, updated_at = CURRENT_TIMESTAMP");
     const takenSkus = new Set<string>();
+    const takenBarcodes = new Set<string>();
     for (const variant of input.variants) {
       const nextSku = uniqueVariantSku(variant.sku, takenSkus, variant.id);
-      const nextBarcode = variant.barcode.trim() || nextSku;
+      const nextBarcode = uniqueVariantBarcode(variant.barcode.trim() || nextSku, takenBarcodes, variant.id);
       const variantId = variant.id ?? Number(insertVariant.run(input.id, variant.label.trim(), nextSku, nextBarcode, variant.priceCents).lastInsertRowid);
       if (variant.id) {
         updateVariant.run(variant.label.trim(), nextSku, nextBarcode, variant.priceCents, variant.id);
@@ -1201,9 +1222,10 @@ export function createProduct(input: {
     const insertVariant = db.prepare("INSERT INTO variants (product_id, label, sku, barcode, price_cents) VALUES (?, ?, ?, ?, ?)");
     const insertInventory = db.prepare("INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (?, ?, ?)");
     const takenSkus = new Set<string>();
+    const takenBarcodes = new Set<string>();
     for (const variant of input.variants) {
       const nextSku = uniqueVariantSku(variant.sku, takenSkus);
-      const nextBarcode = variant.barcode.trim() || nextSku;
+      const nextBarcode = uniqueVariantBarcode(variant.barcode.trim() || nextSku, takenBarcodes);
       const insertedVariant = insertVariant.run(productId, variant.label.trim(), nextSku, nextBarcode, variant.priceCents);
       const variantId = Number(insertedVariant.lastInsertRowid);
       for (const stock of variant.stockByBranch) {
