@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { CatalogFilters, CartItemPayload, WholesaleClient } from "./types";
+import type { CatalogFilters, CartItemPayload, ReviewStatus, WholesaleClient } from "./types";
 
 const hasPostgres = Boolean(process.env.DATABASE_URL);
 
@@ -165,6 +165,26 @@ export async function updateOrder(input: Parameters<SqliteDriver["updateOrder"]>
 
 export async function deleteOrder(id: number) {
   return (await getDriver()).deleteOrder(id);
+}
+
+export async function createReview(input: { productId: number; authorName: string; rating: number; body: string }) {
+  return (await getDriver()).createReview(input);
+}
+
+export async function getPublishedReviews(productId: number) {
+  return (await getDriver()).getPublishedReviews(productId);
+}
+
+export async function getAdminReviews() {
+  return (await getDriver()).getAdminReviews();
+}
+
+export async function setReviewStatus(id: number, status: ReviewStatus) {
+  return (await getDriver()).setReviewStatus(id, status);
+}
+
+export async function deleteReview(id: number) {
+  return (await getDriver()).deleteReview(id);
 }
 
 export async function getLoginRateLimit(identifier: string) {

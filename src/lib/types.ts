@@ -127,6 +127,28 @@ export type OrderRecord = {
   items: OrderItemRecord[];
 };
 
+export type ReviewStatus = "pending" | "published" | "hidden";
+
+export type ProductReview = {
+  id: number;
+  productId: number;
+  authorName: string;
+  rating: number;
+  body: string;
+  status: ReviewStatus;
+  createdAt: string;
+};
+
+export type ReviewSummary = {
+  count: number;
+  average: number;
+};
+
+export type AdminReview = ProductReview & {
+  productName: string;
+  productSlug: string;
+};
+
 export type WholesaleClient = {
   id: number;
   businessName: string;

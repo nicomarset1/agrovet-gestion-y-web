@@ -12,6 +12,7 @@ import {
   PackagePlus,
   Pencil,
   Search,
+  Star,
   Truck,
   Trash2,
   Users,
@@ -3000,6 +3001,7 @@ export function AdminConsole({
     { id: "clientes", href: sectionHref("clientes"), label: "Clientes", icon: Users },
     { id: "ventas", href: sectionHref("ventas"), label: "Ventas", icon: BarChart3 },
     { id: "ventas-web", href: sectionHref("ventas-web"), label: "Ventas web", icon: Truck },
+    { id: "resenas", href: "/admin/resenas", label: "Reseñas", icon: Star },
   ] as const;
 
   const headAction =

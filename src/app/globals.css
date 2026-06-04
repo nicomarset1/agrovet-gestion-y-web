@@ -2827,3 +2827,30 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   }
 }
 
+/* ===== Reseñas de productos ===== */
+.product-reviews { margin-top: 40px; display: grid; gap: 18px; }
+.reviews-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.reviews-summary { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.reviews-stars { color: #e0a106; letter-spacing: 2px; font-size: 15px; }
+.muted { color: var(--muted); }
+.reviews-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.review-item { padding: 16px 18px; display: grid; gap: 6px; }
+.review-item-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.review-date { color: var(--muted); font-size: 12px; }
+.review-item p { margin: 0; }
+.review-form { padding: 20px; display: grid; gap: 10px; max-width: 560px; }
+.review-form h3 { margin: 0 0 4px; }
+.review-field-label { font-weight: 700; font-size: 13px; }
+.review-rating { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
+.review-rating legend { font-weight: 700; font-size: 13px; padding: 0 4px; }
+.review-rating-option { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; }
+.review-thanks { padding: 18px 20px; border-left: 4px solid var(--forest); }
+.reviews-admin-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.reviews-admin-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.review-admin-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.review-admin-actions form { display: inline; }
+.review-status { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+.review-status-pending { background: #fff3cd; color: #8a6d00; }
+.review-status-published { background: #e3f5e6; color: #1f7a39; }
+.review-status-hidden { background: #f0e6e6; color: var(--muted); }
+

@@ -2,7 +2,7 @@
 
 import postgres from "postgres";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { AdminReview, Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, OrderRecord, Product, ProductReview, ReviewStatus, SearchIndexItem, Variant, WholesaleClient } from "./types";
 
 const uncategorizedSubcategorySlug = "sin-subcategoria";
 const uncategorizedSubcategoryName = "Sin subcategorÃ­a";
@@ -208,6 +208,15 @@ async function ensureSchema() {
         reset_at BIGINT NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS product_reviews (
+        id SERIAL PRIMARY KEY,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        author_name TEXT NOT NULL,
+        rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        body TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
 
       CREATE INDEX IF NOT EXISTS products_category_idx ON products(category_id);
       CREATE INDEX IF NOT EXISTS products_subcategory_idx ON products(subcategory_slug);
@@ -215,6 +224,7 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS inventory_branch_idx ON inventory(branch_id);
       CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at DESC);
       CREATE INDEX IF NOT EXISTS admin_login_attempts_locked_idx ON admin_login_attempts(locked_until);
+      CREATE INDEX IF NOT EXISTS product_reviews_product_idx ON product_reviews(product_id, status);
     `);
 
     const [seedCheck] = await sql`SELECT COUNT(*)::int AS count FROM branches`;
@@ -472,6 +482,60 @@ export async function getProduct(slug: string) {
 
 export async function getFeaturedProducts() {
   return (await getProducts()).filter((product) => product.featured).slice(0, 4);
+}
+
+type ReviewRow = Omit<ProductReview, "createdAt"> & { createdAt: string | Date };
+type AdminReviewRow = Omit<AdminReview, "createdAt"> & { createdAt: string | Date };
+
+function normalizeReview<T extends { createdAt: string | Date }>(row: T) {
+  return { ...row, createdAt: new Date(row.createdAt).toISOString() };
+}
+
+export async function createReview(input: { productId: number; authorName: string; rating: number; body: string }) {
+  await ensureSchema();
+  const exists = await sql`SELECT 1 FROM products WHERE id = ${input.productId} AND archived_at IS NULL`;
+  if (!exists.length) throw new Error("Producto inexistente.");
+  const rows = await sql`
+    INSERT INTO product_reviews (product_id, author_name, rating, body, status)
+    VALUES (${input.productId}, ${input.authorName}, ${input.rating}, ${input.body}, 'pending')
+    RETURNING id
+  `;
+  return { id: Number(rows[0].id) };
+}
+
+export async function getPublishedReviews(productId: number): Promise<ProductReview[]> {
+  await ensureSchema();
+  const rows = await sql`
+    SELECT id, product_id AS "productId", author_name AS "authorName", rating, body, status, created_at AS "createdAt"
+    FROM product_reviews
+    WHERE product_id = ${productId} AND status = 'published'
+    ORDER BY created_at DESC, id DESC
+  ` as unknown as ReviewRow[];
+  return rows.map(normalizeReview) as ProductReview[];
+}
+
+export async function getAdminReviews(): Promise<AdminReview[]> {
+  await ensureSchema();
+  const rows = await sql`
+    SELECT r.id, r.product_id AS "productId", r.author_name AS "authorName", r.rating, r.body, r.status,
+      r.created_at AS "createdAt", p.name AS "productName", p.slug AS "productSlug"
+    FROM product_reviews r
+    JOIN products p ON p.id = r.product_id
+    ORDER BY CASE r.status WHEN 'pending' THEN 0 WHEN 'published' THEN 1 ELSE 2 END, r.created_at DESC, r.id DESC
+  ` as unknown as AdminReviewRow[];
+  return rows.map(normalizeReview) as AdminReview[];
+}
+
+export async function setReviewStatus(id: number, status: ReviewStatus) {
+  await ensureSchema();
+  await sql`UPDATE product_reviews SET status = ${status} WHERE id = ${id}`;
+  await bumpSyncVersion();
+}
+
+export async function deleteReview(id: number) {
+  await ensureSchema();
+  await sql`DELETE FROM product_reviews WHERE id = ${id}`;
+  await bumpSyncVersion();
 }
 
 export async function getCategories() {
