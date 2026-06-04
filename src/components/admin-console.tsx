@@ -968,7 +968,7 @@ function ProductModal({
             </div>
           ) : null}
         </div>
-        <div className="admin-brand-helper admin-span-2">
+        <div className="admin-brand-helper">
           {brandKnown ? (
             <span className="admin-fixed-badge">Ya está en frecuentes</span>
           ) : (
