@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_noStore as noStore } from "next/cache";
 import type { CatalogFilters, CartItemPayload, WholesaleClient } from "./types";
 
 const hasPostgres = Boolean(process.env.DATABASE_URL);
@@ -20,6 +21,7 @@ async function getDriver(): Promise<Driver> {
 }
 
 export async function getSyncVersion() {
+  noStore();
   return (await getDriver()).getSyncVersion();
 }
 
@@ -76,6 +78,7 @@ export async function deleteWholesaleClient(id: number) {
 }
 
 export async function getAdminSnapshot() {
+  noStore();
   return (await getDriver()).getAdminSnapshot();
 }
 

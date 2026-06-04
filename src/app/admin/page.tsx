@@ -2,6 +2,8 @@ import { AdminConsole } from "@/components/admin-console";
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot, getCategories, getSubcategories } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Administración" };
 
 export default async function AdminPage({
