@@ -33,8 +33,8 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
   icons: {
-    icon: "/agrovet-logo.jpg",
-    apple: "/agrovet-logo.jpg",
+    icon: "/agrovet-logo.png",
+    apple: "/agrovet-logo.png",
   },
   openGraph: {
     type: "website",
@@ -43,7 +43,7 @@ export const metadata: Metadata = {
     url: siteUrl,
     title: "Agrovet | Alimentos y cuidado para perros y gatos",
     description,
-    images: [absoluteUrl("/agrovet-logo.jpg")],
+    images: [absoluteUrl("/agrovet-logo.png")],
   },
   twitter: {
     card: "summary_large_image",
@@ -62,7 +62,7 @@ const organizationJsonLd = {
   name: siteName,
   description,
   url: siteUrl,
-  image: absoluteUrl("/agrovet-logo.jpg"),
+  image: absoluteUrl("/agrovet-logo.png"),
   areaServed: "Mar del Plata, Buenos Aires, Argentina",
   address: {
     "@type": "PostalAddress",

@@ -74,7 +74,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   height: 48px;
   border-radius: 15px;
   display: block;
-  background: #5b0f73 url("/agrovet-logo.jpg") center/cover no-repeat;
+  background: #5b0f73 url("/agrovet-logo.png") center/cover no-repeat;
   box-shadow: 0 8px 18px rgba(91, 15, 115, .14);
   flex-shrink: 0;
 }
@@ -763,7 +763,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-brand { display: flex; align-items: center; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .admin-brand-mark {
   width: 46px; height: 46px; border-radius: 14px; border: 0; padding: 0;
-  display: block; background: #5b0f73 url("/agrovet-logo.jpg") center/cover no-repeat;
+  display: block; background: #5b0f73 url("/agrovet-logo.png") center/cover no-repeat;
   box-shadow: 0 8px 18px rgba(91, 15, 115, .14);
   flex-shrink: 0;
 }
@@ -1385,7 +1385,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   border: 0;
   padding: 0;
   display: block;
-  background: #5b0f73 url("/agrovet-logo.jpg") center/cover no-repeat;
+  background: #5b0f73 url("/agrovet-logo.png") center/cover no-repeat;
   box-shadow: 0 8px 18px rgba(91, 15, 115, .14);
   flex-shrink: 0;
   cursor: pointer;
