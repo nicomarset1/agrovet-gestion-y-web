@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { endAdminSession, getLoginRateLimit, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
+import { safeInternalPath } from "@/lib/safe-redirect";
 import {
   createCategory,
   createWholesaleClient,
@@ -28,9 +29,20 @@ import {
 export type LoginState = { error?: string };
 
 function loginIdentifier(headersList: Headers) {
-  const forwardedFor = headersList.get("x-forwarded-for")?.split(",")[0]?.trim();
+  // No confiar en el x-forwarded-for mas a la izquierda: ese valor lo controla el cliente
+  // y permite rotar la "IP" en cada intento para evadir el rate-limit.
+  // x-real-ip lo setea el proxy/plataforma de confianza (p.ej. Vercel) y no es spoofeable a traves de el.
   const realIp = headersList.get("x-real-ip")?.trim();
-  return forwardedFor || realIp || "local";
+  if (realIp) return realIp;
+  // De x-forwarded-for tomamos el valor MAS A LA DERECHA: es el que agrega el proxy de confianza
+  // mas cercano al servidor, no el que inyecta el cliente al principio de la cadena.
+  const forwarded = headersList.get("x-forwarded-for");
+  if (forwarded) {
+    const parts = forwarded.split(",").map((part) => part.trim()).filter(Boolean);
+    const trusted = parts[parts.length - 1];
+    if (trusted) return trusted;
+  }
+  return "local";
 }
 
 export async function loginAction(_: LoginState, formData: FormData): Promise<LoginState> {
@@ -70,7 +82,7 @@ export async function updateStockAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 const wholesaleClientSchema = z.object({
@@ -90,7 +102,7 @@ export async function createWholesaleClientAction(formData: FormData) {
   if (!parsed.success) throw new Error("Cliente inválido.");
   await createWholesaleClient(parsed.data);
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function updateWholesaleClientAction(formData: FormData) {
@@ -109,7 +121,7 @@ export async function updateWholesaleClientAction(formData: FormData) {
     createdAt: "",
   });
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function deleteWholesaleClientAction(formData: FormData) {
@@ -121,7 +133,7 @@ export async function deleteWholesaleClientAction(formData: FormData) {
   if (!parsed.success) throw new Error("Cliente inválido.");
   await deleteWholesaleClient(parsed.data.id);
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 const wholesaleOrderSchema = z.object({
@@ -156,7 +168,7 @@ export async function createWholesaleOrderAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 const orderPaymentSchema = z.object({
@@ -176,7 +188,7 @@ export async function updateOrderPaymentAction(formData: FormData) {
     paymentMethod: parsed.data.paymentMethod ?? "",
   });
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 const categorySchema = z.object({
@@ -209,7 +221,7 @@ export async function createCategoryAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function updateCategoryAction(formData: FormData) {
@@ -224,7 +236,7 @@ export async function updateCategoryAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function deleteCategoryAction(formData: FormData) {
@@ -258,7 +270,7 @@ export async function createSubcategoryAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function updateSubcategoryAction(formData: FormData) {
@@ -269,7 +281,7 @@ export async function updateSubcategoryAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function deleteSubcategoryAction(formData: FormData) {
@@ -369,7 +381,7 @@ export async function createProductAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  redirect(parsed.data.returnTo);
+  redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function deleteProductAction(formData: FormData) {
@@ -434,7 +446,7 @@ export async function updateOrderAction(formData: FormData) {
       : undefined,
   });
   revalidatePath("/admin");
-  if (parsed.data.returnTo) redirect(parsed.data.returnTo);
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function deleteOrderAction(formData: FormData) {
@@ -447,7 +459,7 @@ export async function deleteOrderAction(formData: FormData) {
   const { id, returnTo } = parsed.data;
   await deleteOrder(id);
   revalidatePath("/admin");
-  if (returnTo) redirect(returnTo);
+  if (returnTo) redirect(safeInternalPath(returnTo));
 }
 
 const productUpdateSchema = productBaseSchema.extend({
@@ -490,5 +502,5 @@ export async function updateProductAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/admin");
-  redirect(parsed.data.returnTo);
+  redirect(safeInternalPath(parsed.data.returnTo));
 }

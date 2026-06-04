@@ -19,6 +19,8 @@ jobs:
       GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
       GDRIVE_RCLONE_CONFIG: ${{ secrets.GDRIVE_RCLONE_CONFIG }}
       GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+      # Opcional: si se define, el dump se cifra con AES-256 antes de subirlo.
+      BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
 
     steps:
       - name: Validate required secrets
@@ -74,6 +76,18 @@ jobs:
             -v "$RUNNER_TEMP:/backup" \
             postgres:17-alpine \
             sh -c 'pg_dump --format=custom --no-owner --no-acl --file="/backup/$BACKUP_FILE" "$DATABASE_URL"'
+          if [ -n "$BACKUP_ENCRYPTION_PASSPHRASE" ]; then
+            echo "Cifrando backup con AES-256..."
+            openssl enc -aes-256-cbc -pbkdf2 -salt \
+              -in "$BACKUP_PATH" \
+              -out "$BACKUP_PATH.enc" \
+              -pass env:BACKUP_ENCRYPTION_PASSPHRASE
+            rm -f "$BACKUP_PATH"
+            BACKUP_FILE="$BACKUP_FILE.enc"
+            BACKUP_PATH="$BACKUP_PATH.enc"
+          else
+            echo "::warning::BACKUP_ENCRYPTION_PASSPHRASE no definido: el backup se sube sin cifrar."
+          fi
           sha256sum "$BACKUP_PATH" > "$BACKUP_PATH.sha256"
           echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
           echo "BACKUP_PATH=$BACKUP_PATH" >> "$GITHUB_ENV"
@@ -87,5 +101,4 @@ jobs:
       - name: Remove old Drive backups
         shell: bash
         run: |
-          rclone delete "gdrive:" --include "agrovet-postgres-*.dump" --min-age 45d
-          rclone delete "gdrive:" --include "agrovet-postgres-*.dump.sha256" --min-age 45d
+          rclone delete "gdrive:" --include "agrovet-postgres-*.dump*" --min-age 45d
