@@ -20,6 +20,77 @@ const sql = postgres(databaseUrl, {
 type Db = typeof sql | postgres.TransactionSql<Record<string, never>>;
 let initialized: Promise<void> | null = null;
 
+const branchSeed = [
+  { id: 1, slug: "independencia", name: "Sucursal Independencia", address: "Av. Independencia 2599, Mar del Plata", phone: "0223 493-5665", mapUrl: "", verified: true },
+  { id: 2, slug: "belgrano", name: "Sucursal Belgrano", address: "Belgrano 3898, Mar del Plata", phone: "0223 496-3388", mapUrl: "https://maps.app.goo.gl/i6qdpBif69yS3WKD9", verified: true },
+];
+
+const categorySeed = [
+  { id: 1, slug: "alimentos", name: "Alimentos", description: "Nutrición diaria y alimentos especializados.", showInMenu: false },
+  { id: 2, slug: "farmacia", name: "Farmacia", description: "Antiparasitarios, tratamiento y cuidado veterinario.", showInMenu: false },
+  { id: 3, slug: "accesorios", name: "Accesorios", description: "Paseo, descanso, comederos y complementos.", showInMenu: false },
+  { id: 4, slug: "higiene", name: "Higiene y sanitario", description: "Cuidado, limpieza y productos sanitarios.", showInMenu: false },
+  { id: 5, slug: "perro", name: "Perro", description: "Productos y categorías para perros.", showInMenu: true },
+  { id: 6, slug: "gato", name: "Gato", description: "Productos y categorías para gatos.", showInMenu: true },
+];
+
+const specialCategorySeed = specialCategories.map((category, index) => ({
+  id: 1001 + index,
+  slug: category.slug,
+  name: category.name,
+  description: "Página especial del sitio.",
+}));
+
+const productSeed = [
+  { id: 1, slug: "royal-canin-mini-adult", name: "Mini Adult", brand: "Royal Canin", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "pequeño", need: "", description: "Alimento seco para perros adultos de talla pequeña.", featured: true, requiresAdvice: false, color: "#f3b52e", imageUrl: "" },
+  { id: 2, slug: "pro-plan-adult-sensitive", name: "Adult Sensitive Skin", brand: "Purina Pro Plan", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "mediano", need: "piel-sensible", description: "Nutrición completa para perros adultos con piel sensible.", featured: true, requiresAdvice: false, color: "#173c68", imageUrl: "" },
+  { id: 3, slug: "excellent-gato-adulto", name: "Gato Adulto Pollo y Arroz", brand: "Excellent", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento balanceado completo para gatos adultos.", featured: true, requiresAdvice: false, color: "#da7134", imageUrl: "" },
+  { id: 4, slug: "old-prince-cordero", name: "Cordero y Arroz Adulto", brand: "Old Prince", categoryId: 1, species: "perro", subcategorySlug: "perro-secos", subcategoryName: "Perro / Alimentos secos", lifeStage: "adulto", size: "mediano", need: "", description: "Fórmula premium para perros adultos.", featured: false, requiresAdvice: false, color: "#7c432e", imageUrl: "" },
+  { id: 5, slug: "bravecto-perro", name: "Bravecto Comprimido", brand: "MSD", categoryId: 2, species: "perro", subcategorySlug: "perro-parasitos", subcategoryName: "Perro / Antiparasitarios", lifeStage: "adulto", size: "todos", need: "antiparasitario", description: "Antiparasitario externo. Administrar bajo indicación profesional.", featured: true, requiresAdvice: true, color: "#e26146", imageUrl: "" },
+  { id: 6, slug: "pipeta-bravecto-gato", name: "Pipeta Bravecto Gato", brand: "MSD", categoryId: 2, species: "gato", subcategorySlug: "gato-parasitos", subcategoryName: "Gato / Antiparasitarios", lifeStage: "adulto", size: "todos", need: "antiparasitario", description: "Pipeta antipulgas para gatos según rango de peso.", featured: false, requiresAdvice: true, color: "#7452ac", imageUrl: "" },
+  { id: 7, slug: "pretal-confort", name: "Pretal Confort Regulable", brand: "Agrovet Select", categoryId: 3, species: "perro", subcategorySlug: "paseo", subcategoryName: "Paseo y seguridad", lifeStage: "", size: "todos", need: "", description: "Pretal acolchado con ajuste seguro y argolla reforzada.", featured: true, requiresAdvice: false, color: "#2d8d75", imageUrl: "" },
+  { id: 8, slug: "rascador-madera", name: "Rascador Torre Compacta", brand: "Agrovet Select", categoryId: 3, species: "gato", subcategorySlug: "gato-hogar", subcategoryName: "Gato / Descanso y juego", lifeStage: "", size: "todos", need: "", description: "Rascador de sisal con plataforma de descanso.", featured: false, requiresAdvice: false, color: "#c28253", imageUrl: "" },
+  { id: 9, slug: "comedero-acero", name: "Comedero Acero Inoxidable", brand: "Trixie", categoryId: 3, species: "perro-gato", subcategorySlug: "comedores", subcategoryName: "Comederos y bebederos", lifeStage: "", size: "todos", need: "", description: "Base antideslizante y recipiente lavable.", featured: false, requiresAdvice: false, color: "#71889d", imageUrl: "" },
+  { id: 10, slug: "piedras-sanitarias", name: "Piedras Sanitarias Premium", brand: "Absorsol", categoryId: 4, species: "gato", subcategorySlug: "gato-sanitario", subcategoryName: "Gato / Sanitario", lifeStage: "", size: "todos", need: "", description: "Alta absorción y control de olores.", featured: true, requiresAdvice: false, color: "#53a397", imageUrl: "" },
+  { id: 11, slug: "shampoo-hipoalergenico", name: "Shampoo Hipoalergenico", brand: "Osspret", categoryId: 4, species: "perro-gato", subcategorySlug: "higiene", subcategoryName: "Higiene y cuidado", lifeStage: "", size: "todos", need: "piel-sensible", description: "Limpieza suave para pieles sensibles.", featured: false, requiresAdvice: false, color: "#3a92b1", imageUrl: "" },
+  { id: 12, slug: "vitalcan-balanced-puppy", name: "Balanced Puppy", brand: "Vitalcan", categoryId: 1, species: "perro", subcategorySlug: "cachorros", subcategoryName: "Perro / Cachorros", lifeStage: "cachorro", size: "mediano", need: "", description: "Nutrición para cachorros en etapa de crecimiento.", featured: false, requiresAdvice: false, color: "#6f9c3f", imageUrl: "" },
+  { id: 13, slug: "eukanuba-cat-adult", name: "Cat Adult", brand: "Eukanuba", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "Nutrición diaria para gatos adultos con alta palatabilidad.", featured: true, requiresAdvice: false, color: "#6b4e8b", imageUrl: "" },
+  { id: 14, slug: "eukanuba-cat-kitten", name: "Cat Kitten", brand: "Eukanuba", categoryId: 1, species: "gato", subcategorySlug: "gato-cachorros", subcategoryName: "Gato / Cachorros", lifeStage: "cachorro", size: "todos", need: "", description: "Alimento completo para gatitos en crecimiento.", featured: false, requiresAdvice: false, color: "#8c6bb0", imageUrl: "" },
+  { id: 15, slug: "vitalcan-balanced-cat-adult", name: "Balanced Cat Adult", brand: "Vitalcan", categoryId: 1, species: "gato", subcategorySlug: "gato-secos", subcategoryName: "Gato / Alimentos secos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento seco para gatos adultos con buen equilibrio nutricional.", featured: true, requiresAdvice: false, color: "#a34853", imageUrl: "" },
+  { id: 16, slug: "cat-it-creamy-multipack", name: "Cat It Creamy Multipack", brand: "Catit", categoryId: 1, species: "gato", subcategorySlug: "gato-snacks", subcategoryName: "Gato / Golosinas y snacks", lifeStage: "adulto", size: "todos", need: "", description: "Snack cremoso para premiar y complementar la dieta.", featured: false, requiresAdvice: false, color: "#d68d55", imageUrl: "" },
+  { id: 17, slug: "royal-canin-feline-urinary", name: "Feline Urinary S/O", brand: "Royal Canin", categoryId: 1, species: "gato", subcategorySlug: "gato-terapeuticos", subcategoryName: "Gato / Terapéuticos", lifeStage: "adulto", size: "todos", need: "urinario", description: "Formula veterinaria para soporte urinario felino.", featured: true, requiresAdvice: true, color: "#4f77a8", imageUrl: "" },
+  { id: 18, slug: "lata-vitalcan-cat-adult-salsa", name: "Cat Adult Carne en Salsa", brand: "Vitalcan", categoryId: 1, species: "gato", subcategorySlug: "gato-humedos", subcategoryName: "Gato / Alimentos húmedos", lifeStage: "adulto", size: "todos", need: "", description: "Alimento humedo completo para gatos adultos.", featured: false, requiresAdvice: false, color: "#9e5f40", imageUrl: "" },
+];
+
+const variantSeed = [
+  [101, 1, "1 kg", "RC-MA-1", 1490000, 7, 4], [102, 1, "3 kg", "RC-MA-3", 3580000, 3, 0], [103, 1, "7,5 kg", "RC-MA-75", 7290000, 0, 0],
+  [104, 2, "3 kg", "PP-SS-3", 3790000, 5, 1], [105, 2, "12 kg", "PP-SS-12", 10490000, 0, 2],
+  [106, 3, "1 kg", "EX-GA-1", 1150000, 9, 3], [107, 3, "7,5 kg", "EX-GA-75", 5420000, 0, 0],
+  [108, 4, "3 kg", "OP-CA-3", 2490000, 4, 0], [109, 4, "15 kg", "OP-CA-15", 8620000, 1, 0],
+  [110, 5, "2 a 4,5 kg", "BR-P-XS", 2840000, 3, 1], [111, 5, "10 a 20 kg", "BR-P-M", 4310000, 0, 0],
+  [112, 6, "1,2 a 2,8 kg", "BR-G-S", 2790000, 2, 0], [113, 6, "2,8 a 6,25 kg", "BR-G-M", 3390000, 0, 0],
+  [114, 7, "Talle S", "PR-C-S", 1980000, 4, 2], [115, 7, "Talle M", "PR-C-M", 2280000, 0, 3], [116, 7, "Talle L", "PR-C-L", 2590000, 0, 0],
+  [117, 8, "Unico", "RA-MAD", 7490000, 1, 0], [118, 9, "450 ml", "CO-450", 980000, 8, 6],
+  [119, 10, "4 kg", "AS-4", 890000, 12, 7], [120, 10, "12 kg", "AS-12", 2390000, 1, 0],
+  [121, 11, "250 ml", "SH-H-250", 1120000, 0, 0], [122, 12, "3 kg", "VC-P-3", 2290000, 6, 0],
+  [123, 13, "1.5 kg", "EUC-CA-15", 2069000, 8, 2], [124, 13, "7.5 kg", "EUC-CA-75", 7989000, 1, 0],
+  [125, 14, "1 kg", "EUC-CK-1", 1519900, 6, 1], [126, 14, "3 kg", "EUC-CK-3", 4220000, 0, 0],
+  [127, 15, "3 kg", "VIT-CA-3", 2399000, 10, 4], [128, 15, "7.5 kg", "VIT-CA-75", 6290000, 1, 0],
+  [129, 16, "Multipack", "CAT-CREAMY", 5227500, 5, 0],
+  [130, 17, "1.5 kg", "RC-UR-15", 2339900, 2, 0],
+  [131, 18, "85 g", "VIT-CA-85", 377500, 12, 6], [132, 18, "340 g", "VIT-CA-340", 320900, 7, 2],
+];
+
+const subcategorySeed = [...new Map(productSeed.map((product) => ([
+  product.subcategorySlug,
+  {
+    slug: product.subcategorySlug,
+    categoryId: product.categoryId,
+    name: product.subcategoryName,
+    description: "",
+  },
+] as const))).values()];
+
 async function ensureSchema() {
   initialized ??= (async () => {
     await sql.unsafe(`
@@ -137,6 +208,112 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS inventory_branch_idx ON inventory(branch_id);
       CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at DESC);
     `);
+
+    const [seedCheck] = await sql`SELECT COUNT(*)::int AS count FROM branches`;
+    if (Number(seedCheck.count) === 0) {
+      await sql.begin(async (tx) => {
+        for (const branch of branchSeed) {
+          await tx`
+            INSERT INTO branches (id, slug, name, address, phone, map_url, verified)
+            VALUES (${branch.id}, ${branch.slug}, ${branch.name}, ${branch.address}, ${branch.phone}, ${branch.mapUrl}, ${branch.verified})
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              address = EXCLUDED.address,
+              phone = EXCLUDED.phone,
+              map_url = EXCLUDED.map_url,
+              verified = EXCLUDED.verified
+          `;
+        }
+        for (const category of categorySeed) {
+          await tx`
+            INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu)
+            VALUES (${category.id}, ${category.slug}, ${category.name}, ${category.description}, NULL, ${category.showInMenu})
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              parent_category_id = NULL,
+              show_in_menu = EXCLUDED.show_in_menu
+          `;
+        }
+        for (const category of specialCategorySeed) {
+          await tx`
+            INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu)
+            VALUES (${category.id}, ${category.slug}, ${category.name}, ${category.description}, NULL, TRUE)
+            ON CONFLICT (slug) DO UPDATE SET
+              description = EXCLUDED.description,
+              parent_category_id = NULL,
+              show_in_menu = TRUE
+          `;
+        }
+        for (const subcategory of subcategorySeed) {
+          await tx`
+            INSERT INTO subcategories (slug, category_id, name, description)
+            VALUES (${subcategory.slug}, ${subcategory.categoryId}, ${subcategory.name}, ${subcategory.description})
+            ON CONFLICT (slug) DO UPDATE SET
+              category_id = EXCLUDED.category_id,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description
+          `;
+        }
+        for (const product of productSeed) {
+          await tx`
+            INSERT INTO products (
+              id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
+              description, featured, requires_advice, color, image_url, archived_at
+            ) VALUES (
+              ${product.id}, ${product.slug}, ${product.name}, ${product.brand}, ${product.categoryId}, ${product.species}, ${product.subcategorySlug},
+              ${product.subcategoryName}, ${product.lifeStage}, ${product.size}, ${product.need}, ${product.description},
+              ${product.featured}, ${product.requiresAdvice}, ${product.color}, ${product.imageUrl}, NULL
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              brand = EXCLUDED.brand,
+              category_id = EXCLUDED.category_id,
+              species = EXCLUDED.species,
+              subcategory_slug = EXCLUDED.subcategory_slug,
+              subcategory_name = EXCLUDED.subcategory_name,
+              life_stage = EXCLUDED.life_stage,
+              size = EXCLUDED.size,
+              need = EXCLUDED.need,
+              description = EXCLUDED.description,
+              featured = EXCLUDED.featured,
+              requires_advice = EXCLUDED.requires_advice,
+              color = EXCLUDED.color,
+              image_url = EXCLUDED.image_url
+          `;
+        }
+        for (const variant of variantSeed) {
+          const [id, productId, label, sku, priceCents] = variant;
+          await tx`
+            INSERT INTO variants (id, product_id, label, sku, barcode, price_cents)
+            VALUES (${id}, ${productId}, ${label}, ${sku}, ${sku}, ${priceCents})
+            ON CONFLICT (id) DO UPDATE SET
+              product_id = EXCLUDED.product_id,
+              label = EXCLUDED.label,
+              sku = EXCLUDED.sku,
+              barcode = EXCLUDED.barcode,
+              price_cents = EXCLUDED.price_cents
+          `;
+        }
+        for (const variant of variantSeed) {
+          const [id, , , , , branch1, branch2] = variant;
+          await tx`
+            INSERT INTO inventory (variant_id, branch_id, quantity)
+            VALUES (${id}, 1, ${branch1})
+            ON CONFLICT (variant_id, branch_id) DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+          `;
+          await tx`
+            INSERT INTO inventory (variant_id, branch_id, quantity)
+            VALUES (${id}, 2, ${branch2})
+            ON CONFLICT (variant_id, branch_id) DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+          `;
+        }
+        await tx`UPDATE app_meta SET value = 0 WHERE key = 'sync_version'`;
+      });
+    }
   })();
   await initialized;
 }
