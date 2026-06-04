@@ -465,8 +465,6 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .dual-range-thumb:focus-visible .dual-range-thumb-core {
   box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(122, 31, 40, .18), 0 4px 10px rgba(122, 31, 40, .14);
 }
-.price-range-bounds { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 800; }
-.price-range-bounds { position: relative; z-index: 50; }
 .drawer-actions {
   position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   padding-top: 14px; background: linear-gradient(to top, #fff8f7 76%, rgba(251,250,246,0));

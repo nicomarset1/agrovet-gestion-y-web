@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type FacetItem = { name: string; count: number };
@@ -107,12 +107,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-type DragStartEvent = {
-  clientX: number;
-  preventDefault: () => void;
-  stopPropagation: () => void;
-};
-
 export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters: Filters }) {
   const [open, setOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(() => selected(filters.category));
@@ -131,7 +125,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
   const [{ handleA, handleB }, setPriceHandles] = useState({ handleA: initialMinPrice, handleB: initialMaxPrice });
   const [activeHandle, setActiveHandle] = useState<"a" | "b">("b");
   const [draggingHandle, setDraggingHandle] = useState<"a" | "b" | null>(null);
-  const draggingHandleRef = useRef<"a" | "b" | null>(null);
   const rangeTrackRef = useRef<HTMLDivElement | null>(null);
   const [rangeWidth, setRangeWidth] = useState(0);
   const minPrice = Math.min(handleA, handleB);
@@ -179,15 +172,49 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
     return Math.round(prices.min + (x / usableWidth) * rangeSpan);
   }, [prices.min, rangeSpan]);
 
-  const startDrag = (handle: "a" | "b") => (event: DragStartEvent) => {
+  const moveHandle = useCallback((handle: "a" | "b", clientX: number) => {
+    setActiveHandle(handle);
+    setHandle(handle, valueFromClientX(clientX));
+  }, [setHandle, valueFromClientX]);
+
+  const beginDrag = (handle: "a" | "b") => (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    // eslint-disable-next-line react-hooks/refs
-    draggingHandleRef.current = handle;
-    setActiveHandle(handle);
+    event.currentTarget.setPointerCapture(event.pointerId);
     setDraggingHandle(handle);
-    // eslint-disable-next-line react-hooks/refs
-    setHandle(handle, valueFromClientX(event.clientX));
+    moveHandle(handle, event.clientX);
+  };
+
+  const dragThumb = (handle: "a" | "b") => (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (draggingHandle !== handle) return;
+    moveHandle(handle, event.clientX);
+  };
+
+  const endDrag = (handle: "a" | "b") => (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (draggingHandle !== handle) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDraggingHandle(null);
+  };
+
+  const adjustWithKeyboard = (handle: "a" | "b") => (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 1000 : 250;
+    const keyMap: Record<string, number> = {
+      ArrowLeft: -step,
+      ArrowDown: -step,
+      ArrowRight: step,
+      ArrowUp: step,
+      PageDown: -step * 4,
+      PageUp: step * 4,
+      Home: prices.min - (handle === "a" ? handleA : handleB),
+      End: prices.max - (handle === "a" ? handleA : handleB),
+    };
+    const delta = keyMap[event.key];
+    if (delta === undefined) return;
+    event.preventDefault();
+    setActiveHandle(handle);
+    setHandle(handle, (handle === "a" ? handleA : handleB) + delta);
   };
 
   useEffect(() => {
@@ -207,19 +234,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
   const usableWidth = Math.max(1, rangeWidth - (rangePad * 2));
   const handleALeft = rangePad + (usableWidth * handleAPercent / 100);
   const handleBLeft = rangePad + (usableWidth * handleBPercent / 100);
-
-  const moveDrag = (event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>) => {
-    const currentHandle = draggingHandleRef.current;
-    if (!currentHandle) return;
-    setActiveHandle(currentHandle);
-    setHandle(currentHandle, valueFromClientX(event.clientX));
-  };
-
-  const stopDrag = () => {
-    if (!draggingHandleRef.current) return;
-    setDraggingHandle(null);
-    draggingHandleRef.current = null;
-  };
 
   return (
     <>
@@ -300,11 +314,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
             <div
               className="dual-range"
               ref={rangeTrackRef}
-              onMouseMove={moveDrag}
-              onMouseUp={stopDrag}
-              onMouseLeave={stopDrag}
-              onPointerMove={moveDrag}
-              onPointerUp={stopDrag}
               style={{
                 "--handle-a": `${handleAPercent}%`,
                 "--handle-b": `${handleBPercent}%`,
@@ -315,36 +324,41 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
               <span aria-hidden="true" className="dual-range-track">
                 <span className="dual-range-fill" />
               </span>
-              <button
+              <div
                 aria-valuemax={prices.max}
                 aria-valuemin={prices.min}
                 aria-valuenow={handleA}
                 aria-label="Perilla de precio A"
                 className={`dual-range-thumb thumb-a ${activeHandle === "a" || draggingHandle === "a" ? "active" : ""}`}
-                onMouseDown={startDrag("a")}
-                onPointerDown={startDrag("a")}
+                onKeyDown={adjustWithKeyboard("a")}
+                onPointerDown={beginDrag("a")}
+                onPointerMove={dragThumb("a")}
+                onPointerUp={endDrag("a")}
+                onPointerCancel={endDrag("a")}
                 role="slider"
                 style={{ left: `${handleALeft}px` }}
-                type="button"
+                tabIndex={0}
               >
                 <span className="dual-range-thumb-core" />
-              </button>
-              <button
+              </div>
+              <div
                 aria-valuemax={prices.max}
                 aria-valuemin={prices.min}
                 aria-valuenow={handleB}
                 aria-label="Perilla de precio B"
                 className={`dual-range-thumb thumb-b ${activeHandle === "b" || draggingHandle === "b" ? "active" : ""}`}
-                onMouseDown={startDrag("b")}
-                onPointerDown={startDrag("b")}
+                onKeyDown={adjustWithKeyboard("b")}
+                onPointerDown={beginDrag("b")}
+                onPointerMove={dragThumb("b")}
+                onPointerUp={endDrag("b")}
+                onPointerCancel={endDrag("b")}
                 role="slider"
                 style={{ left: `${handleBLeft}px` }}
-                type="button"
+                tabIndex={0}
               >
                 <span className="dual-range-thumb-core" />
-              </button>
+              </div>
             </div>
-            <div className="price-range-bounds"><span>{formatMoney(prices.min)}</span><span>{formatMoney(prices.max)}</span></div>
           </Section>
           <Section title="Marca">
             <div className="filter-choice-grid">
