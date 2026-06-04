@@ -2563,7 +2563,7 @@ function WholesaleClientsPanel({
                         {allocatedTotal === line.quantity ? "Distribución lista" : `Distribución incompleta: ${allocatedTotal}/${line.quantity}`}
                       </small>
                     </div>
-                    <button className="icon-button" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} type="button" aria-label="Quitar producto"><Trash2 size={16} /></button>
+                    <button className="icon-button danger" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} type="button" aria-label="Quitar producto"><Trash2 size={16} /></button>
                     {line.allocations.map((allocation) => (
                       <div key={`${line.key}-${allocation.branchId}`}>
                         <input name="itemVariantId" type="hidden" value={line.variantId} />

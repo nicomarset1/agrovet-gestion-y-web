@@ -538,10 +538,10 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-brand-suggestion-main strong { font-size: 14px; line-height: 1.1; }
 .admin-brand-suggestion-main small { color: var(--muted); font-size: 11px; font-weight: 700; }
 .admin-brand-suggestion-remove {
-  width: 32px; height: 32px; border-radius: 999px; border: 1px solid #ece2ff; background: white; color: #7c3aed;
+  width: 32px; height: 32px; border-radius: 999px; border: 1px solid #ece2ff; background: white; color: #a4232b;
   display: grid; place-items: center; transition: background .16s ease, border-color .16s ease, transform .16s ease;
 }
-.admin-brand-suggestion-remove:hover { background: #faf7ff; border-color: #dcc8ff; transform: scale(1.04); }
+.admin-brand-suggestion-remove:hover { background: #fff2f1; border-color: #f0b8b4; color: #a4232b; transform: scale(1.04); }
 .admin-brand-field input {
   appearance: none;
 }
@@ -561,11 +561,20 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   display: grid; place-items: center; font-weight: 900; transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
 }
 .qty-button:hover { transform: translateY(-2px); background: var(--sage); box-shadow: 0 8px 16px rgba(91, 15, 115, .1); }
+.qty-button.danger {
+  border-color: #f0c9c7;
+  background: #fff6f5;
+  color: #a4232b;
+}
+.qty-button.danger:hover {
+  background: #ffeceb;
+  box-shadow: 0 8px 16px rgba(164, 35, 43, .12);
+}
 .remove {
-  width: auto; min-height: 30px; padding: 0 11px; color: #6d28d9; border: 1px solid #ece5ff; background: #fbf8ff;
+  width: auto; min-height: 30px; padding: 0 11px; color: #a4232b; border: 1px solid #f0c9c7; background: #fff6f5;
   border-radius: 999px; font-size: 13px; font-weight: 800; transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
 }
-.remove:hover { transform: translateY(-2px); background: #f6efff; box-shadow: 0 8px 16px rgba(169, 70, 51, .12); }
+.remove:hover { transform: translateY(-2px); background: #ffeceb; box-shadow: 0 8px 16px rgba(164, 35, 43, .12); }
 .checkout { padding: 25px; height: fit-content; }
 .checkout h2 { margin: 0 0 18px; font-size: 24px; }
 .checkout form { display: grid; gap: 11px; }
@@ -691,7 +700,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
 }
 .mini-button:hover { transform: translateY(-2px); background: var(--forest-light); box-shadow: 0 10px 18px rgba(91, 15, 115, .14); }
-.mini-button.danger { background: #6d28d9; min-height: 32px; }
+.mini-button.danger { background: #a4232b; min-height: 32px; }
 .channel { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 7px; }
 .channel span { font-size: 11px; color: var(--muted); }
 .admin-form { display: grid; gap: 10px; }
@@ -733,7 +742,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--sage); color: var(--forest);
 }
 .toast.success .toast-icon { background: #e6f6eb; color: #2f7a49; }
-.toast.danger .toast-icon { background: #f6efff; color: #8b5cf6; }
+.toast.danger .toast-icon { background: #ffeceb; color: #a4232b; }
 .toast.info .toast-icon { background: #eaf1ff; color: #3d67b1; }
 .toast strong { display: block; font-size: 14px; color: var(--ink); }
 .toast small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -823,10 +832,10 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   display: grid; place-items: center; transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
 .icon-button:hover { transform: translateY(-2px); border-color: #e7dcff; background: var(--sage); box-shadow: 0 10px 18px rgba(91, 15, 115, .08); }
-.icon-button.danger { color: #8b5cf6; }
+.icon-button.danger { color: #a4232b; }
 .admin-stock-pill {
   display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 12px; border-radius: 999px;
-  background: #f0e6ff; color: #7c3aed; font-weight: 800; font-size: 13px; text-align: center;
+  background: #ffeceb; color: #a4232b; font-weight: 800; font-size: 13px; text-align: center;
 }
 .admin-stock-pill-wide {
   flex-direction: column;
@@ -844,7 +853,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   font-size: 11px;
   font-weight: 700;
 }
-.admin-stock-pill.danger { background: #f5efff; color: #8b5cf6; }
+.admin-stock-pill.danger { background: #ffeceb; color: #a4232b; }
 .admin-category-grid { display: grid; gap: 16px; }
 .admin-category-card { padding: 18px; }
 .admin-category-top { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
@@ -856,7 +865,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 .admin-subcategory-summary { margin: 16px 0 14px; color: var(--muted); font-size: 13px; font-weight: 800; }
 .admin-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
-.admin-card-actions .danger { color: #8b5cf6; }
+.admin-card-actions .danger { color: #a4232b; }
 .admin-fixed-badge {
   min-height: 34px;
   display: inline-flex;
@@ -1079,7 +1088,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-modal-actions {
   grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px;
 }
-.button.danger, .button.button-light.danger { color: #8b5cf6; border-color: #e4d7ff; background: #fbf8ff; }
+.button.danger, .button.button-light.danger { color: #a4232b; border-color: #f0c9c7; background: #fff6f5; }
 
 @media (max-width: 1000px) {
   html { scroll-padding-top: 168px; }
@@ -1768,7 +1777,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .icon-button.danger {
-  color: #8b5cf6;
+  color: #a4232b;
 }
 
 .admin-stock-pill {
@@ -1786,8 +1795,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-stock-pill.danger {
-  background: #f5efff;
-  color: #8b5cf6;
+  background: #ffeceb;
+  color: #a4232b;
 }
 
 .admin-category-grid {
@@ -1845,7 +1854,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-card-actions .danger {
-  color: #8b5cf6;
+  color: #a4232b;
 }
 
 .admin-subcategory-grid {
@@ -2016,9 +2025,9 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   border-radius: 16px;
   display: grid;
   place-items: center;
-  color: #8b5cf6;
-  background: linear-gradient(180deg, #eee3ff 0%, #eee3ff 100%);
-  box-shadow: inset 0 0 0 1px rgba(182, 79, 52, .12);
+  color: #a4232b;
+  background: linear-gradient(180deg, #ffeceb 0%, #fff6f5 100%);
+  box-shadow: inset 0 0 0 1px rgba(164, 35, 43, .12);
   flex-shrink: 0;
 }
 
@@ -2054,14 +2063,14 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .button.button-primary.danger {
-  background: linear-gradient(180deg, #8b5cf6 0%, #8b5cf6 100%);
-  border-color: #6d28d9;
+  background: linear-gradient(180deg, #c64a52 0%, #a4232b 100%);
+  border-color: #8c2028;
   color: #fff;
-  box-shadow: 0 14px 28px rgba(182, 79, 52, .18);
+  box-shadow: 0 14px 28px rgba(164, 35, 43, .18);
 }
 
 .button.button-primary.danger:hover {
-  background: linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%);
+  background: linear-gradient(180deg, #d85a62 0%, #b12d35 100%);
 }
 
 .admin-modal-head {
@@ -2147,9 +2156,9 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 
 .button.danger,
 .button.button-light.danger {
-  color: #8b5cf6;
-  border-color: #e4d7ff;
-  background: #fbf8ff;
+  color: #a4232b;
+  border-color: #f0c9c7;
+  background: #fff6f5;
 }
 
 .button.button-light.active {
@@ -3046,4 +3055,4 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .lowstock-suggestion { margin: 0; font-size: 14px; }
 .lowstock-badge { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
 .lowstock-badge-low { background: #fff3cd; color: #8a6d00; }
-.lowstock-badge-out { background: #f5efff; color: #6d28d9; }
+.lowstock-badge-out { background: #ffeceb; color: #a4232b; }
