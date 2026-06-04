@@ -124,7 +124,7 @@ function buildSalesReportPdf(input: {
   const pageWidth = 595;
   const contentWidth = pageWidth - margin * 2;
   const makeBasePage = (pageNumber: number) => [
-    drawRect(0, 0, 595, 842, "1 0.953 0.945"),
+    drawRect(0, 0, 595, 842, "1 1 1"),
     drawRect(0, 760, 595, 82, "0.784 0.086 0.122"),
     drawText("AGROVET", margin, 802, 22, "bold", "1 0.96 0.96"),
     drawText("Registro profesional de ventas", margin, 780, 13, "regular", "1 1 1"),
