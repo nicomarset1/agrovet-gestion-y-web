@@ -5,7 +5,7 @@ export function ProductArt({ product, detailed = false }: { product: Product; de
     <div className={detailed ? "detail-art" : "product-art"}>
       {!detailed && product.featured && <span className="product-badge">Destacado</span>}
       {product.imageUrl ? (
-        <img alt={product.name} className="product-art-image" src={product.imageUrl} />
+        <img alt={`${product.brand} ${product.name}`} className="product-art-image" src={product.imageUrl} />
       ) : (
         <div className="pack" style={{ background: product.color }}>
           <span className="pack-brand">{product.brand}</span>

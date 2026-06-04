@@ -1,8 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { BranchesSection } from "@/components/branches-section";
 import { ProductCard } from "@/components/product-card";
 import { StoreFilterDrawer } from "@/components/store-filter-drawer";
-import { getBranches, getCatalogFacets, getProducts } from "@/lib/db";
+import { getBranches, getCatalogFacets, getCategories, getProducts } from "@/lib/db";
 
 type Search = Promise<{
   q?: string;
@@ -20,7 +21,19 @@ type Search = Promise<{
   sort?: string;
 }>;
 
-export const metadata = { title: "Tienda online" };
+export async function generateMetadata({ searchParams }: { searchParams: Search }): Promise<Metadata> {
+  const filters = await searchParams;
+  const selected = Array.isArray(filters.category) ? filters.category[0] : filters.category;
+  const current = selected ? (await getCategories()).find((category) => category.slug === selected) : undefined;
+  const description = current
+    ? `Compra ${current.name.toLowerCase()} para perros y gatos en Agrovet Mar del Plata. Stock por sucursal y compra online.`
+    : "Compra alimentos, accesorios y farmacia para perros y gatos. Stock visible por sucursal en Mar del Plata.";
+  return {
+    title: current?.name ?? "Tienda online",
+    description,
+    alternates: { canonical: "/tienda" },
+  };
+}
 
 export default async function StorePage({ searchParams }: { searchParams: Search }) {
   const filters = await searchParams;
