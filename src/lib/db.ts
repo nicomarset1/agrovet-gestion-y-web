@@ -3,6 +3,7 @@ import "server-only";
 import type { CatalogFilters, CartItemPayload, WholesaleClient } from "./types";
 
 const hasPostgres = Boolean(process.env.DATABASE_URL);
+const isHostedProduction = process.env.VERCEL === "1" || process.env.VERCEL_ENV === "production";
 
 type SqliteDriver = typeof import("./db-sqlite");
 type PostgresDriver = typeof import("./db-postgres");
@@ -11,9 +12,10 @@ type Driver = SqliteDriver | PostgresDriver;
 let driverPromise: Promise<Driver> | null = null;
 
 async function getDriver(): Promise<Driver> {
-  driverPromise ??= hasPostgres
-    ? import("./db-postgres")
-    : import("./db-sqlite");
+  if (!hasPostgres && isHostedProduction) {
+    throw new Error("DATABASE_URL es obligatorio en produccion. Sin una base Postgres compartida, los pedidos y ventas no se van a reflejar entre sesiones ni se van a conservar.");
+  }
+  driverPromise ??= hasPostgres ? import("./db-postgres") : import("./db-sqlite");
   return driverPromise;
 }
 
