@@ -548,11 +548,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 .admin-brand-suggestions-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 2px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .admin-brand-suggestions-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
-.admin-brand-helper {
-  margin-top: -2px;
-  width: fit-content;
-  justify-self: start;
-}
+.admin-brand-helper { margin-top: -2px; }
 .admin-brand-suggestion {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center;
   width: 100%; min-height: 42px; padding: 0 8px 0 12px; border-radius: 10px; border: 1px solid transparent;
