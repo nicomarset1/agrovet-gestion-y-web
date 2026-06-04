@@ -201,12 +201,20 @@ async function ensureSchema() {
         notes TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS admin_login_attempts (
+        identifier TEXT PRIMARY KEY,
+        failures INTEGER NOT NULL DEFAULT 0,
+        locked_until BIGINT NOT NULL DEFAULT 0,
+        reset_at BIGINT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
 
       CREATE INDEX IF NOT EXISTS products_category_idx ON products(category_id);
       CREATE INDEX IF NOT EXISTS products_subcategory_idx ON products(subcategory_slug);
       CREATE INDEX IF NOT EXISTS variants_product_idx ON variants(product_id);
       CREATE INDEX IF NOT EXISTS inventory_branch_idx ON inventory(branch_id);
       CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at DESC);
+      CREATE INDEX IF NOT EXISTS admin_login_attempts_locked_idx ON admin_login_attempts(locked_until);
     `);
 
     const [seedCheck] = await sql`SELECT COUNT(*)::int AS count FROM branches`;
@@ -1388,4 +1396,56 @@ export async function deleteOrder(id: number) {
     await tx`DELETE FROM orders WHERE id = ${id}`;
     await bumpSyncVersion(tx);
   });
+}
+
+const loginWindowMs = 1000 * 60 * 15;
+const loginLockMs = 1000 * 60 * 15;
+const maxLoginFailures = 5;
+
+export async function getLoginRateLimit(identifier: string) {
+  await ensureSchema();
+  const now = Date.now();
+  const [row] = await sql`
+    SELECT identifier, failures, locked_until AS "lockedUntil", reset_at AS "resetAt"
+    FROM admin_login_attempts
+    WHERE identifier = ${identifier}
+  ` as unknown as Array<{ failures: number; lockedUntil: number; resetAt: number }>;
+  if (!row) return { limited: false, retryAfterSeconds: 0 };
+  if (Number(row.resetAt) <= now && Number(row.lockedUntil) <= now) {
+    await sql`DELETE FROM admin_login_attempts WHERE identifier = ${identifier}`;
+    return { limited: false, retryAfterSeconds: 0 };
+  }
+  if (Number(row.lockedUntil) > now) {
+    return { limited: true, retryAfterSeconds: Math.ceil((Number(row.lockedUntil) - now) / 1000) };
+  }
+  return { limited: false, retryAfterSeconds: 0 };
+}
+
+export async function recordLoginAttempt(identifier: string, success: boolean) {
+  await ensureSchema();
+  if (success) {
+    await sql`DELETE FROM admin_login_attempts WHERE identifier = ${identifier}`;
+    return;
+  }
+  const now = Date.now();
+  const [current] = await sql`
+    SELECT identifier, failures, locked_until AS "lockedUntil", reset_at AS "resetAt"
+    FROM admin_login_attempts
+    WHERE identifier = ${identifier}
+  ` as unknown as Array<{ failures: number; lockedUntil: number; resetAt: number }>;
+  const bucket = current && Number(current.resetAt) > now
+    ? current
+    : { failures: 0, lockedUntil: 0, resetAt: now + loginWindowMs };
+  const failures = Number(bucket.failures) + 1;
+  const lockedUntil = failures >= maxLoginFailures ? now + loginLockMs : Number(bucket.lockedUntil ?? 0);
+  const resetAt = failures >= maxLoginFailures ? lockedUntil : Number(bucket.resetAt);
+  await sql`
+    INSERT INTO admin_login_attempts (identifier, failures, locked_until, reset_at, updated_at)
+    VALUES (${identifier}, ${failures}, ${lockedUntil}, ${resetAt}, CURRENT_TIMESTAMP)
+    ON CONFLICT (identifier) DO UPDATE SET
+      failures = EXCLUDED.failures,
+      locked_until = EXCLUDED.locked_until,
+      reset_at = EXCLUDED.reset_at,
+      updated_at = CURRENT_TIMESTAMP
+  `;
 }

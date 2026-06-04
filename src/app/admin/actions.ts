@@ -36,16 +36,16 @@ function loginIdentifier(headersList: Headers) {
 export async function loginAction(_: LoginState, formData: FormData): Promise<LoginState> {
   const password = String(formData.get("password") ?? "");
   const identifier = loginIdentifier(await headers());
-  const rateLimit = getLoginRateLimit(identifier);
+  const rateLimit = await getLoginRateLimit(identifier);
   if (rateLimit.limited) {
     const minutes = Math.max(1, Math.ceil(rateLimit.retryAfterSeconds / 60));
     return { error: `Demasiados intentos. Probá de nuevo en ${minutes} min.` };
   }
   if (!isValidAdminPassword(password)) {
-    recordLoginAttempt(identifier, false);
+    await recordLoginAttempt(identifier, false);
     return { error: "Código incorrecto." };
   }
-  recordLoginAttempt(identifier, true);
+  await recordLoginAttempt(identifier, true);
   await startAdminSession();
   redirect("/admin");
 }

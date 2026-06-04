@@ -166,3 +166,11 @@ export async function updateOrder(input: Parameters<SqliteDriver["updateOrder"]>
 export async function deleteOrder(id: number) {
   return (await getDriver()).deleteOrder(id);
 }
+
+export async function getLoginRateLimit(identifier: string) {
+  return (await getDriver()).getLoginRateLimit(identifier);
+}
+
+export async function recordLoginAttempt(identifier: string, success: boolean) {
+  return (await getDriver()).recordLoginAttempt(identifier, success);
+}

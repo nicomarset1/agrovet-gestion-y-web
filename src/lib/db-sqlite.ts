@@ -141,6 +141,13 @@ db.exec(`
     notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS admin_login_attempts (
+    identifier TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL DEFAULT 0,
+    locked_until INTEGER NOT NULL DEFAULT 0,
+    reset_at INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 ensureColumn("branches", "map_url", "TEXT NOT NULL DEFAULT ''");
@@ -1583,4 +1590,46 @@ export function deleteOrder(id: number) {
     db.prepare("DELETE FROM orders WHERE id = ?").run(id);
     bumpSyncVersion();
   })();
+}
+
+const loginWindowMs = 1000 * 60 * 15;
+const loginLockMs = 1000 * 60 * 15;
+const maxLoginFailures = 5;
+
+export function getLoginRateLimit(identifier: string) {
+  const now = Date.now();
+  const row = db.prepare("SELECT failures, locked_until AS lockedUntil, reset_at AS resetAt FROM admin_login_attempts WHERE identifier = ?").get(identifier) as { failures?: number; lockedUntil?: number; resetAt?: number } | undefined;
+  if (!row) return { limited: false, retryAfterSeconds: 0 };
+  if ((row.resetAt ?? 0) <= now && (row.lockedUntil ?? 0) <= now) {
+    db.prepare("DELETE FROM admin_login_attempts WHERE identifier = ?").run(identifier);
+    return { limited: false, retryAfterSeconds: 0 };
+  }
+  if ((row.lockedUntil ?? 0) > now) {
+    return { limited: true, retryAfterSeconds: Math.ceil(((row.lockedUntil ?? 0) - now) / 1000) };
+  }
+  return { limited: false, retryAfterSeconds: 0 };
+}
+
+export function recordLoginAttempt(identifier: string, success: boolean) {
+  if (success) {
+    db.prepare("DELETE FROM admin_login_attempts WHERE identifier = ?").run(identifier);
+    return;
+  }
+  const now = Date.now();
+  const current = db.prepare("SELECT failures, locked_until AS lockedUntil, reset_at AS resetAt FROM admin_login_attempts WHERE identifier = ?").get(identifier) as { failures?: number; lockedUntil?: number; resetAt?: number } | undefined;
+  const bucket = current && (current.resetAt ?? 0) > now
+    ? current
+    : { failures: 0, lockedUntil: 0, resetAt: now + loginWindowMs };
+  const failures = (bucket.failures ?? 0) + 1;
+  const lockedUntil = failures >= maxLoginFailures ? now + loginLockMs : (bucket.lockedUntil ?? 0);
+  const resetAt = failures >= maxLoginFailures ? lockedUntil : (bucket.resetAt ?? now + loginWindowMs);
+  db.prepare(`
+    INSERT INTO admin_login_attempts (identifier, failures, locked_until, reset_at, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(identifier) DO UPDATE SET
+      failures = excluded.failures,
+      locked_until = excluded.locked_until,
+      reset_at = excluded.reset_at,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(identifier, failures, lockedUntil, resetAt);
 }
