@@ -127,6 +127,21 @@ export type OrderRecord = {
   items: OrderItemRecord[];
 };
 
+export type LowStockItem = {
+  variantId: number;
+  productId: number;
+  productName: string;
+  productSlug: string;
+  label: string;
+  sku: string;
+  branchId: number;
+  branchName: string;
+  quantity: number;
+  donorBranchId: number | null;
+  donorBranchName: string | null;
+  donorQuantity: number | null;
+};
+
 export type WholesaleClient = {
   id: number;
   businessName: string;
