@@ -7,6 +7,7 @@ import { LiveSync } from "@/components/live-sync";
 import { ToastProvider } from "@/components/toast-provider";
 import { WhatsappFloat } from "@/components/whatsapp-float";
 import { getSyncVersion } from "@/lib/db";
+import { absoluteUrl, siteName, siteUrl } from "@/lib/site";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -19,12 +20,51 @@ const fraunces = Fraunces({
   subsets: ["latin"],
 });
 
+const description = "Tienda online de Agrovet Mar del Plata. Alimentos, accesorios y farmacia para perros y gatos con stock por sucursal.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
     default: "Agrovet | Alimentos y cuidado para perros y gatos",
     template: "%s | Agrovet",
   },
-  description: "Tienda online de Agrovet Mar del Plata. Alimentos, accesorios y farmacia para perros y gatos con stock por sucursal.",
+  description,
+  applicationName: siteName,
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: "website",
+    siteName,
+    locale: "es_AR",
+    url: siteUrl,
+    title: "Agrovet | Alimentos y cuidado para perros y gatos",
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Agrovet | Alimentos y cuidado para perros y gatos",
+    description,
+  },
+};
+
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "PetStore",
+  name: siteName,
+  description,
+  url: siteUrl,
+  image: absoluteUrl("/favicon.ico"),
+  areaServed: "Mar del Plata, Buenos Aires, Argentina",
+  address: {
+    "@type": "PostalAddress",
+    addressLocality: "Mar del Plata",
+    addressRegion: "Buenos Aires",
+    addressCountry: "AR",
+  },
+  sameAs: [
+    "https://www.instagram.com/agrovetmdp/",
+    "https://www.facebook.com/search/top?q=agrovet%20mar%20del%20plata",
+  ],
 };
 
 export default async function RootLayout({
@@ -36,6 +76,10 @@ export default async function RootLayout({
   return (
     <html data-scroll-behavior="smooth" lang="es" className={`${manrope.variable} ${fraunces.variable} antialiased`}>
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
         <ToastProvider>
           <CartProvider>
             <LiveSync initialVersion={syncVersion} />

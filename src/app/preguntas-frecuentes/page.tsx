@@ -1,6 +1,6 @@
 import { SpecialPageShell } from "@/components/special-page-shell";
 
-export const metadata = { title: "Preguntas frecuentes" };
+export const metadata = { title: "Preguntas frecuentes", robots: { index: false, follow: true } };
 
 export default function PreguntasFrecuentesPage() {
   return (

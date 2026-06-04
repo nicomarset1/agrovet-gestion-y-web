@@ -1,6 +1,6 @@
 import { SpecialPageShell } from "@/components/special-page-shell";
 
-export const metadata = { title: "Contacto" };
+export const metadata = { title: "Contacto", robots: { index: false, follow: true } };
 
 export default function ContactoPage() {
   return (
