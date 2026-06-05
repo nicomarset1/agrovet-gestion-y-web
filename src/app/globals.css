@@ -292,7 +292,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .visual-categories { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .visual-category {
   position: relative; width: 100%; aspect-ratio: 512 / 313; overflow: hidden; border-radius: 8px;
-  background: #26083f; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 12px 32px rgba(44, 13, 67, .16);
+  background: #26083f; border: 0; box-shadow: 0 12px 32px rgba(44, 13, 67, .16);
   transition: box-shadow .18s ease;
 }
 .visual-category:has(.visual-category-button:hover), .visual-category:has(.visual-category-button:focus-visible) { box-shadow: 0 18px 42px rgba(44, 13, 67, .22); }
@@ -1260,7 +1260,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     .hero-image-box { padding: 0; min-height: 0; aspect-ratio: 900 / 560; border-radius: 8px; }
     .hero-main-image { display: none; }
     .hero-mobile-image { display: block; }
-    .hero-buy-button { left: 7.1%; bottom: 2.2%; min-height: 30px; padding: 0 11px; gap: 6px; font-size: 9px; }
+    .hero-buy-button { left: 7.1%; bottom: 2.4%; min-height: 30px; padding: 0 11px; gap: 6px; font-size: 9px; }
     .hero-buy-button svg { width: 16px; height: 16px; }
     .hero h1 { font-size: 39px; }
     .hero p { font-size: 15px; }
