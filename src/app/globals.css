@@ -3214,6 +3214,13 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   .hero .trust-item span { font-size: 12px; }
 }
 
+@media (max-width: 430px) {
+  .hero-buy-button {
+    right: 2.4%; bottom: 3%; min-height: 26px; padding: 0 7px; gap: 4px; font-size: 7.5px;
+  }
+  .hero-buy-button svg { width: 13px; height: 13px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-promo-track { animation: none; }
 }
