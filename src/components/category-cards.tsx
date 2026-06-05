@@ -18,6 +18,11 @@ const categories = [
     image: "/home-assets/category-accessories-clean.png",
     name: "Accesorios",
   },
+  {
+    href: "/tienda?category=farmacia",
+    image: "/home-assets/category-pharmacy-clean.png",
+    name: "Farmacia",
+  },
 ];
 
 export function CategoryCards() {
