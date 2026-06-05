@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Award, ShieldCheck, Truck } from "lucide-react";
+import { Award, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
 import { CategoryCards } from "@/components/category-cards";
 import { ProductCard } from "@/components/product-card";
@@ -29,7 +29,10 @@ export default async function Home() {
               sizes="calc(100vw - 28px)"
               src="/home-assets/hero-pets-mobile.png"
             />
-            <Link aria-label="Comprar ahora" className="hero-buy-hotspot" href="/tienda" />
+            <Link className="hero-buy-button" href="/tienda">
+              <ShoppingCart size={22} />
+              Comprar ahora
+            </Link>
           </div>
           <div className="trust-grid">
             <div className="trust-item"><Truck /><div><strong>Envíos a todo Mar del Plata</strong><span>Rápidos y seguros</span></div></div>

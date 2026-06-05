@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 
 const categories = [
   {
@@ -31,6 +32,9 @@ export function CategoryCards() {
             sizes="(max-width: 640px) calc(100vw - 28px), (max-width: 1000px) 50vw, 33vw"
             src={category.image}
           />
+          <span className="visual-category-button">
+            Ver productos <ArrowRight size={18} />
+          </span>
         </Link>
       ))}
     </div>
