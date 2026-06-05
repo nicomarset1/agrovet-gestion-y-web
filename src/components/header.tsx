@@ -6,6 +6,7 @@ import { CatalogMenu } from "./catalog-menu";
 import { CartButton } from "./cart-button";
 import { LiveSearch } from "./live-search";
 import { SmoothAnchor } from "./smooth-anchor";
+import { StoreNavLink } from "./store-nav-link";
 
 export async function Header() {
   noStore();
@@ -33,7 +34,7 @@ export async function Header() {
           <CatalogMenu items={menuItems} />
           <LiveSearch products={searchProducts} />
           <nav className="navigation">
-            <Link href="/tienda">Tienda</Link>
+            <StoreNavLink />
             <SmoothAnchor href="/#locales"><MapPin size={15} style={{ display: "inline", verticalAlign: "-2px" }} /> Locales</SmoothAnchor>
             <CartButton />
           </nav>
