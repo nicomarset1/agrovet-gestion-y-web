@@ -24,7 +24,7 @@ export function CategoryCards() {
   return (
     <div className="categories visual-categories">
       {categories.map((category) => (
-        <Link aria-label={`Ver productos de ${category.name}`} className="visual-category" href={category.href} key={category.name}>
+        <article className="visual-category" key={category.name}>
           <Image
             alt=""
             className="visual-category-image"
@@ -32,10 +32,10 @@ export function CategoryCards() {
             sizes="(max-width: 640px) calc(100vw - 28px), (max-width: 1000px) 50vw, 33vw"
             src={category.image}
           />
-          <span className="visual-category-button">
+          <Link aria-label={`Ver productos de ${category.name}`} className="visual-category-button" href={category.href}>
             Ver productos <ArrowRight size={18} />
-          </span>
-        </Link>
+          </Link>
+        </article>
       ))}
     </div>
   );
