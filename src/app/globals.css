@@ -111,7 +111,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .hero-main-image { object-fit: cover; object-position: left center; }
 .hero-mobile-image { display: none; object-fit: cover; }
 .hero-buy-button {
-  position: absolute; left: 4.1%; bottom: 3.4%; z-index: 2; min-height: clamp(36px, 3.5vw, 52px); padding: 0 clamp(14px, 1.8vw, 28px); border-radius: 999px;
+  position: absolute; left: 4.1%; bottom: 2.4%; z-index: 2; min-height: clamp(34px, 3.35vw, 50px); padding: 0 clamp(13px, 1.7vw, 26px); border-radius: 999px;
   display: inline-flex; align-items: center; justify-content: center; gap: 12px; color: white;
   background: linear-gradient(135deg, #7d2dc5, #ad52df); font-size: clamp(10px, .9vw, 15px); font-weight: 900; line-height: 1; text-transform: uppercase; letter-spacing: .01em; white-space: nowrap;
   box-shadow: 0 16px 34px rgba(96, 27, 141, .38); transition: box-shadow .18s ease, transform .18s ease, filter .18s ease;
@@ -1173,7 +1173,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     .trust-item strong { font-size: 14px; }
     .trust-item span { font-size: 12px; }
     .product-grid, .categories, .branch-grid { grid-template-columns: repeat(2, 1fr); }
-    .visual-categories { grid-template-columns: 1fr; }
+    .visual-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .visual-category:nth-child(3) { grid-column: 1 / -1; width: calc((100% - 14px) / 2); justify-self: center; }
     .promo-hero { align-items: flex-start; flex-direction: column; }
   .promo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .contact-hero { align-items: flex-start; flex-direction: column; }
@@ -1256,7 +1257,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     .hero-image-box { padding: 0; min-height: 0; aspect-ratio: 900 / 560; border-radius: 8px; }
     .hero-main-image { display: none; }
     .hero-mobile-image { display: block; }
-    .hero-buy-button { left: 7.1%; bottom: 3.2%; min-height: 33px; padding: 0 12px; gap: 7px; font-size: 10px; }
+    .hero-buy-button { left: 7.1%; bottom: 2.2%; min-height: 30px; padding: 0 11px; gap: 6px; font-size: 9px; }
     .hero-buy-button svg { width: 16px; height: 16px; }
     .hero h1 { font-size: 39px; }
     .hero p { font-size: 15px; }
@@ -1267,7 +1268,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     .trust-item svg { width: 42px; height: 42px; }
     .trust-item strong { font-size: 15px; }
     .trust-item span { font-size: 13px; }
-    .visual-category { max-width: 512px; justify-self: center; }
+    .visual-category { max-width: 512px; width: 100%; justify-self: center; }
+    .visual-category:nth-child(3) { grid-column: auto; width: 100%; }
     .visual-category-button { min-height: 38px; padding: 0 14px; font-size: 11px; }
     .section-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
   .section-heading .button { min-height: 40px; padding: 0 15px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
