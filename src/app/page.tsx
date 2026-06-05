@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Award, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
+import { Award, BadgePercent, CreditCard, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
 import { CategoryCards } from "@/components/category-cards";
 import { ProductCard } from "@/components/product-card";
@@ -33,6 +33,16 @@ export default async function Home() {
               <ShoppingCart size={22} />
               Comprar ahora
             </Link>
+          </div>
+          <div className="hero-promo-ticker" aria-label="Beneficios destacados">
+            <div className="hero-promo-track">
+              <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
+              <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
+              <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
+              <div className="hero-promo-tag" aria-hidden="true"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
+              <div className="hero-promo-tag" aria-hidden="true"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
+              <div className="hero-promo-tag" aria-hidden="true"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
+            </div>
           </div>
           <div className="trust-grid">
             <div className="trust-item"><Truck /><div><strong>Envíos a todo Mar del Plata</strong><span>Rápidos y seguros</span></div></div>
