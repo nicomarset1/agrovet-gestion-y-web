@@ -2,8 +2,8 @@ name: Daily database backup
 
 on:
   schedule:
-    # 00:15 America/Buenos_Aires
-    - cron: "15 3 * * *"
+    # 00:37 America/Buenos_Aires. Evita los minutos mas congestionados de GitHub Actions.
+    - cron: "37 3 * * *"
   workflow_dispatch:
 
 permissions:

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { BadgeCheck, MapPin, Truck } from "lucide-react";
+import Image from "next/image";
+import { Award, ShieldCheck, Truck } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
 import { CategoryCards } from "@/components/category-cards";
 import { ProductCard } from "@/components/product-card";
@@ -11,27 +12,29 @@ export default async function Home() {
     <>
       <section className="hero">
         <div className="container">
-          <div className="hero-box">
-            <div className="hero-content">
-              <p className="eyebrow">Cuidamos lo que más querés</p>
-              <h1 className="display">Todo para tu mascota, en un solo lugar.</h1>
-              <p>Alimentos premium, accesorios y farmacia para perros y gatos. Comprá online con disponibilidad visible en cada sucursal.</p>
-              <div className="hero-actions">
-                <Link className="button button-primary" href="/tienda">Ver productos</Link>
-                <Link className="button button-light" href="/tienda?category=alimentos">Comprar alimento</Link>
-              </div>
-            </div>
-            <span className="hero-shape" />
-            <div className="pet-illustration" aria-hidden="true">
-              <span className="pet-ear left" /><span className="pet-ear right" />
-              <span className="pet-head" /><span className="pet-muzzle" /><span className="pet-nose" />
-              <span className="pet-eye left" /><span className="pet-eye right" />
-            </div>
+          <div className="hero-box hero-image-box">
+            <Image
+              alt="Todo para tu mascota en un solo lugar: alimentos, accesorios y medicamentos"
+              className="hero-main-image"
+              fill
+              priority
+              sizes="(max-width: 640px) calc(100vw - 28px), 1240px"
+              src="/home-assets/hero-pets.png"
+            />
+            <Image
+              alt=""
+              className="hero-mobile-image"
+              fill
+              priority
+              sizes="calc(100vw - 28px)"
+              src="/home-assets/hero-pets-mobile.png"
+            />
+            <Link aria-label="Comprar ahora" className="hero-buy-hotspot" href="/tienda" />
           </div>
           <div className="trust-grid">
-            <div className="trust-item"><Truck /><div><strong>Envíos en Mar del Plata</strong><span>Coordiná entrega en la ciudad</span></div></div>
-            <div className="trust-item"><BadgeCheck /><div><strong>Productos seleccionados</strong><span>Marcas reconocidas</span></div></div>
-            <div className="trust-item"><MapPin /><div><strong>Stock por sucursal</strong><span>Disponibilidad antes de comprar</span></div></div>
+            <div className="trust-item"><Truck /><div><strong>Envíos a todo Mar del Plata</strong><span>Rápidos y seguros</span></div></div>
+            <div className="trust-item"><ShieldCheck /><div><strong>Productos de calidad</strong><span>Elegidos para el bienestar de tu mascota</span></div></div>
+            <div className="trust-item"><Award /><div><strong>Las mejores marcas</strong><span>Alimentos, accesorios y medicamentos premium</span></div></div>
           </div>
         </div>
       </section>
