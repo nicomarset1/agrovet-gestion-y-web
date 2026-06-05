@@ -144,7 +144,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .trust-item strong { display: block; font-size: 17px; line-height: 1.15; text-transform: uppercase; }
 .trust-item span { display: block; color: #3d264a; font-size: 14px; line-height: 1.35; margin-top: 4px; }
 @media (min-width: 821px) {
-  .trust-item:last-child { padding-right: 150px; }
+  .trust-item:last-child { padding-right: 120px; }
 }
 
 .section { padding: 48px 0; }
@@ -1169,8 +1169,11 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     .pet-illustration { opacity: .2; right: -25px; }
     .hero-image-box { aspect-ratio: 1535 / 560; }
     .hero-content { max-width: 630px; }
-    .trust-item { flex-direction: column; justify-content: center; text-align: center; gap: 10px; padding: 16px; }
-    .trust-item strong { font-size: 14px; }
+    .trust-grid { grid-template-columns: 1fr; gap: 10px; }
+    .trust-item { min-height: 86px; flex-direction: row; justify-content: flex-start; text-align: left; gap: 16px; padding: 18px 22px; }
+    .trust-item:last-child { padding-right: 150px; }
+    .trust-item svg { width: 44px; height: 44px; }
+    .trust-item strong { font-size: 15px; }
     .trust-item span { font-size: 12px; }
     .product-grid, .categories, .branch-grid { grid-template-columns: repeat(2, 1fr); }
     .visual-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
@@ -1265,6 +1268,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   .hero-shape { opacity: .5; }
     .trust-grid, .footer-grid, .categories, .product-grid, .metrics, .visual-categories { grid-template-columns: 1fr; }
     .trust-item { min-height: 92px; padding: 18px; flex-direction: row; justify-content: flex-start; text-align: left; gap: 14px; }
+    .trust-item:last-child { padding-right: 88px; }
     .trust-item svg { width: 42px; height: 42px; }
     .trust-item strong { font-size: 15px; }
     .trust-item span { font-size: 13px; }
@@ -3139,3 +3143,25 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .lowstock-badge { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
 .lowstock-badge-low { background: #fff3cd; color: #8a6d00; }
 .lowstock-badge-out { background: #ffeceb; color: #a4232b; }
+
+/* Ajuste final de la franja de beneficios del home.
+   Va al final para ganar sobre reglas responsive generales de grids. */
+@media (max-width: 1100px) {
+  .hero .trust-grid { grid-template-columns: 1fr; gap: 10px; }
+  .hero .trust-item {
+    min-height: 82px; flex-direction: row; justify-content: flex-start; text-align: left;
+    gap: 16px; padding: 16px 20px;
+  }
+  .hero .trust-item:last-child { padding-right: 140px; }
+  .hero .trust-item svg { width: 42px; height: 42px; }
+  .hero .trust-item strong { font-size: 15px; }
+  .hero .trust-item span { font-size: 13px; }
+}
+
+@media (max-width: 640px) {
+  .hero .trust-item { min-height: 78px; gap: 12px; padding: 15px 16px; }
+  .hero .trust-item:last-child { padding-right: 82px; }
+  .hero .trust-item svg { width: 38px; height: 38px; }
+  .hero .trust-item strong { font-size: 13px; }
+  .hero .trust-item span { font-size: 12px; }
+}
