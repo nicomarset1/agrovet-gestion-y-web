@@ -1224,13 +1224,13 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   .topbar-track { gap: 28px; animation: topbarMarquee 20s linear infinite; }
   .topbar-track span:nth-child(n+4) { display: inline; }
 }
-@media (min-width: 641px) and (max-width: 820px) {
+@media (min-width: 641px) and (max-width: 1000px) {
   .hero-buy-button {
-    left: 3.8%; bottom: 3.2%; min-height: 38px; padding: 0 16px; gap: 8px; font-size: 11px;
+    min-height: 30px; padding: 0 12px; gap: 6px; font-size: 9px;
   }
-  .hero-buy-button svg { width: 18px; height: 18px; }
+  .hero-buy-button svg { width: 15px; height: 15px; }
   .hero-buy-button:hover, .hero-buy-button:focus-visible {
-    box-shadow: 0 10px 22px rgba(96, 27, 141, .28); transform: none; filter: brightness(1.04);
+    box-shadow: 0 10px 22px rgba(96, 27, 141, .28); transform: none; filter: brightness(1.04); outline: none;
   }
 }
 @media (max-width: 820px) {
