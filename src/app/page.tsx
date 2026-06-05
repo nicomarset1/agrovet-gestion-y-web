@@ -19,7 +19,7 @@ export default async function Home() {
               fill
               priority
               sizes="(max-width: 640px) calc(100vw - 28px), 1240px"
-              src="/home-assets/hero-pets.png"
+              src="/home-assets/hero-pets-clean.png"
             />
             <Image
               alt=""
@@ -27,7 +27,7 @@ export default async function Home() {
               fill
               priority
               sizes="calc(100vw - 28px)"
-              src="/home-assets/hero-pets-mobile.png"
+              src="/home-assets/hero-pets-mobile-clean.png"
             />
             <Link className="hero-buy-button" href="/tienda">
               <ShoppingCart size={22} />

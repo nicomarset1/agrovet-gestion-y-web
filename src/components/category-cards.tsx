@@ -5,17 +5,17 @@ import { ArrowRight } from "lucide-react";
 const categories = [
   {
     href: "/tienda?pet=perro",
-    image: "/home-assets/category-dogs.png",
+    image: "/home-assets/category-dogs-clean.png",
     name: "Perros",
   },
   {
     href: "/tienda?pet=gato",
-    image: "/home-assets/category-cats.png",
+    image: "/home-assets/category-cats-clean.png",
     name: "Gatos",
   },
   {
     href: "/tienda?category=accesorios",
-    image: "/home-assets/category-accessories.png",
+    image: "/home-assets/category-accessories-clean.png",
     name: "Accesorios",
   },
 ];
