@@ -123,10 +123,11 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   box-shadow: 0 14px 34px rgba(45, 13, 70, .14);
 }
 .hero-promo-track {
-  width: max-content; display: flex; gap: 10px; padding: 10px;
+  width: max-content; display: flex;
   animation: hero-promo-scroll 28s linear infinite;
 }
 .hero-promo-ticker:hover .hero-promo-track { animation-play-state: paused; }
+.hero-promo-sequence { display: flex; gap: 10px; padding: 10px 5px; }
 .hero-promo-tag {
   width: clamp(270px, 31vw, 390px); min-height: 72px; padding: 13px 18px; border-radius: 8px;
   display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; column-gap: 13px;
@@ -138,7 +139,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .hero-promo-tag span { min-width: 0; display: block; margin-top: 4px; color: #f1defe; font-size: clamp(12px, .95vw, 14px); line-height: 1.2; }
 @keyframes hero-promo-scroll {
   from { transform: translateX(0); }
-  to { transform: translateX(calc(-50% - 5px)); }
+  to { transform: translateX(-50%); }
 }
 .hero-content { position: relative; z-index: 1; max-width: 555px; }
 .hero h1 { margin: 16px 0 18px; font-size: clamp(46px, 5vw, 64px); line-height: .98; color: var(--forest); }
@@ -3183,7 +3184,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 @media (max-width: 640px) {
-  .hero-promo-track { gap: 8px; padding: 8px; animation-duration: 22s; }
+  .hero-promo-track { animation-duration: 22s; }
+  .hero-promo-sequence { gap: 8px; padding: 8px 4px; }
   .hero-promo-tag { width: calc(100vw - 44px); min-height: 66px; padding: 12px 14px; grid-template-columns: 36px minmax(0, 1fr); column-gap: 11px; }
   .hero-promo-tag svg { width: 32px; height: 32px; }
   .hero-promo-tag strong { font-size: 12px; }

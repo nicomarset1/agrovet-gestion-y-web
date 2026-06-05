@@ -36,12 +36,16 @@ export default async function Home() {
           </div>
           <div className="hero-promo-ticker" aria-label="Beneficios destacados">
             <div className="hero-promo-track">
-              <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
-              <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
-              <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
-              <div className="hero-promo-tag" aria-hidden="true"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
-              <div className="hero-promo-tag" aria-hidden="true"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
-              <div className="hero-promo-tag" aria-hidden="true"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
+              <div className="hero-promo-sequence">
+                <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
+                <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
+                <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
+              </div>
+              <div className="hero-promo-sequence" aria-hidden="true">
+                <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
+                <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
+                <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
+              </div>
             </div>
           </div>
           <div className="trust-grid">
