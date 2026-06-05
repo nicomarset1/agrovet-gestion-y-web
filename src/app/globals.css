@@ -1279,10 +1279,10 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     .topbar-inner { width: 100%; font-size: 11px; line-height: 1.25; }
     .hero { padding-top: 26px; }
     .hero-box { padding: 40px 23px; min-height: 390px; }
-    .hero-image-box { padding: 0; min-height: 0; aspect-ratio: 900 / 560; border-radius: 8px; margin-bottom: 42px; overflow: visible; }
+    .hero-image-box { padding: 0; min-height: 0; aspect-ratio: 900 / 560; border-radius: 8px; margin-bottom: 0; overflow: hidden; }
     .hero-main-image { display: none; }
     .hero-mobile-image { display: block; border-radius: inherit; overflow: hidden; }
-    .hero-buy-button { left: auto; right: 0; bottom: auto; top: calc(100% + 8px); min-height: 34px; padding: 0 14px; gap: 7px; font-size: 10px; }
+    .hero-buy-button { left: auto; right: 4.8%; bottom: auto; top: 4.8%; min-height: 31px; padding: 0 12px; gap: 6px; font-size: 9px; }
     .hero-buy-button svg { width: 16px; height: 16px; }
     .hero h1 { font-size: 39px; }
     .hero p { font-size: 15px; }
