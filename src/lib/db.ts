@@ -82,6 +82,19 @@ export async function getAdminSnapshot() {
   return (await getDriver()).getAdminSnapshot();
 }
 
+export async function getTrashItems() {
+  noStore();
+  return (await getDriver()).getTrashItems();
+}
+
+export async function restoreTrashItem(input: Parameters<SqliteDriver["restoreTrashItem"]>[0]) {
+  return (await getDriver()).restoreTrashItem(input);
+}
+
+export async function emptyTrash() {
+  return (await getDriver()).emptyTrash();
+}
+
 export async function getCatalogFacets() {
   return (await getDriver()).getCatalogFacets();
 }

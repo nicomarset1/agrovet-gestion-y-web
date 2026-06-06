@@ -2,7 +2,7 @@
 
 import postgres from "postgres";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
 const uncategorizedSubcategorySlug = "sin-subcategoria";
 const uncategorizedSubcategoryName = "Sin subcategorÃ­a";
@@ -118,14 +118,16 @@ async function ensureSchema() {
         name TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         parent_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-        show_in_menu BOOLEAN NOT NULL DEFAULT FALSE
+        show_in_menu BOOLEAN NOT NULL DEFAULT FALSE,
+        deleted_at TIMESTAMPTZ
       );
       CREATE TABLE IF NOT EXISTS subcategories (
         id SERIAL PRIMARY KEY,
         category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
-        description TEXT NOT NULL DEFAULT ''
+        description TEXT NOT NULL DEFAULT '',
+        deleted_at TIMESTAMPTZ
       );
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
@@ -144,7 +146,8 @@ async function ensureSchema() {
         requires_advice BOOLEAN NOT NULL DEFAULT FALSE,
         color TEXT NOT NULL,
         image_url TEXT NOT NULL DEFAULT '',
-        archived_at TIMESTAMPTZ
+        archived_at TIMESTAMPTZ,
+        purged_at TIMESTAMPTZ
       );
       CREATE TABLE IF NOT EXISTS variants (
         id SERIAL PRIMARY KEY,
@@ -176,7 +179,8 @@ async function ensureSchema() {
         source TEXT NOT NULL DEFAULT 'Tienda online',
         payment_method TEXT NOT NULL DEFAULT '',
         paid_cents INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMPTZ
       );
       CREATE TABLE IF NOT EXISTS order_items (
         order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -201,7 +205,8 @@ async function ensureSchema() {
         address TEXT NOT NULL DEFAULT '',
         tax_id TEXT NOT NULL DEFAULT '',
         notes TEXT NOT NULL DEFAULT '',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMPTZ
       );
       CREATE TABLE IF NOT EXISTS admin_login_attempts (
         identifier TEXT PRIMARY KEY,
@@ -219,6 +224,12 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at DESC);
       CREATE INDEX IF NOT EXISTS admin_login_attempts_locked_idx ON admin_login_attempts(locked_until);
     `);
+
+    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE subcategories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
 
     const [seedCheck] = await sql`SELECT COUNT(*)::int AS count FROM branches`;
     if (Number(seedCheck.count) === 0) {
@@ -415,8 +426,8 @@ const baseSelect = `
     p.species, p.life_stage AS "lifeStage", p.size, p.need, p.description, p.featured,
     p.requires_advice AS "requiresAdvice", p.color, p.image_url AS "imageUrl"
   FROM products p
-  LEFT JOIN categories c ON c.id = p.category_id
-  LEFT JOIN categories pc ON pc.id = c.parent_category_id
+  LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at IS NULL
+  LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at IS NULL
 `;
 
 function values(input?: string | string[]) {
@@ -436,7 +447,7 @@ function addInClause(clauses: string[], params: unknown[], expression: string, i
 
 export async function getProducts(filters: CatalogFilters = {}) {
   await ensureSchema();
-  const clauses: string[] = ["p.archived_at IS NULL"];
+  const clauses: string[] = ["p.archived_at IS NULL", "p.purged_at IS NULL"];
   const params: unknown[] = [];
   if (filters.q) {
     const value = `%${filters.q}%`;
@@ -491,14 +502,14 @@ export async function getProducts(filters: CatalogFilters = {}) {
 
 export async function getProduct(slug: string) {
   await ensureSchema();
-  const rows = await sql.unsafe(`${baseSelect} WHERE p.slug = $1 AND p.archived_at IS NULL`, [slug] as never[]) as unknown as ProductRow[];
+  const rows = await sql.unsafe(`${baseSelect} WHERE p.slug = $1 AND p.archived_at IS NULL AND p.purged_at IS NULL`, [slug] as never[]) as unknown as ProductRow[];
   return rows[0] ? hydrateProduct(rows[0]) : undefined;
 }
 
 export async function getFeaturedProducts() {
   await ensureSchema();
   // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
-  const rows = await sql.unsafe(`${baseSelect} WHERE p.featured = TRUE AND p.archived_at IS NULL ORDER BY p.name LIMIT 4`, [] as never[]) as unknown as ProductRow[];
+  const rows = await sql.unsafe(`${baseSelect} WHERE p.featured = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL ORDER BY p.name LIMIT 4`, [] as never[]) as unknown as ProductRow[];
   return hydrateProducts(rows);
 }
 
@@ -529,7 +540,7 @@ export async function getLowStockItems(threshold: number): Promise<LowStockItem[
     JOIN variants v ON v.id = i.variant_id
     JOIN products p ON p.id = v.product_id
     JOIN branches b ON b.id = i.branch_id
-    WHERE i.quantity <= ${threshold} AND p.archived_at IS NULL
+    WHERE i.quantity <= ${threshold} AND p.archived_at IS NULL AND p.purged_at IS NULL
     ORDER BY i.quantity ASC, p.name, v.label
   ` as unknown as LowStockItem[];
   return rows.map((row) => ({
@@ -550,6 +561,7 @@ export async function getCategories() {
       p.name AS "parentCategoryName"
     FROM categories c
     LEFT JOIN categories p ON p.id = c.parent_category_id
+    WHERE c.deleted_at IS NULL
     ORDER BY
       CASE WHEN c.slug IN (${specialSlugs}) THEN 1 ELSE 0 END,
       CASE WHEN c.slug IN (${specialSlugs}) THEN CASE c.slug ${specialCategoryOrderSql} ELSE 999 END ELSE COALESCE(p.id, c.id) END,
@@ -566,7 +578,8 @@ export async function getSubcategories() {
       c.id AS "categoryId", c.slug AS "categorySlug", c.name AS "categoryName", COUNT(p.id)::int AS count
     FROM subcategories s
     LEFT JOIN categories c ON c.id = s.category_id
-    LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at IS NULL
+    LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at IS NULL AND p.purged_at IS NULL
+    WHERE s.deleted_at IS NULL
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
     ORDER BY COALESCE(c.name, 'Sin categorÃ­a'), s.name
   ` as unknown as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number }[];
@@ -579,7 +592,7 @@ export async function getSubcategoryBySlug(slug: string, db: Db = sql) {
       c.id AS "categoryId", c.slug AS "categorySlug", c.name AS "categoryName"
     FROM subcategories s
     LEFT JOIN categories c ON c.id = s.category_id
-    WHERE s.slug = ${slug}
+    WHERE s.slug = ${slug} AND s.deleted_at IS NULL
   ` as unknown as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null }[];
   return row;
 }
@@ -596,6 +609,7 @@ export async function getWholesaleClients(): Promise<WholesaleClient[]> {
     SELECT id, business_name AS "businessName", contact_name AS "contactName", phone, email,
       address, tax_id AS "taxId", notes, created_at AS "createdAt"
     FROM wholesale_clients
+    WHERE deleted_at IS NULL
     ORDER BY LOWER(business_name)
   ` as unknown as Array<Omit<WholesaleClient, "createdAt"> & { createdAt: unknown }>;
   return rows.map((row) => ({ ...row, createdAt: toIso(row.createdAt) }));
@@ -633,7 +647,7 @@ export async function updateWholesaleClient(input: WholesaleClient) {
 
 export async function deleteWholesaleClient(id: number) {
   await ensureSchema();
-  await sql`DELETE FROM wholesale_clients WHERE id = ${id}`;
+  await sql`UPDATE wholesale_clients SET deleted_at = CURRENT_TIMESTAMP WHERE id = ${id}`;
   await bumpSyncVersion();
 }
 
@@ -677,6 +691,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
       o.source, o.payment_method AS "paymentMethod", o.paid_cents AS "paidCents", o.created_at AS "createdAt"
     FROM orders o
     JOIN branches b ON b.id = o.branch_id
+    WHERE o.deleted_at IS NULL
     ORDER BY o.created_at DESC, o.id DESC
   ` as unknown as Array<Omit<OrderRecord, "itemCount" | "items" | "createdAt"> & { createdAt: unknown }>;
   if (!orders.length) return [];
@@ -1005,37 +1020,15 @@ export async function deleteCategory(id: number) {
     const [category] = await tx`SELECT id, slug FROM categories WHERE id = ${id}` as unknown as { id: number; slug: string }[];
     if (!category) return;
     if (isSpecialCategorySlug(category.slug)) throw new Error("Esta categorÃ­a fija no se puede eliminar.");
-    const directSubcategories = await tx`SELECT slug FROM subcategories WHERE category_id = ${id}` as unknown as { slug: string }[];
-    await tx`UPDATE categories SET parent_category_id = NULL WHERE parent_category_id = ${id}`;
-    await tx`UPDATE subcategories SET category_id = NULL WHERE category_id = ${id}`;
-    if (directSubcategories.length) {
-      await tx`UPDATE products SET category_id = NULL, subcategory_slug = ${uncategorizedSubcategorySlug}, subcategory_name = ${uncategorizedSubcategoryName} WHERE subcategory_slug IN ${tx(directSubcategories.map((row) => row.slug))}`;
-    }
-    await tx`UPDATE products SET category_id = NULL, subcategory_slug = ${uncategorizedSubcategorySlug}, subcategory_name = ${uncategorizedSubcategoryName} WHERE category_id = ${id}`;
-    await tx`DELETE FROM categories WHERE id = ${id}`;
+    await tx`UPDATE categories SET deleted_at = CURRENT_TIMESTAMP, show_in_menu = FALSE WHERE id = ${id}`;
     await bumpSyncVersion(tx);
   });
 }
 
 export async function deleteProduct(id: number) {
   await ensureSchema();
-  await sql.begin(async (tx) => {
-    const variants = await tx`SELECT id FROM variants WHERE product_id = ${id}` as unknown as { id: number }[];
-    const variantIds = variants.map((variant) => variant.id);
-    if (variantIds.length) {
-      const hasOrderItems = await tx`SELECT 1 FROM order_items WHERE variant_id IN ${tx(variantIds)} LIMIT 1`;
-      if (hasOrderItems.length) {
-        await tx`UPDATE products SET archived_at = CURRENT_TIMESTAMP, featured = FALSE WHERE id = ${id}`;
-        await bumpSyncVersion(tx);
-        return;
-      }
-      await tx`DELETE FROM order_item_allocations WHERE variant_id IN ${tx(variantIds)}`;
-      await tx`DELETE FROM inventory WHERE variant_id IN ${tx(variantIds)}`;
-      await tx`DELETE FROM variants WHERE id IN ${tx(variantIds)}`;
-    }
-    await tx`DELETE FROM products WHERE id = ${id}`;
-    await bumpSyncVersion(tx);
-  });
+  await sql`UPDATE products SET archived_at = CURRENT_TIMESTAMP, featured = FALSE WHERE id = ${id}`;
+  await bumpSyncVersion();
 }
 
 export async function createSubcategory(input: { categoryId: number; name: string; description?: string }) {
@@ -1063,11 +1056,8 @@ export async function updateSubcategory(input: { oldSlug: string; categoryId: nu
 
 export async function deleteSubcategory(slug: string) {
   await ensureSchema();
-  await sql.begin(async (tx) => {
-    await tx`UPDATE products SET subcategory_slug = ${uncategorizedSubcategorySlug}, subcategory_name = ${uncategorizedSubcategoryName} WHERE subcategory_slug = ${slug}`;
-    await tx`DELETE FROM subcategories WHERE slug = ${slug}`;
-    await bumpSyncVersion(tx);
-  });
+  await sql`UPDATE subcategories SET deleted_at = CURRENT_TIMESTAMP WHERE slug = ${slug}`;
+  await bumpSyncVersion();
 }
 
 type ProductVariantInput = {
@@ -1288,7 +1278,7 @@ export async function createWholesaleOrder(input: {
     const [client] = await tx`
       SELECT id, business_name AS "businessName", contact_name AS "contactName", phone, email, address
       FROM wholesale_clients
-      WHERE id = ${input.clientId}
+      WHERE id = ${input.clientId} AND deleted_at IS NULL
     ` as unknown as Pick<WholesaleClient, "id" | "businessName" | "contactName" | "phone" | "email" | "address">[];
     if (!client) throw new Error("Cliente invÃ¡lido.");
     if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal invÃ¡lida.");
@@ -1472,8 +1462,9 @@ export async function updateOrder(input: {
 export async function deleteOrder(id: number) {
   await ensureSchema();
   await sql.begin(async (tx) => {
-    const [order] = await tx`SELECT id, branch_id AS "branchId", status FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string }[];
+    const [order] = await tx`SELECT id, branch_id AS "branchId", status, deleted_at AS "deletedAt" FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string; deletedAt: unknown }[];
     if (!order) return;
+    if (order.deletedAt) return;
     const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }>;
     const allocations = await getAllocationBuckets(id, tx);
     if (!isCanceledStatus(order.status)) {
@@ -1488,7 +1479,187 @@ export async function deleteOrder(id: number) {
         }
       }
     }
-    await tx`DELETE FROM orders WHERE id = ${id}`;
+    await tx`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ${id}`;
+    await bumpSyncVersion(tx);
+  });
+}
+
+export async function getTrashItems(): Promise<TrashItem[]> {
+  await ensureSchema();
+  await purgeExpiredTrashItems();
+  const [orders, products, categories, subcategories, clients] = await Promise.all([
+    sql`
+      SELECT id, code, customer_name AS "customerName", total_cents AS "amountCents", status, source, deleted_at AS "deletedAt"
+      FROM orders
+      WHERE deleted_at IS NOT NULL
+      ORDER BY deleted_at DESC
+    ` as unknown as Promise<Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: unknown }>>,
+    sql`
+      SELECT p.id, p.brand, p.name, COALESCE(c.name, 'Sin categoria') AS category, p.archived_at AS "deletedAt",
+        COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0)::int AS stock
+      FROM products p
+      LEFT JOIN categories c ON c.id = p.category_id
+      WHERE p.archived_at IS NOT NULL AND p.purged_at IS NULL
+      ORDER BY p.archived_at DESC
+    ` as unknown as Promise<Array<{ id: number; brand: string; name: string; category: string; stock: number; deletedAt: unknown }>>,
+    sql`
+      SELECT id, name, slug, deleted_at AS "deletedAt"
+      FROM categories
+      WHERE deleted_at IS NOT NULL
+      ORDER BY deleted_at DESC
+    ` as unknown as Promise<Array<{ id: number; name: string; slug: string; deletedAt: unknown }>>,
+    sql`
+      SELECT s.slug, s.name, COALESCE(c.name, 'Sin categoria') AS category, s.deleted_at AS "deletedAt"
+      FROM subcategories s
+      LEFT JOIN categories c ON c.id = s.category_id
+      WHERE s.deleted_at IS NOT NULL
+      ORDER BY s.deleted_at DESC
+    ` as unknown as Promise<Array<{ slug: string; name: string; category: string; deletedAt: unknown }>>,
+    sql`
+      SELECT id, business_name AS "businessName", contact_name AS "contactName", phone, email, deleted_at AS "deletedAt"
+      FROM wholesale_clients
+      WHERE deleted_at IS NOT NULL
+      ORDER BY deleted_at DESC
+    ` as unknown as Promise<Array<{ id: number; businessName: string; contactName: string; phone: string; email: string; deletedAt: unknown }>>,
+  ]);
+
+  return [
+    ...orders.map((order): TrashItem => ({
+      type: "order",
+      id: Number(order.id),
+      title: order.code,
+      subtitle: order.customerName,
+      amountCents: Number(order.amountCents),
+      deletedAt: toIso(order.deletedAt),
+      status: order.status,
+      source: order.source,
+    })),
+    ...products.map((product): TrashItem => ({
+      type: "product",
+      id: Number(product.id),
+      title: `${product.brand} ${product.name}`,
+      subtitle: `${product.category} | ${Number(product.stock)} unidades en stock`,
+      amountCents: 0,
+      deletedAt: toIso(product.deletedAt),
+      status: "Archivado",
+      source: "Productos",
+    })),
+    ...categories.map((category): TrashItem => ({
+      type: "category",
+      id: Number(category.id),
+      title: category.name,
+      subtitle: category.slug,
+      amountCents: 0,
+      deletedAt: toIso(category.deletedAt),
+      status: "Eliminada",
+      source: "Categorias",
+    })),
+    ...subcategories.map((subcategory): TrashItem => ({
+      type: "subcategory",
+      id: subcategory.slug,
+      title: subcategory.name,
+      subtitle: subcategory.category,
+      amountCents: 0,
+      deletedAt: toIso(subcategory.deletedAt),
+      status: "Eliminada",
+      source: "Subcategorias",
+    })),
+    ...clients.map((client): TrashItem => ({
+      type: "client",
+      id: Number(client.id),
+      title: client.businessName,
+      subtitle: [client.contactName, client.phone, client.email].filter(Boolean).join(" | ") || "Sin datos de contacto",
+      amountCents: 0,
+      deletedAt: toIso(client.deletedAt),
+      status: "Eliminado",
+      source: "Clientes",
+    })),
+  ].sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+async function purgeTrashedProducts(db: Db, olderThanDays?: number) {
+  const dateClause = olderThanDays ? sql`AND archived_at < NOW() - (${olderThanDays} || ' days')::interval` : sql``;
+  const variants = await db`
+    SELECT p.id AS "productId", v.id AS "variantId"
+    FROM products p
+    JOIN variants v ON v.product_id = p.id
+    WHERE p.archived_at IS NOT NULL AND p.purged_at IS NULL ${dateClause}
+  ` as unknown as Array<{ productId: number; variantId: number }>;
+  const idsByProduct = new Map<number, number[]>();
+  for (const row of variants) {
+    const current = idsByProduct.get(row.productId) ?? [];
+    current.push(row.variantId);
+    idsByProduct.set(row.productId, current);
+  }
+  for (const [productId, variantIds] of idsByProduct) {
+    const hasOrderItems = variantIds.length ? await db`SELECT 1 FROM order_items WHERE variant_id IN ${db(variantIds)} LIMIT 1` : [];
+    if (hasOrderItems.length) {
+      await db`UPDATE products SET purged_at = CURRENT_TIMESTAMP WHERE id = ${productId}`;
+      continue;
+    }
+    if (variantIds.length) {
+      await db`DELETE FROM order_item_allocations WHERE variant_id IN ${db(variantIds)}`;
+      await db`DELETE FROM inventory WHERE variant_id IN ${db(variantIds)}`;
+      await db`DELETE FROM variants WHERE id IN ${db(variantIds)}`;
+    }
+    await db`DELETE FROM products WHERE id = ${productId}`;
+  }
+  await db`UPDATE products SET purged_at = CURRENT_TIMESTAMP WHERE archived_at IS NOT NULL AND purged_at IS NULL AND id NOT IN (SELECT product_id FROM variants) ${dateClause}`;
+}
+
+async function purgeTrashItems(olderThanDays?: number) {
+  await ensureSchema();
+  await sql.begin(async (tx) => {
+    const dateClause = olderThanDays ? sql`AND deleted_at < NOW() - (${olderThanDays} || ' days')::interval` : sql``;
+    await tx`DELETE FROM order_item_allocations WHERE order_id IN (SELECT id FROM orders WHERE deleted_at IS NOT NULL ${dateClause})`;
+    await tx`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE deleted_at IS NOT NULL ${dateClause})`;
+    await tx`DELETE FROM orders WHERE deleted_at IS NOT NULL ${dateClause}`;
+    await purgeTrashedProducts(tx, olderThanDays);
+    await tx`DELETE FROM subcategories WHERE deleted_at IS NOT NULL ${dateClause}`;
+    await tx`DELETE FROM categories WHERE deleted_at IS NOT NULL ${dateClause}`;
+    await tx`DELETE FROM wholesale_clients WHERE deleted_at IS NOT NULL ${dateClause}`;
+    await bumpSyncVersion(tx);
+  });
+}
+
+export async function emptyTrash() {
+  await purgeTrashItems();
+}
+
+export async function purgeExpiredTrashItems() {
+  await purgeTrashItems(30);
+}
+
+export async function restoreTrashItem(input: { type: TrashItem["type"]; id: string | number }) {
+  await ensureSchema();
+  await sql.begin(async (tx) => {
+    if (input.type === "product") {
+      await tx`UPDATE products SET archived_at = NULL WHERE id = ${Number(input.id)}`;
+    } else if (input.type === "category") {
+      await tx`UPDATE categories SET deleted_at = NULL WHERE id = ${Number(input.id)}`;
+    } else if (input.type === "subcategory") {
+      await tx`UPDATE subcategories SET deleted_at = NULL WHERE slug = ${String(input.id)}`;
+    } else if (input.type === "client") {
+      await tx`UPDATE wholesale_clients SET deleted_at = NULL WHERE id = ${Number(input.id)}`;
+    } else if (input.type === "order") {
+      const id = Number(input.id);
+      const [order] = await tx`SELECT id, branch_id AS "branchId", status, fulfillment, deleted_at AS "deletedAt" FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string; fulfillment: string; deletedAt: unknown }[];
+      if (!order?.deletedAt) return;
+      const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }>;
+      const allocations = await getAllocationBuckets(id, tx);
+      for (const item of items) {
+        const buckets = allocations.get(item.variantId) ?? [{ branchId: order.branchId, branchName: "", quantity: item.quantity }];
+        for (const allocation of buckets) {
+          const result = await tx`
+            UPDATE inventory
+            SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP
+            WHERE variant_id = ${item.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}
+          `;
+          if (!result.count) throw new Error("No hay stock suficiente para restaurar este pedido sin romper inventario.");
+        }
+      }
+      await tx`UPDATE orders SET deleted_at = NULL WHERE id = ${id}`;
+    }
     await bumpSyncVersion(tx);
   });
 }

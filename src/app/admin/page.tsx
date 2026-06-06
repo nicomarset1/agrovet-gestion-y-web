@@ -1,6 +1,6 @@
 import { AdminConsole } from "@/components/admin-console";
 import { requireAdmin } from "@/lib/auth";
-import { getAdminSnapshot, getCategories, getSubcategories } from "@/lib/db";
+import { getAdminSnapshot, getCategories, getSubcategories, getTrashItems } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,11 @@ export default async function AdminPage({
   searchParams: Promise<{ section?: string; detail?: string; order?: string; branch?: string; flash?: string }>;
 }) {
   await requireAdmin();
-  const [{ products, branches, orders, wholesaleClients }, categories, subcategories, resolvedSearchParams] = await Promise.all([
+  const [{ products, branches, orders, wholesaleClients }, categories, subcategories, trashItems, resolvedSearchParams] = await Promise.all([
     getAdminSnapshot(),
     getCategories(),
     getSubcategories(),
+    getTrashItems(),
     searchParams,
   ]);
   const section = resolvedSearchParams.section ?? "resumen";
@@ -43,6 +44,7 @@ export default async function AdminPage({
           initialNotice={flash}
           initialSection={section}
           subcategories={subcategories}
+          trashItems={trashItems}
         />
       </div>
     </div>

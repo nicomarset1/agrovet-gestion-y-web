@@ -4,7 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  AlertTriangle,
   BarChart3,
   Boxes,
   ChevronRight,
@@ -16,6 +15,7 @@ import {
   Search,
   Truck,
   Trash2,
+  RotateCcw,
   Users,
   X,
 } from "lucide-react";
@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
-import type { Branch, Category, OrderRecord, Product, WholesaleClient } from "@/lib/types";
+import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import {
   createCategoryAction,
@@ -43,10 +43,12 @@ import {
   updateSubcategoryAction,
   updateWholesaleClientAction,
   updateStockAction,
+  restoreTrashItemAction,
+  emptyTrashAction,
 } from "@/app/admin/actions";
 
 type Subcategory = { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number };
-type Section = "resumen" | "productos" | "categorias" | "punto-venta" | "ventas" | "ventas-web" | "clientes";
+type Section = "resumen" | "productos" | "categorias" | "punto-venta" | "ventas" | "ventas-web" | "clientes" | "papelera";
 type Period = "day" | "week" | "month" | "year";
 const WEB_PERIOD_STORAGE_KEY = "agrovet-web-period";
 const UNCATEGORIZED_CATEGORY_VALUE = "__none";
@@ -114,7 +116,7 @@ function DeleteOrderModal({
       className="admin-confirm-modal"
       dismissible={false}
       onClose={onClose}
-      subtitle={`Vas a eliminar ${order.code} por ${formatPrice(order.totalCents)}. Esta acción no se puede deshacer.`}
+      subtitle={`Vas a mover ${order.code} por ${formatPrice(order.totalCents)} a la papelera.`}
       title="Confirmar eliminación"
       zIndex={240}
     >
@@ -147,7 +149,7 @@ function DeleteOrderModal({
           </div>
         </div>
         <p className="admin-confirm-text">
-          Se eliminará el registro de facturación, se devolverá el stock reservado y no podrá recuperarse desde el panel.
+          Se quitará de las ventas activas y se devolverá el stock reservado. Podrás restaurarlo desde Papelera si todavía hay stock suficiente.
         </p>
         <div className="admin-product-list admin-span-2">
           {order.items.map((item) => {
@@ -237,6 +239,33 @@ function isWebOrder(order: OrderRecord) {
   return !isCashOrder(order) && !isWholesaleOrder(order);
 }
 
+function isCancelledOrder(order: OrderRecord) {
+  return /cancelad/i.test(order.status);
+}
+
+function trashTypeLabel(type: TrashItem["type"]) {
+  if (type === "order") return "Pedidos";
+  if (type === "product") return "Productos";
+  if (type === "category") return "Categorías";
+  if (type === "client") return "Clientes";
+  return "Subcategorías";
+}
+
+function trashTypeSingular(type: TrashItem["type"]) {
+  if (type === "order") return "pedido";
+  if (type === "product") return "producto";
+  if (type === "category") return "categoría";
+  if (type === "client") return "cliente";
+  return "subcategoría";
+}
+
+function trashDaysUntilPurge(deletedAt: string) {
+  const deletedTime = toDate(deletedAt).getTime();
+  if (!Number.isFinite(deletedTime)) return null;
+  const expiresAt = deletedTime + 30 * 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
 function dashboardBranchId(order: OrderRecord) {
   return getPrimaryOrderBranchId(order);
 }
@@ -254,7 +283,7 @@ function isCompletedWebOrder(order: OrderRecord) {
 }
 
 function isCancelledWebOrder(order: OrderRecord) {
-  return isWebOrder(order) && /cancelad/i.test(order.status);
+  return isWebOrder(order) && isCancelledOrder(order);
 }
 
 function isPickupWebOrder(order: OrderRecord) {
@@ -305,6 +334,8 @@ function orderHasBranch(order: OrderRecord, branchId: number) {
 }
 
 function getOrderBranchRevenueCents(order: OrderRecord, branchId: number) {
+  if (isCancelledOrder(order)) return 0;
+
   const branchTotal = order.items.reduce((sum, item) => {
     const allocatedQuantity = item.allocations?.reduce((quantity, allocation) => {
       return quantity + (allocation.branchId === branchId ? allocation.quantity : 0);
@@ -572,7 +603,7 @@ function ProductDeleteModal({
         </div>
       </div>
       <p className="admin-confirm-text">
-        Vas a quitar este producto del catálogo. Si tiene ventas registradas, se archivará para conservar el historial de facturación; si no tiene ventas, se eliminará definitivamente.
+        Vas a quitar este producto del catálogo y moverlo a Papelera. Se conservan sus variantes y stock para poder restaurarlo.
       </p>
       <div className="admin-detail-summary compact">
         <strong>{variantCount} {variantCount === 1 ? "presentación" : "presentaciones"}</strong>
@@ -589,6 +620,109 @@ function ProductDeleteModal({
         <div className="admin-modal-actions admin-confirm-actions">
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
           <button className="button button-primary danger" type="submit">Eliminar producto</button>
+        </div>
+      </form>
+    </AdminModal>
+  );
+}
+
+function RestoreTrashItemModal({
+  item,
+  onClose,
+  returnTo,
+}: {
+  item: TrashItem;
+  onClose: () => void;
+  returnTo: string;
+}) {
+  const label = trashTypeSingular(item.type);
+  return (
+    <AdminModal
+      className="admin-confirm-modal"
+      dismissible={false}
+      onClose={onClose}
+      subtitle="Confirmación antes de restaurar."
+      title={`Restaurar ${label}`}
+      zIndex={240}
+    >
+      <div className="admin-confirm-visual">
+        <div className="admin-confirm-icon">
+          <RotateCcw size={24} />
+        </div>
+        <div className="admin-confirm-copy">
+          <strong>{item.title}</strong>
+          <span>{trashTypeLabel(item.type)} | {item.subtitle}</span>
+        </div>
+      </div>
+      <p className="admin-confirm-text">
+        Vas a restaurar este {label} con el mismo estado que tenía antes de eliminarse. Si es un pedido, solo continuará si hay stock suficiente para reservarlo.
+      </p>
+      {item.amountCents > 0 ? (
+        <div className="admin-detail-summary compact">
+          <strong>{formatPrice(item.amountCents)}</strong>
+          <span>{item.status}</span>
+        </div>
+      ) : null}
+      <form
+        action={restoreTrashItemAction}
+        className="admin-confirm-form"
+        onSubmit={() => {
+          onClose();
+        }}
+      >
+        <input name="type" type="hidden" value={item.type} />
+        <input name="id" type="hidden" value={String(item.id)} />
+        <input name="returnTo" type="hidden" value={returnTo} />
+        <div className="admin-modal-actions admin-confirm-actions">
+          <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
+          <button className="button button-primary" type="submit"><RotateCcw size={16} /> Restaurar</button>
+        </div>
+      </form>
+    </AdminModal>
+  );
+}
+
+function EmptyTrashModal({
+  count,
+  onClose,
+  returnTo,
+}: {
+  count: number;
+  onClose: () => void;
+  returnTo: string;
+}) {
+  return (
+    <AdminModal
+      className="admin-confirm-modal"
+      dismissible={false}
+      onClose={onClose}
+      subtitle="Confirmación antes de borrar permanentemente."
+      title="Vaciar papelera"
+      zIndex={240}
+    >
+      <div className="admin-confirm-visual">
+        <div className="admin-confirm-icon">
+          <Trash2 size={24} />
+        </div>
+        <div className="admin-confirm-copy">
+          <strong>{count} {count === 1 ? "elemento" : "elementos"}</strong>
+          <span>Esta acción limpia la papelera de forma permanente.</span>
+        </div>
+      </div>
+      <p className="admin-confirm-text">
+        Los pedidos eliminados se borrarán de la papelera sin tocar stock nuevamente. Los productos con historial de ventas dejarán de aparecer en papelera, pero conservarán las referencias necesarias para reportes anteriores.
+      </p>
+      <form
+        action={emptyTrashAction}
+        className="admin-confirm-form"
+        onSubmit={() => {
+          onClose();
+        }}
+      >
+        <input name="returnTo" type="hidden" value={returnTo} />
+        <div className="admin-modal-actions admin-confirm-actions">
+          <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
+          <button className="button button-primary danger" type="submit"><Trash2 size={16} /> Vaciar papelera</button>
         </div>
       </form>
     </AdminModal>
@@ -1791,10 +1925,11 @@ function DashboardDetailModal({
   const channelWeeks = useMemo(() => {
     const groups = new Map<string, Record<string, number>>();
     for (const order of orders) {
+      if (isCancelledOrder(order)) continue;
       const key = weekKey(toDate(order.createdAt));
       const current = groups.get(key) ?? {};
-      if (order.branchId === 1) current["Sucursal Independencia"] = (current["Sucursal Independencia"] ?? 0) + order.totalCents;
-      else if (order.branchId === 2) current["Sucursal Belgrano"] = (current["Sucursal Belgrano"] ?? 0) + order.totalCents;
+      if (order.branchId === 1) current["Sucursal Independencia"] = (current["Sucursal Independencia"] ?? 0) + getOrderBranchRevenueCents(order, 1);
+      else if (order.branchId === 2) current["Sucursal Belgrano"] = (current["Sucursal Belgrano"] ?? 0) + getOrderBranchRevenueCents(order, 2);
       groups.set(key, current);
     }
     return [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
@@ -2086,13 +2221,14 @@ function DashboardCharts({
     const currentWeekKey = weekKey(new Date());
     const currentMonthKey = monthKey(new Date());
     for (const order of orders) {
+      if (isCancelledOrder(order)) continue;
       const orderDate = toDate(order.createdAt);
       const orderDayKey = dateKey(orderDate);
       if (channelRange === "day" && orderDayKey !== todayKey) continue;
       if (channelRange === "week" && weekKey(orderDate) !== currentWeekKey) continue;
       if (channelRange === "month" && monthKey(orderDate) !== currentMonthKey) continue;
-      if (order.branchId === 1) totals["Sucursal Independencia"] += order.totalCents;
-      else if (order.branchId === 2) totals["Sucursal Belgrano"] += order.totalCents;
+      if (order.branchId === 1) totals["Sucursal Independencia"] += getOrderBranchRevenueCents(order, 1);
+      else if (order.branchId === 2) totals["Sucursal Belgrano"] += getOrderBranchRevenueCents(order, 2);
     }
     const palette = ["#5b0f73", "#7c3aed", "#8b5cf6", "#a78bfa"];
     const entries = Object.entries(totals);
@@ -2723,7 +2859,7 @@ function PointOfSalePanel({
     priceCents: variant.priceCents,
     stock: variant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0,
   }))), [branch.id, products]);
-  const todaySales = useMemo(() => orders.filter((order) => isCashOrder(order) && order.branchId === branch.id && dateKey(toDate(order.createdAt)) === dateKey(new Date())), [branch.id, orders]);
+  const todaySales = useMemo(() => orders.filter((order) => !isCancelledOrder(order) && isCashOrder(order) && order.branchId === branch.id && dateKey(toDate(order.createdAt)) === dateKey(new Date())), [branch.id, orders]);
   const totalCents = cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
   const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0);
   function pushVariant(rawValue: string) {
@@ -2922,6 +3058,7 @@ export function AdminConsole({
   orders,
   products,
   subcategories,
+  trashItems,
   wholesaleClients,
 }: {
   branches: Branch[];
@@ -2934,12 +3071,13 @@ export function AdminConsole({
   orders: OrderRecord[];
   products: Product[];
   subcategories: Subcategory[];
+  trashItems: TrashItem[];
   wholesaleClients: WholesaleClient[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const { push } = useToast();
-  const [section] = useState<Section>(initialSection === "productos" || initialSection === "categorias" || initialSection === "punto-venta" || initialSection === "ventas" || initialSection === "ventas-web" || initialSection === "clientes" ? initialSection : "resumen");
+  const [section] = useState<Section>(initialSection === "productos" || initialSection === "categorias" || initialSection === "punto-venta" || initialSection === "ventas" || initialSection === "ventas-web" || initialSection === "clientes" || initialSection === "papelera" ? initialSection : "resumen");
   const [selectedBranchId] = useState<number>(() => {
     const initial = initialBranchId && branches.some((branch) => branch.id === initialBranchId) ? initialBranchId : branches[0]?.id ?? 0;
     return initial;
@@ -2953,6 +3091,8 @@ export function AdminConsole({
   );
   const [orderToEdit, setOrderToEdit] = useState<OrderRecord | null>(() => initialOrderId ? orders.find((order) => order.id === initialOrderId) ?? null : null);
   const [orderToDelete, setOrderToDelete] = useState<OrderRecord | null>(null);
+  const [trashItemToRestore, setTrashItemToRestore] = useState<TrashItem | null>(null);
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
   const [webOrderStatusTarget, setWebOrderStatusTarget] = useState<{ order: OrderRecord; status: string } | null>(null);
   const [webOrderDistributionTarget, setWebOrderDistributionTarget] = useState<OrderRecord | null>(null);
   const [billingDate, setBillingDate] = useState(dateKey(new Date()));
@@ -2983,6 +3123,8 @@ export function AdminConsole({
   const webPeriodStorageReady = useRef(false);
   const [webHistoryStatusFilter, setWebHistoryStatusFilter] = useState<"all" | "done" | "cancelled">("all");
   const [webHistoryTypeFilter, setWebHistoryTypeFilter] = useState<"all" | "retiro" | "envio">("all");
+  const [trashQuery, setTrashQuery] = useState("");
+  const [trashTypeFilter, setTrashTypeFilter] = useState<TrashItem["type"] | "all">("all");
   const selectableProductCategories = useMemo(() => leafCategories(categories), [categories]);
   const requestDeleteOrder = (order: OrderRecord) => {
     setOrderToEdit(null);
@@ -3007,6 +3149,14 @@ export function AdminConsole({
   const productCountSummary = productFiltersActive
     ? `${visibleProducts.length} de ${products.length} productos registrados`
     : `${products.length} productos registrados`;
+  const filteredTrashItems = useMemo(() => {
+    const query = trashQuery.trim().toLowerCase();
+    return trashItems.filter((item) => {
+      const matchesType = trashTypeFilter === "all" || item.type === trashTypeFilter;
+      const matchesQuery = !query || `${trashTypeLabel(item.type)} ${item.title} ${item.subtitle} ${item.status} ${item.source}`.toLowerCase().includes(query);
+      return matchesType && matchesQuery;
+    });
+  }, [trashItems, trashQuery, trashTypeFilter]);
   const zeroStockProducts = products.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0));
   const lowStockProducts = products.filter((product) => product.variants.some((variant) => {
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
@@ -3020,7 +3170,7 @@ export function AdminConsole({
     const orderDate = toDate(order.createdAt);
     return orderDate >= webPeriodRange.start && orderDate < webPeriodRange.end;
   });
-  const webPeriodBillableOrders = webPeriodOrders.filter((order) => !/cancelad/i.test(order.status));
+  const webPeriodBillableOrders = webPeriodOrders.filter((order) => !isCancelledOrder(order));
   const webOrdersTotal = webPeriodBillableOrders.reduce((sum, order) => sum + order.totalCents, 0);
   const webOrdersActive = webPeriodOrders.filter((order) => !isCancelledWebOrder(order));
   const webOrdersPending = webPeriodOrders.filter((order) => isPendingWebOrder(order));
@@ -3040,7 +3190,7 @@ export function AdminConsole({
     branch: branch.name,
     value: orders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, branch.id), 0),
   }));
-  const billingOrders = orders.filter((order) => dateKey(toDate(order.createdAt)) === billingDate && orderHasBranch(order, selectedBranch.id));
+  const billingOrders = orders.filter((order) => !isCancelledOrder(order) && dateKey(toDate(order.createdAt)) === billingDate && orderHasBranch(order, selectedBranch.id));
   const billingTotal = billingOrders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranch.id), 0);
 
   useEffect(() => {
@@ -3076,14 +3226,23 @@ export function AdminConsole({
     if (!initialNotice || flashedNotice.current === initialNotice) return;
     flashedNotice.current = initialNotice;
     const categoriesHref = buildAdminHref(pathname, { section: "categorias", detail: null, order: null, branch: String(selectedBranch.id) });
+    const currentSectionHref = buildAdminHref(pathname, { section, detail: null, order: null, branch: String(selectedBranch.id) });
+    let clearFlashHref = currentSectionHref;
     if (initialNotice === "category-deleted") {
       push({ title: "Categoría eliminada", message: "La categoría quedó desasociada y el panel volvió al listado.", type: "success" });
+      clearFlashHref = categoriesHref;
     } else if (initialNotice === "subcategory-deleted") {
       push({ title: "Subcategoría eliminada", message: "Los productos quedaron pendientes de reasignación.", type: "success" });
+      clearFlashHref = categoriesHref;
+    } else if (initialNotice.startsWith("restored-")) {
+      const restoredType = initialNotice.replace("restored-", "") as TrashItem["type"];
+      push({ title: "Elemento restaurado", message: `Se restauró el ${trashTypeSingular(restoredType)}.`, type: "success", icon: RotateCcw });
+    } else if (initialNotice === "trash-emptied") {
+      push({ title: "Papelera vaciada", message: "Los elementos se borraron permanentemente.", type: "success", icon: Trash2 });
     }
     setModal(null);
-    router.replace(categoriesHref);
-  }, [initialNotice, pathname, push, router, selectedBranch.id]);
+    router.replace(clearFlashHref);
+  }, [initialNotice, pathname, push, router, section, selectedBranch.id]);
 
   const options = [
     { id: "resumen", href: sectionHref("resumen"), label: "Dashboard", icon: BarChart3 },
@@ -3093,7 +3252,7 @@ export function AdminConsole({
     { id: "clientes", href: sectionHref("clientes"), label: "Clientes", icon: Users },
     { id: "ventas", href: sectionHref("ventas"), label: "Ventas", icon: BarChart3 },
     { id: "ventas-web", href: sectionHref("ventas-web"), label: "Ventas web", icon: Truck },
-    { id: "stock-bajo", href: "/admin/stock-bajo", label: "Stock bajo", icon: AlertTriangle },
+    { id: "papelera", href: sectionHref("papelera"), label: "Papelera", icon: Trash2 },
   ] as const;
 
   const headAction =
@@ -3589,6 +3748,66 @@ export function AdminConsole({
             </div>
           </>
         )}
+
+        {section === "papelera" && (
+          <>
+            <div id="admin-section-papelera">
+            <SectionHeader
+              action={(
+                <button className="button button-light danger" disabled={!trashItems.length} onClick={() => setEmptyTrashOpen(true)} type="button">
+                  <Trash2 size={16} /> Vaciar papelera
+                </button>
+              )}
+              subtitle="Elementos eliminados del panel. Restaurar un pedido vuelve a reservar stock si hay unidades suficientes."
+              title="Papelera"
+            />
+            <div className="admin-stat-grid admin-trash-stats">
+              <StatCard label="Total" value={String(trashItems.length)} note="Elementos en papelera" />
+              <StatCard label="Pedidos" value={String(trashItems.filter((item) => item.type === "order").length)} note="Restauran stock al volver" />
+              <StatCard label="Productos" value={String(trashItems.filter((item) => item.type === "product").length)} note="Conservan variantes y stock" />
+            </div>
+            <section className="card admin-panel">
+              <div className="admin-toolbar">
+                <label className="admin-search">
+                  <Search size={18} />
+                  <input className="field" onChange={(event) => setTrashQuery(event.target.value)} placeholder="Buscar en papelera..." value={trashQuery} />
+                </label>
+                <label className="admin-point-field">
+                  <span>Tipo</span>
+                  <select className="field" onChange={(event) => setTrashTypeFilter(event.target.value as TrashItem["type"] | "all")} value={trashTypeFilter}>
+                    <option value="all">Todo</option>
+                    <option value="order">Pedidos</option>
+                    <option value="product">Productos</option>
+                    <option value="category">Categorías</option>
+                    <option value="subcategory">Subcategorías</option>
+                    <option value="client">Clientes</option>
+                  </select>
+                </label>
+              </div>
+              <div className="admin-product-list admin-trash-list">
+                {filteredTrashItems.length ? filteredTrashItems.map((item) => {
+                  const daysLeft = trashDaysUntilPurge(item.deletedAt);
+                  return (
+                    <div className="admin-table-row compact" key={`${item.type}-${item.id}`}>
+                      <div>
+                        <strong>{item.title}</strong>
+                        <small>{trashTypeLabel(item.type)} | {item.subtitle} | {item.status} | {formatAdminDateTime(item.deletedAt, { dateStyle: "short", timeStyle: "short" })}</small>
+                      </div>
+                      <div className="admin-row-actions">
+                        <span className={`admin-stock-pill ${daysLeft === 0 ? "danger" : ""}`}>
+                          {daysLeft === 1 ? "1 día restante" : `${daysLeft ?? 0} días restantes`}
+                        </span>
+                        {item.amountCents > 0 ? <span className="admin-stock-pill">{formatPrice(item.amountCents)}</span> : null}
+                        <button className="button button-light" onClick={() => setTrashItemToRestore(item)} type="button"><RotateCcw size={16} /> Restaurar</button>
+                      </div>
+                    </div>
+                  );
+                }) : <p className="description">No hay elementos para esos filtros.</p>}
+              </div>
+            </section>
+            </div>
+          </>
+        )}
       </main>
 
       {branchPickerOpen ? (
@@ -3634,6 +3853,8 @@ export function AdminConsole({
       {modal?.type === "product-create" ? <ProductModal categories={categories} mode="create" onClose={() => setModal(null)} returnTo={productReturnTo} subcategories={subcategories} /> : null}
       {modal?.type === "product-edit" ? <ProductModal categories={categories} mode="edit" onClose={() => setModal(null)} product={modal.product} returnTo={productReturnTo} subcategories={subcategories} /> : null}
       {modal?.type === "product-delete" ? <ProductDeleteModal onClose={() => setModal(null)} product={modal.product} /> : null}
+      {trashItemToRestore ? <RestoreTrashItemModal item={trashItemToRestore} onClose={() => setTrashItemToRestore(null)} returnTo={sectionHref("papelera")} /> : null}
+      {emptyTrashOpen ? <EmptyTrashModal count={trashItems.length} onClose={() => setEmptyTrashOpen(false)} returnTo={sectionHref("papelera")} /> : null}
       {modal?.type === "stock-edit" ? <StockEditModal branch={selectedBranch} branches={branches} onClose={() => setModal(null)} product={modal.product} returnTo={modal.returnTo} /> : null}
       {modal?.type === "wholesale-client-create" ? <WholesaleClientModal onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}
       {modal?.type === "wholesale-client-edit" ? <WholesaleClientModal client={modal.client} onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}

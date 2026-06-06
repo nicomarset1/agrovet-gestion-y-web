@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, Variant, WholesaleClient } from "./types";
+import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
 const root = process.cwd();
 const dataDir = join(root, "data");
@@ -57,14 +57,16 @@ db.exec(`
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     parent_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    show_in_menu INTEGER NOT NULL DEFAULT 0
+    show_in_menu INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS subcategories (
     id INTEGER PRIMARY KEY,
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     slug TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT ''
+    description TEXT NOT NULL DEFAULT '',
+    deleted_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
@@ -83,7 +85,8 @@ db.exec(`
     requires_advice INTEGER NOT NULL DEFAULT 0,
     color TEXT NOT NULL,
     image_url TEXT NOT NULL DEFAULT '',
-    archived_at TEXT NOT NULL DEFAULT ''
+    archived_at TEXT NOT NULL DEFAULT '',
+    purged_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS variants (
     id INTEGER PRIMARY KEY,
@@ -114,7 +117,8 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'Pendiente de confirmación',
     source TEXT NOT NULL DEFAULT 'Tienda online',
     payment_method TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS order_items (
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -139,7 +143,8 @@ db.exec(`
     address TEXT NOT NULL DEFAULT '',
     tax_id TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TEXT NOT NULL DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS admin_login_attempts (
     identifier TEXT PRIMARY KEY,
@@ -155,10 +160,14 @@ ensureColumn("orders", "delivery_address", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "delivery_distance_km", "REAL");
 ensureColumn("orders", "payment_method", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "paid_cents", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("orders", "deleted_at", "TEXT NOT NULL DEFAULT ''");
 db.prepare("UPDATE orders SET paid_cents = total_cents WHERE paid_cents = 0 AND payment_method != 'Cuenta corriente'").run();
 ensureColumn("categories", "description", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("categories", "parent_category_id", "INTEGER REFERENCES categories(id) ON DELETE SET NULL");
 ensureColumn("categories", "show_in_menu", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("categories", "deleted_at", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("subcategories", "deleted_at", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("wholesale_clients", "deleted_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "subcategory_slug", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "subcategory_name", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "life_stage", "TEXT NOT NULL DEFAULT ''");
@@ -166,6 +175,7 @@ ensureColumn("products", "size", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "need", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "image_url", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "archived_at", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("products", "purged_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("variants", "barcode", "TEXT NOT NULL DEFAULT ''");
 db.prepare("UPDATE variants SET barcode = sku WHERE barcode = '' OR barcode IS NULL").run();
 
@@ -215,15 +225,16 @@ function rebuildNullableCategoryTables() {
           requires_advice INTEGER NOT NULL DEFAULT 0,
           color TEXT NOT NULL,
           image_url TEXT NOT NULL DEFAULT '',
-          archived_at TEXT NOT NULL DEFAULT ''
+          archived_at TEXT NOT NULL DEFAULT '',
+          purged_at TEXT NOT NULL DEFAULT ''
         );
         INSERT INTO products_new (
           id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-          description, featured, requires_advice, color, image_url, archived_at
+          description, featured, requires_advice, color, image_url, archived_at, purged_at
         )
         SELECT
           id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-          description, featured, requires_advice, color, image_url, ''
+          description, featured, requires_advice, color, image_url, '', ''
         FROM products;
         DROP TABLE products;
         ALTER TABLE products_new RENAME TO products;
@@ -534,12 +545,12 @@ const baseSelect = `
     p.species, p.life_stage AS lifeStage, p.size, p.need, p.description, p.featured,
     p.requires_advice AS requiresAdvice, p.color, p.image_url AS imageUrl
   FROM products p
-  LEFT JOIN categories c ON c.id = p.category_id
-  LEFT JOIN categories pc ON pc.id = c.parent_category_id
+  LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at = ''
+  LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at = ''
 `;
 
 export function getProducts(filters: CatalogFilters = {}) {
-  const clauses: string[] = ["p.archived_at = ''"];
+  const clauses: string[] = ["p.archived_at = ''", "p.purged_at = ''"];
   const params: string[] = [];
   if (filters.q) {
     clauses.push("(p.name LIKE ? OR p.brand LIKE ? OR p.description LIKE ?)");
@@ -604,13 +615,13 @@ export function getProducts(filters: CatalogFilters = {}) {
 }
 
 export function getProduct(slug: string) {
-  const row = db.prepare(`${baseSelect} WHERE p.slug = ? AND p.archived_at = ''`).get(slug) as ProductRow | undefined;
+  const row = db.prepare(`${baseSelect} WHERE p.slug = ? AND p.archived_at = '' AND p.purged_at = ''`).get(slug) as ProductRow | undefined;
   return row ? hydrateProduct(row) : undefined;
 }
 
 export function getFeaturedProducts() {
   // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
-  const rows = db.prepare(`${baseSelect} WHERE p.featured = 1 AND p.archived_at = '' ORDER BY p.name LIMIT 4`).all() as ProductRow[];
+  const rows = db.prepare(`${baseSelect} WHERE p.featured = 1 AND p.archived_at = '' AND p.purged_at = '' ORDER BY p.name LIMIT 4`).all() as ProductRow[];
   return hydrateProducts(rows);
 }
 
@@ -638,7 +649,7 @@ export function getLowStockItems(threshold: number): LowStockItem[] {
     JOIN variants v ON v.id = i.variant_id
     JOIN products p ON p.id = v.product_id
     JOIN branches b ON b.id = i.branch_id
-    WHERE i.quantity <= ? AND p.archived_at = ''
+    WHERE i.quantity <= ? AND p.archived_at = '' AND p.purged_at = ''
     ORDER BY i.quantity ASC, p.name, v.label
   `).all(threshold) as LowStockItem[];
 }
@@ -651,6 +662,7 @@ export function getCategories() {
       p.name AS parentCategoryName
     FROM categories c
     LEFT JOIN categories p ON p.id = c.parent_category_id
+    WHERE c.deleted_at = ''
     ORDER BY
       CASE WHEN c.slug IN (${specialCategories.map((category) => `'${category.slug}'`).join(", ")}) THEN 1 ELSE 0 END,
       CASE WHEN c.slug IN (${specialCategories.map((category) => `'${category.slug}'`).join(", ")}) THEN CASE c.slug ${specialCategoryOrderSql} ELSE 999 END ELSE COALESCE(p.id, c.id) END,
@@ -666,7 +678,8 @@ export function getSubcategories() {
       c.id AS categoryId, c.slug AS categorySlug, c.name AS categoryName, COUNT(p.id) AS count
     FROM subcategories s
     LEFT JOIN categories c ON c.id = s.category_id
-    LEFT JOIN products p ON p.subcategory_slug = s.slug
+    LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at = '' AND p.purged_at = ''
+    WHERE s.deleted_at = ''
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
     ORDER BY COALESCE(c.name, 'Sin categoría'), s.name
   `).all() as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number }[];
@@ -678,7 +691,7 @@ export function getSubcategoryBySlug(slug: string) {
       c.id AS categoryId, c.slug AS categorySlug, c.name AS categoryName
     FROM subcategories s
     LEFT JOIN categories c ON c.id = s.category_id
-    WHERE s.slug = ?
+    WHERE s.slug = ? AND s.deleted_at = ''
   `).get(slug) as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null } | undefined;
 }
 
@@ -692,6 +705,7 @@ export function getWholesaleClients(): WholesaleClient[] {
     SELECT id, business_name AS businessName, contact_name AS contactName, phone, email,
       address, tax_id AS taxId, notes, created_at AS createdAt
     FROM wholesale_clients
+    WHERE deleted_at = ''
     ORDER BY business_name COLLATE NOCASE
   `).all() as WholesaleClient[];
 }
@@ -738,7 +752,8 @@ export function updateWholesaleClient(input: WholesaleClient) {
 }
 
 export function deleteWholesaleClient(id: number) {
-  db.prepare("DELETE FROM wholesale_clients WHERE id = ?").run(id);
+  db.prepare("UPDATE wholesale_clients SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+  bumpSyncVersion();
 }
 
 function mapAdminOrders(): OrderRecord[] {
@@ -749,6 +764,7 @@ function mapAdminOrders(): OrderRecord[] {
       o.source, o.payment_method AS paymentMethod, o.paid_cents AS paidCents, o.created_at AS createdAt
     FROM orders o
     JOIN branches b ON b.id = o.branch_id
+    WHERE o.deleted_at = ''
     ORDER BY o.created_at DESC, o.id DESC
   `).all() as Omit<OrderRecord, "itemCount" | "items">[];
   if (!orders.length) return [];
@@ -1106,48 +1122,14 @@ export function deleteCategory(id: number) {
     const category = db.prepare("SELECT id, slug FROM categories WHERE id = ?").get(id) as { id: number; slug: string } | undefined;
     if (!category) return;
     if (isSpecialCategorySlug(category.slug)) throw new Error("Esta categoría fija no se puede eliminar.");
-
-    const directChildren = db.prepare("SELECT id FROM categories WHERE parent_category_id = ?").all(id) as { id: number }[];
-    if (directChildren.length) {
-      db.prepare("UPDATE categories SET parent_category_id = NULL WHERE parent_category_id = ?").run(id);
-    }
-
-    const directSubcategories = db.prepare("SELECT slug FROM subcategories WHERE category_id = ?").all(id) as { slug: string }[];
-    if (directSubcategories.length) {
-      db.prepare("UPDATE subcategories SET category_id = NULL WHERE category_id = ?").run(id);
-    }
-
-    const affectedSubcategorySlugs = directSubcategories.map((row) => row.slug);
-    if (affectedSubcategorySlugs.length) {
-      db.prepare(`UPDATE products SET category_id = NULL, subcategory_slug = ?, subcategory_name = ? WHERE subcategory_slug IN (${affectedSubcategorySlugs.map(() => "?").join(", ")})`)
-        .run(uncategorizedSubcategorySlug, uncategorizedSubcategoryName, ...affectedSubcategorySlugs);
-    }
-    db.prepare("UPDATE products SET category_id = NULL, subcategory_slug = ?, subcategory_name = ? WHERE category_id = ?")
-      .run(uncategorizedSubcategorySlug, uncategorizedSubcategoryName, id);
-    db.prepare("DELETE FROM categories WHERE id = ?").run(id);
+    db.prepare("UPDATE categories SET deleted_at = CURRENT_TIMESTAMP, show_in_menu = 0 WHERE id = ?").run(id);
     bumpSyncVersion();
   })();
 }
 
 export function deleteProduct(id: number) {
-  db.transaction(() => {
-    const variants = db.prepare("SELECT id FROM variants WHERE product_id = ?").all(id) as { id: number }[];
-    const variantIds = variants.map((variant) => variant.id);
-    if (variantIds.length) {
-      const placeholders = variantIds.map(() => "?").join(", ");
-      const hasOrderItems = db.prepare(`SELECT 1 FROM order_items WHERE variant_id IN (${placeholders}) LIMIT 1`).get(...variantIds);
-      if (hasOrderItems) {
-        db.prepare("UPDATE products SET archived_at = CURRENT_TIMESTAMP, featured = 0 WHERE id = ?").run(id);
-        bumpSyncVersion();
-        return;
-      }
-      db.prepare(`DELETE FROM order_item_allocations WHERE variant_id IN (${placeholders})`).run(...variantIds);
-      db.prepare(`DELETE FROM inventory WHERE variant_id IN (${placeholders})`).run(...variantIds);
-      db.prepare(`DELETE FROM variants WHERE id IN (${placeholders})`).run(...variantIds);
-    }
-    db.prepare("DELETE FROM products WHERE id = ?").run(id);
-    bumpSyncVersion();
-  })();
+  db.prepare("UPDATE products SET archived_at = CURRENT_TIMESTAMP, featured = 0 WHERE id = ?").run(id);
+  bumpSyncVersion();
 }
 
 export function createSubcategory(input: { categoryId: number; name: string; description?: string }) {
@@ -1171,9 +1153,7 @@ export function updateSubcategory(input: { oldSlug: string; categoryId: number; 
 }
 
 export function deleteSubcategory(slug: string) {
-  db.prepare("UPDATE products SET subcategory_slug = ?, subcategory_name = ? WHERE subcategory_slug = ?")
-    .run(uncategorizedSubcategorySlug, uncategorizedSubcategoryName, slug);
-  db.prepare("DELETE FROM subcategories WHERE slug = ?").run(slug);
+  db.prepare("UPDATE subcategories SET deleted_at = CURRENT_TIMESTAMP WHERE slug = ?").run(slug);
   bumpSyncVersion();
 }
 
@@ -1417,7 +1397,7 @@ export function createWholesaleOrder(input: {
     const client = db.prepare(`
       SELECT id, business_name AS businessName, contact_name AS contactName, phone, email, address
       FROM wholesale_clients
-      WHERE id = ?
+      WHERE id = ? AND deleted_at = ''
     `).get(input.clientId) as Pick<WholesaleClient, "id" | "businessName" | "contactName" | "phone" | "email" | "address"> | undefined;
     if (!client) throw new Error("Cliente inválido.");
     const primaryBranch = db.prepare("SELECT id FROM branches WHERE id = ?").get(input.branchId);
@@ -1664,8 +1644,9 @@ export function updateOrder(input: {
 
 export function deleteOrder(id: number) {
   db.transaction(() => {
-    const order = db.prepare("SELECT id, branch_id AS branchId, status FROM orders WHERE id = ?").get(id) as { id: number; branchId: number; status: string } | undefined;
+    const order = db.prepare("SELECT id, branch_id AS branchId, status, deleted_at AS deletedAt FROM orders WHERE id = ?").get(id) as { id: number; branchId: number; status: string; deletedAt: string } | undefined;
     if (!order) return;
+    if (order.deletedAt) return;
     const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }>;
     const allocations = getAllocationBuckets(id);
     const restore = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
@@ -1681,7 +1662,183 @@ export function deleteOrder(id: number) {
         }
       }
     }
-    db.prepare("DELETE FROM orders WHERE id = ?").run(id);
+    db.prepare("UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    bumpSyncVersion();
+  })();
+}
+
+export function getTrashItems(): TrashItem[] {
+  purgeExpiredTrashItems();
+  const orders = db.prepare(`
+    SELECT id, code, customer_name AS customerName, total_cents AS amountCents, status, source, deleted_at AS deletedAt
+    FROM orders
+    WHERE deleted_at != ''
+    ORDER BY deleted_at DESC
+  `).all() as Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: string }>;
+  const products = db.prepare(`
+    SELECT p.id, p.brand, p.name, COALESCE(c.name, 'Sin categoria') AS category, p.archived_at AS deletedAt,
+      COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0) AS stock
+    FROM products p
+    LEFT JOIN categories c ON c.id = p.category_id
+    WHERE p.archived_at != '' AND p.purged_at = ''
+    ORDER BY p.archived_at DESC
+  `).all() as Array<{ id: number; brand: string; name: string; category: string; stock: number; deletedAt: string }>;
+  const categories = db.prepare(`
+    SELECT id, name, slug, deleted_at AS deletedAt
+    FROM categories
+    WHERE deleted_at != ''
+    ORDER BY deleted_at DESC
+  `).all() as Array<{ id: number; name: string; slug: string; deletedAt: string }>;
+  const subcategories = db.prepare(`
+    SELECT s.slug, s.name, COALESCE(c.name, 'Sin categoria') AS category, s.deleted_at AS deletedAt
+    FROM subcategories s
+    LEFT JOIN categories c ON c.id = s.category_id
+    WHERE s.deleted_at != ''
+    ORDER BY s.deleted_at DESC
+  `).all() as Array<{ slug: string; name: string; category: string; deletedAt: string }>;
+  const clients = db.prepare(`
+    SELECT id, business_name AS businessName, contact_name AS contactName, phone, email, deleted_at AS deletedAt
+    FROM wholesale_clients
+    WHERE deleted_at != ''
+    ORDER BY deleted_at DESC
+  `).all() as Array<{ id: number; businessName: string; contactName: string; phone: string; email: string; deletedAt: string }>;
+
+  return [
+    ...orders.map((order): TrashItem => ({
+      type: "order",
+      id: order.id,
+      title: order.code,
+      subtitle: order.customerName,
+      amountCents: order.amountCents,
+      deletedAt: order.deletedAt,
+      status: order.status,
+      source: order.source,
+    })),
+    ...products.map((product): TrashItem => ({
+      type: "product",
+      id: product.id,
+      title: `${product.brand} ${product.name}`,
+      subtitle: `${product.category} | ${product.stock} unidades en stock`,
+      amountCents: 0,
+      deletedAt: product.deletedAt,
+      status: "Archivado",
+      source: "Productos",
+    })),
+    ...categories.map((category): TrashItem => ({
+      type: "category",
+      id: category.id,
+      title: category.name,
+      subtitle: category.slug,
+      amountCents: 0,
+      deletedAt: category.deletedAt,
+      status: "Eliminada",
+      source: "Categorias",
+    })),
+    ...subcategories.map((subcategory): TrashItem => ({
+      type: "subcategory",
+      id: subcategory.slug,
+      title: subcategory.name,
+      subtitle: subcategory.category,
+      amountCents: 0,
+      deletedAt: subcategory.deletedAt,
+      status: "Eliminada",
+      source: "Subcategorias",
+    })),
+    ...clients.map((client): TrashItem => ({
+      type: "client",
+      id: client.id,
+      title: client.businessName,
+      subtitle: [client.contactName, client.phone, client.email].filter(Boolean).join(" | ") || "Sin datos de contacto",
+      amountCents: 0,
+      deletedAt: client.deletedAt,
+      status: "Eliminado",
+      source: "Clientes",
+    })),
+  ].sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+function purgeTrashedProducts(olderThanDays?: number) {
+  const dateFilter = olderThanDays ? "AND archived_at < datetime('now', ?)" : "";
+  const dateParam = olderThanDays ? [`-${olderThanDays} days`] : [];
+  const products = db.prepare(`
+    SELECT id
+    FROM products
+    WHERE archived_at != '' AND purged_at = '' ${dateFilter}
+  `).all(...dateParam) as { id: number }[];
+  for (const product of products) {
+    const variants = db.prepare("SELECT id FROM variants WHERE product_id = ?").all(product.id) as { id: number }[];
+    const variantIds = variants.map((variant) => variant.id);
+    if (!variantIds.length) {
+      db.prepare("UPDATE products SET purged_at = CURRENT_TIMESTAMP WHERE id = ?").run(product.id);
+      continue;
+    }
+    const placeholders = variantIds.map(() => "?").join(", ");
+    const hasOrderItems = db.prepare(`SELECT 1 FROM order_items WHERE variant_id IN (${placeholders}) LIMIT 1`).get(...variantIds);
+    if (hasOrderItems) {
+      db.prepare("UPDATE products SET purged_at = CURRENT_TIMESTAMP WHERE id = ?").run(product.id);
+      continue;
+    }
+    db.prepare(`DELETE FROM order_item_allocations WHERE variant_id IN (${placeholders})`).run(...variantIds);
+    db.prepare(`DELETE FROM inventory WHERE variant_id IN (${placeholders})`).run(...variantIds);
+    db.prepare(`DELETE FROM variants WHERE id IN (${placeholders})`).run(...variantIds);
+    db.prepare("DELETE FROM products WHERE id = ?").run(product.id);
+  }
+}
+
+function purgeTrashItems(olderThanDays?: number) {
+  db.transaction(() => {
+    const dateFilter = olderThanDays ? "AND deleted_at < datetime('now', ?)" : "";
+    const dateParam = olderThanDays ? [`-${olderThanDays} days`] : [];
+    const trashedOrders = db.prepare(`SELECT id FROM orders WHERE deleted_at != '' ${dateFilter}`).all(...dateParam) as { id: number }[];
+    if (trashedOrders.length) {
+      const ids = trashedOrders.map((order) => order.id);
+      const placeholders = ids.map(() => "?").join(", ");
+      db.prepare(`DELETE FROM order_item_allocations WHERE order_id IN (${placeholders})`).run(...ids);
+      db.prepare(`DELETE FROM order_items WHERE order_id IN (${placeholders})`).run(...ids);
+      db.prepare(`DELETE FROM orders WHERE id IN (${placeholders})`).run(...ids);
+    }
+    purgeTrashedProducts(olderThanDays);
+    db.prepare(`DELETE FROM subcategories WHERE deleted_at != '' ${dateFilter}`).run(...dateParam);
+    db.prepare(`DELETE FROM categories WHERE deleted_at != '' ${dateFilter}`).run(...dateParam);
+    db.prepare(`DELETE FROM wholesale_clients WHERE deleted_at != '' ${dateFilter}`).run(...dateParam);
+    bumpSyncVersion();
+  })();
+}
+
+export function emptyTrash() {
+  purgeTrashItems();
+}
+
+export function purgeExpiredTrashItems() {
+  purgeTrashItems(30);
+}
+
+export function restoreTrashItem(input: { type: TrashItem["type"]; id: string | number }) {
+  db.transaction(() => {
+    if (input.type === "product") {
+      db.prepare("UPDATE products SET archived_at = '' WHERE id = ?").run(Number(input.id));
+    } else if (input.type === "category") {
+      db.prepare("UPDATE categories SET deleted_at = '' WHERE id = ?").run(Number(input.id));
+    } else if (input.type === "subcategory") {
+      db.prepare("UPDATE subcategories SET deleted_at = '' WHERE slug = ?").run(String(input.id));
+    } else if (input.type === "client") {
+      db.prepare("UPDATE wholesale_clients SET deleted_at = '' WHERE id = ?").run(Number(input.id));
+    } else if (input.type === "order") {
+      const id = Number(input.id);
+      const order = db.prepare("SELECT id, branch_id AS branchId, status, fulfillment, deleted_at AS deletedAt FROM orders WHERE id = ?").get(id) as { id: number; branchId: number; status: string; fulfillment: string; deletedAt: string } | undefined;
+      if (!order?.deletedAt) return;
+      const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }>;
+      const allocations = getAllocationBuckets(id);
+      const reserve = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
+      for (const item of items) {
+        const buckets = allocations.get(item.variantId) ?? [{ branchId: order.branchId, branchName: "", quantity: item.quantity }];
+        for (const allocation of buckets) {
+          const result = reserve.run(allocation.quantity, item.variantId, allocation.branchId, allocation.quantity);
+          if (result.changes === 0) throw new Error("No hay stock suficiente para restaurar este pedido sin romper inventario.");
+        }
+      }
+      db.prepare("UPDATE orders SET deleted_at = '' WHERE id = ?").run(id);
+    }
     bumpSyncVersion();
   })();
 }

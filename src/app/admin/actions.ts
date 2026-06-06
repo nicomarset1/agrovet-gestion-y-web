@@ -18,6 +18,8 @@ import {
   deleteSubcategory,
   deleteWholesaleClient,
   addInventory,
+  emptyTrash,
+  restoreTrashItem,
   updateOrder,
   updateOrderPayment,
   updateCategory,
@@ -460,6 +462,34 @@ export async function deleteOrderAction(formData: FormData) {
   await deleteOrder(id);
   revalidatePath("/admin");
   if (returnTo) redirect(safeInternalPath(returnTo));
+}
+
+export async function restoreTrashItemAction(formData: FormData) {
+  await requireAdmin();
+  const parsed = z.object({
+    type: z.enum(["order", "product", "category", "subcategory", "client"]),
+    id: z.string().trim().min(1),
+    returnTo: z.string().trim().min(1).optional(),
+  }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) throw new Error("Elemento de papelera inválido.");
+  await restoreTrashItem({ type: parsed.data.type, id: parsed.data.id });
+  revalidatePath("/");
+  revalidatePath("/tienda");
+  revalidatePath("/admin");
+  if (parsed.data.returnTo) redirect(appendFlash(safeInternalPath(parsed.data.returnTo), `restored-${parsed.data.type}`));
+}
+
+export async function emptyTrashAction(formData: FormData) {
+  await requireAdmin();
+  const parsed = z.object({
+    returnTo: z.string().trim().min(1).optional(),
+  }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) throw new Error("Acción inválida.");
+  await emptyTrash();
+  revalidatePath("/");
+  revalidatePath("/tienda");
+  revalidatePath("/admin");
+  if (parsed.data.returnTo) redirect(appendFlash(safeInternalPath(parsed.data.returnTo), "trash-emptied"));
 }
 
 const productUpdateSchema = productBaseSchema.extend({

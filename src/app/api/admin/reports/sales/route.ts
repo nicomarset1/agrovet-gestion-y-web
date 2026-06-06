@@ -25,6 +25,10 @@ function parsePayment(source: string) {
 
 type ReportOrder = Awaited<ReturnType<typeof getAdminSnapshot>>["orders"][number];
 
+function isCancelledOrder(order: ReportOrder) {
+  return /cancelad/i.test(order.status);
+}
+
 function orderHasBranch(order: ReportOrder, branchId: string) {
   return order.items.some((item) => {
     if (item.allocations?.length) return item.allocations.some((allocation) => String(allocation.branchId) === branchId);
@@ -33,6 +37,8 @@ function orderHasBranch(order: ReportOrder, branchId: string) {
 }
 
 function getOrderBranchRevenueCents(order: ReportOrder, branchId: number) {
+  if (isCancelledOrder(order)) return 0;
+
   const branchTotal = order.items.reduce((sum, item) => {
     const allocatedQuantity = item.allocations?.reduce((quantity, allocation) => {
       return quantity + (allocation.branchId === branchId ? allocation.quantity : 0);
@@ -217,6 +223,7 @@ export async function GET(request: Request) {
   const channel = url.searchParams.get("channel") || "all";
   const payment = url.searchParams.get("payment") || "all";
   const orders = snapshot.orders.filter((order) => {
+    if (isCancelledOrder(order)) return false;
     const orderMonth = order.createdAt.slice(0, 7);
     if (orderMonth !== month) return false;
     if (branch !== "all" && !orderHasBranch(order, branch)) return false;
@@ -228,7 +235,7 @@ export async function GET(request: Request) {
   });
 
   const selectedBranchId = branch !== "all" ? Number(branch) : null;
-  const amountForOrder = (order: ReportOrder) => selectedBranchId ? getOrderBranchRevenueCents(order, selectedBranchId) : order.totalCents;
+  const amountForOrder = (order: ReportOrder) => selectedBranchId ? getOrderBranchRevenueCents(order, selectedBranchId) : (isCancelledOrder(order) ? 0 : order.totalCents);
   const totalCents = orders.reduce((sum, order) => sum + amountForOrder(order), 0);
   const byBranch = new Map<string, number>();
   const byPayment = new Map<string, number>();

@@ -56,6 +56,58 @@ export type Category = {
   parentCategoryName: string | null;
 };
 
+export type TrashItem =
+  | {
+      type: "order";
+      id: number;
+      title: string;
+      subtitle: string;
+      amountCents: number;
+      deletedAt: string;
+      status: string;
+      source: string;
+    }
+  | {
+      type: "product";
+      id: number;
+      title: string;
+      subtitle: string;
+      amountCents: number;
+      deletedAt: string;
+      status: string;
+      source: string;
+    }
+  | {
+      type: "category";
+      id: number;
+      title: string;
+      subtitle: string;
+      amountCents: number;
+      deletedAt: string;
+      status: string;
+      source: string;
+    }
+  | {
+      type: "subcategory";
+      id: string;
+      title: string;
+      subtitle: string;
+      amountCents: number;
+      deletedAt: string;
+      status: string;
+      source: string;
+    }
+  | {
+      type: "client";
+      id: number;
+      title: string;
+      subtitle: string;
+      amountCents: number;
+      deletedAt: string;
+      status: string;
+      source: string;
+    };
+
 export type CatalogFilters = {
   q?: string;
   category?: string | string[];

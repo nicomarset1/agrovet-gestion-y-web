@@ -901,6 +901,13 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-donut-row span { color: var(--muted); font-weight: 800; }
 .admin-point-grid, .admin-sales-grid, .admin-ml-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
 .admin-panel { padding: 20px; }
+.admin-trash-stats { margin-bottom: 14px; }
+.admin-trash-list {
+  max-height: min(58vh, 620px);
+  overflow-y: auto;
+  padding-right: 6px;
+  overscroll-behavior: contain;
+}
 .admin-panel h2 { margin: 0 0 18px; font-size: 22px; color: var(--ink); }
 .admin-panel .description { margin: 0 0 16px; color: var(--muted); line-height: 1.6; }
 .admin-table-wrap { overflow: hidden; }
