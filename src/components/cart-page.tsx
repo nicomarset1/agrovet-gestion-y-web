@@ -33,6 +33,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
     return stock < item.quantity;
   }), [effectiveBranchId, fulfillment, items]);
   const belowDeliveryMinimum = totalCents < deliveryMinimumCents;
+  const cashDiscountNote = "Pagando en efectivo en sucursal tenés 10% de descuento en todos los productos.";
 
   async function checkZone(value: string) {
     setAddress(value);
@@ -141,6 +142,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                 <span>Mar del Plata</span>
               </button>
             </div>
+            <p className="notice cash-discount-notice">{cashDiscountNote}</p>
             {belowDeliveryMinimum && <p className="notice error">El envío se habilita desde {formatPrice(deliveryMinimumCents)}. Con este total, el pedido es solo retiro por sucursal.</p>}
             {fulfillment === "envio" && (
               <>
@@ -188,7 +190,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             {unavailable.length > 0 && <p className="notice error">Sin unidades suficientes en este local: {unavailable.map((item) => item.name).join(", ")}.</p>}
             <div className="checkout-total"><span>Total</span><span>{formatPrice(totalCents)}</span></div>
             <button className="button button-primary" disabled={pending || unavailable.length > 0}>{pending ? "Reservando..." : "Confirmar pedido"}</button>
-            <p className="notice">El pago y la entrega se confirman con el local. Los medicamentos requieren asesoramiento cuando corresponda.</p>
+            <p className="notice">El pago y la entrega se confirman con el local. Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
           </form>
         </aside>
       )}

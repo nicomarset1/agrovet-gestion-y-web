@@ -6,6 +6,10 @@ export function formatPrice(cents: number) {
   }).format(cents / 100);
 }
 
+export function applyCashDiscount(cents: number) {
+  return Math.round(cents * 0.9);
+}
+
 export function initials(value: string) {
   return value
     .split(" ")

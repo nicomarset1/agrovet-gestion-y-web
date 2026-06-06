@@ -50,6 +50,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
             <p className="eyebrow">Tienda online</p>
             <h1 className="display shop-title">{currentCategory?.name ?? "Todos los productos"}</h1>
             <p className="store-intro">Búsqueda por marca, especie, subcategoría, presentación, precio y stock. Los filtros se abren desde un panel lateral para no tapar el catálogo.</p>
+            <p className="store-offer">Pagando en efectivo en sucursal tenés 10% de descuento en todos los productos.</p>
           </div>
           <div className="store-summary">
             <strong>{products.length}</strong>

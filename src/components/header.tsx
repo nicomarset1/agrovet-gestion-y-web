@@ -16,10 +16,10 @@ export async function Header() {
       <div className="topbar">
         <div className="container topbar-inner">
           <div className="topbar-track">
-            <span>Envíos gratis en Mar del Plata de lunes a sábados según zona</span>
+            <span>10% de descuento en efectivo en sucursal</span>
             <span>Stock visible por sucursal</span>
             <span>Asesoramiento veterinario</span>
-            <span>Envíos gratis en Mar del Plata de lunes a sábados según zona</span>
+            <span>10% de descuento en efectivo en sucursal</span>
             <span>Stock visible por sucursal</span>
             <span>Asesoramiento veterinario</span>
           </div>

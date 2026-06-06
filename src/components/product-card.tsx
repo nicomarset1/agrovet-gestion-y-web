@@ -1,4 +1,4 @@
-import { formatPrice } from "@/lib/format";
+import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import { ProductArt } from "./product-art";
 import { ProductCardCart } from "./product-card-cart";
@@ -9,6 +9,7 @@ export function ProductCard({ product }: { product: Product }) {
   if (!firstVariant) return null;
   const available = product.variants.filter((variant) => variant.totalStock > 0);
   const from = available.length ? Math.min(...available.map((variant) => variant.priceCents)) : firstVariant.priceCents;
+  const cashPrice = applyCashDiscount(from);
   const total = product.variants.reduce((sum, variant) => sum + variant.totalStock, 0);
   return (
     <article className="card product-card">
@@ -21,6 +22,8 @@ export function ProductCard({ product }: { product: Product }) {
         <div className="price">
           {formatPrice(from)}
           <small>{product.variants.length > 1 ? "Según presentación" : firstVariant.label}</small>
+          <span className="price-cash">{formatPrice(cashPrice)}</span>
+          <span className="price-cash-note">Con efectivo en sucursal: 10% de descuento</span>
         </div>
         <div className="product-flags">
           <span>{product.brand}</span>
