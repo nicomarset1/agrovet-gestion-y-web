@@ -42,7 +42,10 @@ export async function Footer() {
             </div>
           </div>
         </div>
-        <div className="footer-bottom">© 2026 Agrovet Mar del Plata. Sitio creado por Nicolás Marset.</div>
+        <div className="footer-bottom">
+          © 2026 Agrovet Mar del Plata. Sitio creado por{" "}
+          <Link href="https://nicolasmarset.com" rel="noreferrer" target="_blank">Nicolás Marset</Link>.
+        </div>
       </div>
     </footer>
   );
