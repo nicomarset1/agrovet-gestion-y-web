@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { VariantSelector } from "@/components/variant-selector";
 import { getProduct } from "@/lib/db";
+import { applyCashDiscount, formatPrice } from "@/lib/format";
 import { absoluteUrl, siteName } from "@/lib/site";
 import type { Product } from "@/lib/types";
 
@@ -39,6 +40,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   if (!product) notFound();
 
   const totalStock = product.variants.reduce((sum, variant) => sum + variant.totalStock, 0);
+  const productPrice = priceFrom(product);
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -51,7 +53,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     offers: {
       "@type": "Offer",
       priceCurrency: "ARS",
-      price: (priceFrom(product) / 100).toFixed(2),
+      price: (productPrice / 100).toFixed(2),
       availability: totalStock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       url: absoluteUrl(`/producto/${product.slug}`),
       seller: { "@type": "Organization", name: siteName },
@@ -86,6 +88,10 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
           </div>
           <p className="description">{product.description}</p>
           {product.requiresAdvice && <div className="advice"><strong>Producto veterinario.</strong> Consultá indicaciones, dosificación y contraindicaciones con un profesional antes de administrarlo.</div>}
+          <div className="detail-cash-banner">
+            <strong>{formatPrice(applyCashDiscount(productPrice))}</strong>
+            <span>Pagando en efectivo en sucursal tenés 10% de descuento.</span>
+          </div>
           <VariantSelector product={product} />
         </section>
       </div>

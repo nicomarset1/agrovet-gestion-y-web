@@ -38,11 +38,13 @@ export default async function Home() {
             <div className="hero-promo-track">
               <div className="hero-promo-sequence">
                 <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
+                <div className="hero-promo-tag"><BadgePercent /><strong>10% en efectivo</strong><span>Pagando en sucursal</span></div>
                 <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>Zona sucursal Independencia</span></div>
                 <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
               </div>
               <div className="hero-promo-sequence" aria-hidden="true">
                 <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
+                <div className="hero-promo-tag"><BadgePercent /><strong>10% en efectivo</strong><span>Pagando en sucursal</span></div>
                 <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>Zona sucursal Independencia</span></div>
                 <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
               </div>

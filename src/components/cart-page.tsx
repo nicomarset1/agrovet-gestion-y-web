@@ -143,6 +143,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
               </button>
             </div>
             <p className="notice cash-discount-notice">{cashDiscountNote}</p>
+            {fulfillment === "retiro" && <p className="notice cash-discount-notice">Si abonás en efectivo en sucursal, aplicamos 10% de descuento en todos los productos.</p>}
             {belowDeliveryMinimum && <p className="notice error">El envío se habilita desde {formatPrice(deliveryMinimumCents)}. Con este total, el pedido es solo retiro por sucursal.</p>}
             {fulfillment === "envio" && (
               <>

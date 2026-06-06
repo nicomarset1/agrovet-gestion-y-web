@@ -583,6 +583,18 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .detail h1 { margin: 12px 0 16px; font-size: clamp(36px, 4vw, 48px); line-height: 1; }
 .description { color: var(--muted); line-height: 1.7; margin: 16px 0 25px; }
 .advice { background: #fff3ed; border: 1px solid #e9dfff; padding: 14px; border-radius: 13px; color: #854126; font-size: 13px; margin-bottom: 20px; }
+.detail-cash-banner {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #fff3df;
+  color: #8a5200;
+  border: 1px solid #f0ddbb;
+}
+.detail-cash-banner strong { font-size: 20px; line-height: 1; }
+.detail-cash-banner span { font-size: 13px; font-weight: 700; line-height: 1.45; }
 .variant-box { padding: 20px; }
 .variant-label { display: block; font-size: 13px; font-weight: 800; margin-bottom: 10px; color: var(--forest); }
 .detail-variant-options { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -597,6 +609,9 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .detail-variant-chip.active { background: var(--forest); color: white; border-color: var(--forest); }
 .detail-variant-chip.active span { color: #eadfff; }
 .detail-variant-chip:disabled { opacity: .42; cursor: not-allowed; text-decoration: line-through; transform: none; }
+.variant-price { font-size: 22px; font-weight: 800; color: var(--forest); margin-top: 4px; }
+.variant-cash-price { color: #9a5a00; font-size: 16px; font-weight: 800; margin-top: 2px; }
+.variant-cash-note { color: #8b5e34; font-size: 12px; font-weight: 700; line-height: 1.4; margin-bottom: 8px; }
 .admin-image-preview { display: grid; gap: 12px; }
 .admin-image-preview-frame { position: relative; width: 100%; min-height: 160px; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 16px; border: 1px solid var(--line); background: #f4f5ef; }
 .admin-image-preview-image { object-fit: cover; }

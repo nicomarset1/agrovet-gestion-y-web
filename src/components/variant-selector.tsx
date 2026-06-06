@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Check, ShoppingCart } from "lucide-react";
-import { formatPrice } from "@/lib/format";
+import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import { useCart } from "./cart-provider";
 
@@ -13,6 +13,7 @@ export function VariantSelector({ product }: { product: Product }) {
   const { add } = useCart();
   const variant = useMemo(() => product.variants.find((item) => item.id === variantId) ?? firstAvailable, [firstAvailable, product.variants, variantId]);
   if (!variant) return null;
+  const cashPrice = applyCashDiscount(variant.priceCents);
 
   function addItem() {
     add({
@@ -48,6 +49,8 @@ export function VariantSelector({ product }: { product: Product }) {
         ))}
       </div>
       <div className="variant-price">{formatPrice(variant.priceCents)}</div>
+      <div className="variant-cash-price">{formatPrice(cashPrice)}</div>
+      <div className="variant-cash-note">Con efectivo en sucursal: 10% de descuento</div>
       <div className="availability">
         {variant.stocks.map((stock) => (
           <span key={stock.branchId}><strong>{stock.branchName}:</strong> {stock.quantity > 0 ? `${stock.quantity} disponibles` : "sin stock"}</span>
