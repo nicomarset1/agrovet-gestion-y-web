@@ -191,6 +191,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             {unavailable.length > 0 && <p className="notice error">Sin unidades suficientes en este local: {unavailable.map((item) => item.name).join(", ")}.</p>}
             <div className="checkout-total"><span>Total</span><span>{formatPrice(totalCents)}</span></div>
             <div className="checkout-total-cash"><span>Total en efectivo</span><span>{formatPrice(cashTotalCents)}</span></div>
+            <Link className="button button-light" href="/tienda">Seguir comprando</Link>
             <button className="button button-primary" disabled={pending || unavailable.length > 0}>{pending ? "Reservando..." : "Confirmar pedido"}</button>
             <p className="notice">El pago y la entrega se confirman con el local. Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
           </form>
