@@ -95,7 +95,9 @@ const subcategorySeed = [...new Map(productSeed.map((product) => ([
 
 async function ensureSchema() {
   initialized ??= (async () => {
-    await sql.unsafe(`
+    await sql.begin(async (schemaTx) => {
+      await schemaTx`SELECT pg_advisory_xact_lock(742060606)`;
+      await schemaTx.unsafe(`
       CREATE TABLE IF NOT EXISTS app_meta (
         key TEXT PRIMARY KEY,
         value INTEGER NOT NULL DEFAULT 0
@@ -225,15 +227,15 @@ async function ensureSchema() {
       CREATE INDEX IF NOT EXISTS admin_login_attempts_locked_idx ON admin_login_attempts(locked_until);
     `);
 
-    await sql`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
-    await sql`ALTER TABLE subcategories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
-    await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
-    await sql`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
-    await sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE subcategories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
 
-    const [seedCheck] = await sql`SELECT COUNT(*)::int AS count FROM branches`;
-    if (Number(seedCheck.count) === 0) {
-      await sql.begin(async (tx) => {
+      const [seedCheck] = await schemaTx`SELECT COUNT(*)::int AS count FROM branches`;
+      if (Number(seedCheck.count) === 0) {
+        const tx = schemaTx;
         for (const branch of branchSeed) {
           await tx`
             INSERT INTO branches (id, slug, name, address, phone, map_url, verified)
@@ -334,8 +336,8 @@ async function ensureSchema() {
           `;
         }
         await tx`UPDATE app_meta SET value = 0 WHERE key = 'sync_version'`;
-      });
-    }
+      }
+    });
   })();
   await initialized;
 }
