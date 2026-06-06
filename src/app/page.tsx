@@ -38,18 +38,18 @@ export default async function Home() {
             <div className="hero-promo-track">
               <div className="hero-promo-sequence">
                 <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
-                <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
+                <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>Radio de 3 km desde Independencia</span></div>
                 <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
               </div>
               <div className="hero-promo-sequence" aria-hidden="true">
                 <div className="hero-promo-tag"><CreditCard /><strong>Promociones con tarjetas</strong><span>Beneficios todos los días</span></div>
-                <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>A todo Mar del Plata</span></div>
+                <div className="hero-promo-tag"><Truck /><strong>Envíos sin cargo</strong><span>Radio de 3 km desde Independencia</span></div>
                 <div className="hero-promo-tag"><BadgePercent /><strong>3 cuotas sin interés</strong><span>Más reintegros Favacard</span></div>
               </div>
             </div>
           </div>
           <div className="trust-grid">
-            <div className="trust-item"><Truck /><div><strong>Envíos a todo Mar del Plata</strong><span>Rápidos y seguros</span></div></div>
+            <div className="trust-item"><Truck /><div><strong>Envíos cerca de Independencia</strong><span>Para direcciones dentro de un radio de 3 km</span></div></div>
             <div className="trust-item"><ShieldCheck /><div><strong>Productos de calidad</strong><span>Elegidos para el bienestar de tu mascota</span></div></div>
             <div className="trust-item"><Award /><div><strong>Las mejores marcas</strong><span>Alimentos, accesorios y medicamentos premium</span></div></div>
           </div>
