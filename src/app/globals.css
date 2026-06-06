@@ -732,8 +732,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   cursor: default;
 }
 .footer-bottom { border-top: 1px solid rgba(255,255,255,.14); margin-top: 28px; padding-top: 18px; color: #a6c0b5; font-size: 12px; text-align: center; }
-.footer-bottom a { color: #e4eee5; font-weight: 800; text-decoration: underline; text-decoration-color: rgba(204, 255, 0, .7); text-underline-offset: 3px; transition: color .18s ease, text-decoration-color .18s ease; }
-.footer-bottom a:hover { color: white; text-decoration-color: var(--lime); }
+.footer-bottom a { color: inherit; font-weight: inherit; text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 3px; }
 
 .whatsapp-float {
   position: fixed; right: 18px; bottom: 18px; z-index: 110; min-height: 54px; padding: 0 18px 0 15px;
