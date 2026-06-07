@@ -44,7 +44,7 @@ export async function Footer() {
         </div>
         <div className="footer-bottom">
           © 2026 Agrovet Mar del Plata. Sitio creado por{" "}
-          <Link href="https://nicolasmarset.com" rel="noreferrer" target="_blank">Nicolás Marset</Link>.
+          <Link href="https://servicio-ventas.netlify.app/" rel="noreferrer" target="_blank">Nicolás Marset</Link>.
         </div>
       </div>
     </footer>
