@@ -435,6 +435,10 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .catalog-menu-link:hover { background: var(--sage); }
 .catalog-menu-item:hover > .catalog-menu-link svg { transform: rotate(90deg); }
 .catalog-menu-item small { color: var(--muted); font-weight: 800; }
+.catalog-menu-branch { cursor: pointer; }
+.catalog-menu-label-link { color: inherit; display: inline-flex; justify-self: start; max-width: 100%; min-width: 0; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-menu-label-link:hover { color: var(--forest); text-decoration: underline; text-underline-offset: 3px; }
+.catalog-menu-row-fill { min-width: 8px; }
 .catalog-menu-list .catalog-menu-list { left: calc(100% + 8px); top: -8px; transform: translateX(8px); }
 
 @media (min-width: 821px) {

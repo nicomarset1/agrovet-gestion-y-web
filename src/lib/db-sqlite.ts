@@ -915,6 +915,13 @@ export function getCatalogMenu(): CatalogMenuNode[] {
   const categories = getCategories();
   const subcategories = getSubcategories();
   const categoriesBySlug = new Map(categories.map((category) => [category.slug, category]));
+  const categoriesByNameSlug = new Map<string, Category>();
+  for (const category of categories) {
+    const nameSlug = slugify(category.name);
+    const current = categoriesByNameSlug.get(nameSlug);
+    if (!current || (current.parentCategoryId && !category.parentCategoryId)) categoriesByNameSlug.set(nameSlug, category);
+  }
+  const petSlugs = new Set(["perro", "gato"]);
   const rootCategories = new Set(categories.filter((category) => category.showInMenu).map((category) => category.slug));
   const rootFor = (categorySlug?: string | null) => {
     if (!categorySlug) return "";
@@ -969,12 +976,34 @@ export function getCatalogMenu(): CatalogMenuNode[] {
     }
     rootCategoryMap.set(rootSlug, root);
   }
+  for (const product of products) {
+    if (!product.categorySlug) continue;
+    for (const petSlug of petSlugs) {
+      if (product.species !== petSlug && product.species !== "perro-gato") continue;
+      const root = rootCategoryMap.get(petSlug);
+      if (!root) continue;
+      root.count += 1;
+      for (const [childSlug, child] of root.children) {
+        const childCategory = categoriesBySlug.get(childSlug);
+        if (childCategory && slugify(childCategory.name) === product.categorySlug) {
+          child.count += 1;
+          addChild(child, product.subcategorySlug, product.subcategory);
+        }
+      }
+    }
+  }
   const rootNodes = toNodes(rootCategoryMap, ([rootSlug, childOrSubSlug, subcategorySlug]) => {
     const specialHref = !childOrSubSlug ? getSpecialCategoryHref(rootSlug) : undefined;
     if (specialHref) return specialHref;
-    if (subcategorySlug) return `/tienda?category=${childOrSubSlug}&subcategory=${subcategorySlug}`;
+    const rootIsPet = petSlugs.has(rootSlug);
+    if (rootIsPet && !childOrSubSlug) return `/tienda?pet=${rootSlug}`;
+    const childCategory = childOrSubSlug ? categoriesBySlug.get(childOrSubSlug) : undefined;
+    const publicCategory = childCategory ? categoriesByNameSlug.get(slugify(childCategory.name)) : undefined;
+    const categorySlug = rootIsPet ? publicCategory?.slug : childOrSubSlug;
+    if (subcategorySlug && categorySlug) return `/tienda?category=${categorySlug}&subcategory=${subcategorySlug}${rootIsPet ? `&pet=${rootSlug}` : ""}`;
     if (childOrSubSlug) {
       const maybeCategory = categoriesBySlug.get(childOrSubSlug);
+      if (rootIsPet && publicCategory) return `/tienda?category=${publicCategory.slug}&pet=${rootSlug}`;
       return maybeCategory ? `/tienda?category=${childOrSubSlug}` : `/tienda?category=${rootSlug}&subcategory=${childOrSubSlug}`;
     }
     return `/tienda?category=${rootSlug}`;

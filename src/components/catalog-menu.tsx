@@ -28,16 +28,40 @@ function MenuLevel({
         return (
           <li className={`catalog-menu-item${expanded ? " expanded" : ""}`} key={`${level}-${item.href}`}>
             {hasChildren && isMobile ? (
-              <button
+              <div
                 aria-expanded={expanded}
-                className="catalog-menu-link"
+                className="catalog-menu-link catalog-menu-branch"
                 onClick={() => onToggle(item.href, level)}
-                type="button"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onToggle(item.href, level);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
               >
+                <Link
+                  className="catalog-menu-label-link"
+                  href={item.href}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onNavigate();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {item.label}
+                </Link>
+                <span aria-hidden="true" className="catalog-menu-row-fill" />
+                {typeof item.count === "number" ? <small>{item.count}</small> : null}
+                <ChevronRight size={15} />
+              </div>
+            ) : hasChildren ? (
+              <Link className="catalog-menu-link" href={item.href} onClick={onNavigate}>
                 <span>{item.label}</span>
                 {typeof item.count === "number" ? <small>{item.count}</small> : null}
                 <ChevronRight size={15} />
-              </button>
+              </Link>
             ) : (
               <Link className="catalog-menu-link" href={item.href} onClick={onNavigate}>
                 <span>{item.label}</span>
