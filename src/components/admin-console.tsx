@@ -39,6 +39,7 @@ import {
   updateCategoryAction,
   updateOrderAction,
   updateOrderPaymentAction,
+  updateProductActiveAction,
   updateProductAction,
   updateSubcategoryAction,
   updateWholesaleClientAction,
@@ -1195,6 +1196,10 @@ function ProductModal({
           </div>
         </label>
         <label className="admin-check">
+          <input defaultChecked={product?.active ?? true} name="active" type="checkbox" />
+          <span>Activo en tienda</span>
+        </label>
+        <label className="admin-check">
           <input defaultChecked={Boolean(product?.featured)} name="featured" type="checkbox" />
           <span>Destacado</span>
         </label>
@@ -1896,11 +1901,12 @@ function DashboardDetailModal({
     }
     return [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   }, [selectedBranch.id, selectedBranchOrders]);
-  const outOfStock = useMemo(() => products.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0)), [products, selectedBranch.id]);
-  const lowStock = useMemo(() => products.filter((product) => product.variants.some((variant) => {
+  const activeProducts = useMemo(() => products.filter((product) => product.active), [products]);
+  const outOfStock = useMemo(() => activeProducts.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0)), [activeProducts, selectedBranch.id]);
+  const lowStock = useMemo(() => activeProducts.filter((product) => product.variants.some((variant) => {
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
     return quantity > 0 && quantity <= 3;
-  })), [products, selectedBranch.id]);
+  })), [activeProducts, selectedBranch.id]);
   const allDays = useMemo(() => {
     const groups = new Map<string, { orders: OrderRecord[]; totalCents: number }>();
     for (const order of selectedBranchOrders) {
@@ -1935,9 +1941,9 @@ function DashboardDetailModal({
     return [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   }, [orders]);
   const branchInventory = useMemo(() => branches.map((branch) => {
-    const zero = products.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0) === 0));
+    const zero = activeProducts.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0) === 0));
     return { branch, zero };
-  }), [branches, products]);
+  }), [activeProducts, branches]);
   const stockAlertList = alertView === "out" ? outOfStock : lowStock;
   const stockAlertTitle = alertView === "out" ? "Productos sin stock" : "Productos con stock bajo";
 
@@ -3115,6 +3121,7 @@ export function AdminConsole({
   const [productQuery, setProductQuery] = useState("");
   const [productCategoryFilter, setProductCategoryFilter] = useState("");
   const [productSubcategoryFilter, setProductSubcategoryFilter] = useState("");
+  const [productStatusFilter, setProductStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [reportMonth, setReportMonth] = useState(monthKey(new Date()));
   const [reportBranch, setReportBranch] = useState(() => selectedBranchId ? String(selectedBranchId) : "all");
   const [reportChannel, setReportChannel] = useState("all");
@@ -3142,10 +3149,11 @@ export function AdminConsole({
         || (productCategoryFilter === UNCATEGORIZED_CATEGORY_VALUE ? !product.categorySlug : product.categorySlug === productCategoryFilter);
       const matchesSubcategory = !productSubcategoryFilter
         || (productSubcategoryFilter === UNCATEGORIZED_SUBCATEGORY_SLUG ? product.subcategorySlug === UNCATEGORIZED_SUBCATEGORY_SLUG : product.subcategorySlug === productSubcategoryFilter);
-      return matchesQuery && matchesCategory && matchesSubcategory;
-    });
-  }, [productCategoryFilter, productQuery, productSubcategoryFilter, products]);
-  const productFiltersActive = Boolean(productQuery.trim() || productCategoryFilter || productSubcategoryFilter);
+      const matchesStatus = productStatusFilter === "all" || (productStatusFilter === "active" ? product.active : !product.active);
+      return matchesQuery && matchesCategory && matchesSubcategory && matchesStatus;
+    }).sort((a, b) => Number(b.active) - Number(a.active) || `${a.brand} ${a.name}`.localeCompare(`${b.brand} ${b.name}`));
+  }, [productCategoryFilter, productQuery, productStatusFilter, productSubcategoryFilter, products]);
+  const productFiltersActive = Boolean(productQuery.trim() || productCategoryFilter || productSubcategoryFilter || productStatusFilter !== "all");
   const productCountSummary = productFiltersActive
     ? `${visibleProducts.length} de ${products.length} productos registrados`
     : `${products.length} productos registrados`;
@@ -3157,8 +3165,9 @@ export function AdminConsole({
       return matchesType && matchesQuery;
     });
   }, [trashItems, trashQuery, trashTypeFilter]);
-  const zeroStockProducts = products.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0));
-  const lowStockProducts = products.filter((product) => product.variants.some((variant) => {
+  const stockTrackedProducts = products.filter((product) => product.active);
+  const zeroStockProducts = stockTrackedProducts.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0));
+  const lowStockProducts = stockTrackedProducts.filter((product) => product.variants.some((variant) => {
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
     return quantity > 0 && quantity <= 3;
   })).length;
@@ -3342,6 +3351,14 @@ export function AdminConsole({
                   {availableProductSubcategories.map((subcategory) => <option key={subcategory.slug} value={subcategory.slug}>{subcategory.name}</option>)}
                 </select>
               </label>
+              <label className="admin-point-field">
+                <span>Estado tienda</span>
+                <select className="field" value={productStatusFilter} onChange={(event) => setProductStatusFilter(event.target.value as "all" | "active" | "inactive")}>
+                  <option value="all">Todos</option>
+                  <option value="active">Activos</option>
+                  <option value="inactive">Desactivados</option>
+                </select>
+              </label>
             </div>
             <div className="card admin-panel admin-table-wrap">
               <div className="admin-table-head">
@@ -3356,16 +3373,31 @@ export function AdminConsole({
                     <div className="admin-table-row" key={product.id}>
                       <div>
                         <strong>{product.brand} {product.name}</strong>
+                        {!product.active ? <span className="admin-status-badge muted">Desactivado en tienda</span> : null}
                         <small>{product.description}</small>
                       </div>
                       <span>{product.category}</span>
                       <span>{product.subcategory}</span>
                       <strong>{formatPrice(mainVariant?.priceCents ?? 0)}</strong>
-                      <span className={`admin-stock-pill admin-stock-pill-wide ${mainVariant && mainVariant.totalStock <= 3 ? "danger" : ""}`}>
+                      <span className={`admin-stock-pill admin-stock-pill-wide ${!product.active ? "muted" : mainVariant && mainVariant.totalStock <= 3 ? "danger" : ""}`}>
                         <strong>{mainVariant?.totalStock ?? 0} unidades</strong>
-                        <small>{stockIndependencia} Ind. | {stockBelgrano} Belgrano</small>
+                        <small>{product.active ? `${stockIndependencia} Ind. | ${stockBelgrano} Belgrano` : "Stock sin alerta"}</small>
                       </span>
                       <div className="admin-row-actions">
+                        <form action={updateProductActiveAction}>
+                          <input name="id" type="hidden" value={product.id} />
+                          <input name="returnTo" type="hidden" value={productReturnTo} />
+                          <label className="admin-toggle" title={product.active ? "Desactivar de la tienda" : "Activar en la tienda"}>
+                            <input
+                              aria-label={product.active ? "Desactivar de la tienda" : "Activar en la tienda"}
+                              defaultChecked={product.active}
+                              name="active"
+                              onChange={(event) => event.currentTarget.form?.requestSubmit()}
+                              type="checkbox"
+                            />
+                            <span />
+                          </label>
+                        </form>
                         <button className="icon-button" onClick={() => setModal({ type: "product-edit", product })} type="button"><Pencil size={16} /></button>
                         <button className="icon-button danger" onClick={() => setModal({ type: "product-delete", product })} type="button" aria-label="Eliminar producto"><Trash2 size={16} /></button>
                       </div>

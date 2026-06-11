@@ -83,6 +83,7 @@ db.exec(`
     description TEXT NOT NULL,
     featured INTEGER NOT NULL DEFAULT 0,
     requires_advice INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
     color TEXT NOT NULL,
     image_url TEXT NOT NULL DEFAULT '',
     archived_at TEXT NOT NULL DEFAULT '',
@@ -174,6 +175,7 @@ ensureColumn("products", "life_stage", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "size", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "need", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "image_url", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("products", "active", "INTEGER NOT NULL DEFAULT 1");
 ensureColumn("products", "archived_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("products", "purged_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("variants", "barcode", "TEXT NOT NULL DEFAULT ''");
@@ -223,6 +225,7 @@ function rebuildNullableCategoryTables() {
           description TEXT NOT NULL,
           featured INTEGER NOT NULL DEFAULT 0,
           requires_advice INTEGER NOT NULL DEFAULT 0,
+          active INTEGER NOT NULL DEFAULT 1,
           color TEXT NOT NULL,
           image_url TEXT NOT NULL DEFAULT '',
           archived_at TEXT NOT NULL DEFAULT '',
@@ -230,11 +233,11 @@ function rebuildNullableCategoryTables() {
         );
         INSERT INTO products_new (
           id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-          description, featured, requires_advice, color, image_url, archived_at, purged_at
+          description, featured, requires_advice, active, color, image_url, archived_at, purged_at
         )
         SELECT
           id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-          description, featured, requires_advice, color, image_url, '', ''
+          description, featured, requires_advice, 1, color, image_url, '', ''
         FROM products;
         DROP TABLE products;
         ALTER TABLE products_new RENAME TO products;
@@ -294,10 +297,10 @@ const upsertSubcategory = db.prepare(`
 const upsertProduct = db.prepare(`
   INSERT INTO products (
     id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-    description, featured, requires_advice, color, image_url
+    description, featured, requires_advice, active, color, image_url
   ) VALUES (
     @id, @slug, @name, @brand, @categoryId, @species, @subcategorySlug, @subcategoryName, @lifeStage, @size, @need,
-    @description, @featured, @requiresAdvice, @color, @imageUrl
+    @description, @featured, @requiresAdvice, 1, @color, @imageUrl
   )
   ON CONFLICT(id) DO UPDATE SET
     slug = excluded.slug,
@@ -313,6 +316,7 @@ const upsertProduct = db.prepare(`
     description = excluded.description,
     featured = excluded.featured,
     requires_advice = excluded.requires_advice,
+    active = products.active,
     color = excluded.color,
     image_url = excluded.image_url
 `);
@@ -428,7 +432,7 @@ bumpSyncVersion();
 type ProductRow = {
   id: number; slug: string; name: string; brand: string; category: string; categorySlug: string;
   subcategory: string; subcategorySlug: string; species: Product["species"]; lifeStage: string; size: string; need: string;
-  description: string; featured: number; requiresAdvice: number; color: string; imageUrl: string;
+  description: string; featured: number; requiresAdvice: number; active: number; color: string; imageUrl: string;
 };
 
 type VariantRow = {
@@ -478,6 +482,7 @@ function toProduct(row: ProductRow, variants: Variant[]): Product {
     ...row,
     featured: Boolean(row.featured),
     requiresAdvice: Boolean(row.requiresAdvice),
+    active: Boolean(row.active),
     variants,
   };
 }
@@ -543,7 +548,7 @@ const baseSelect = `
     COALESCE(NULLIF(p.subcategory_name, ''), '${uncategorizedSubcategoryName}') AS subcategory,
     COALESCE(NULLIF(p.subcategory_slug, ''), '${uncategorizedSubcategorySlug}') AS subcategorySlug,
     p.species, p.life_stage AS lifeStage, p.size, p.need, p.description, p.featured,
-    p.requires_advice AS requiresAdvice, p.color, p.image_url AS imageUrl
+    p.requires_advice AS requiresAdvice, p.active, p.color, p.image_url AS imageUrl
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at = ''
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at = ''
@@ -552,6 +557,11 @@ const baseSelect = `
 export function getProducts(filters: CatalogFilters = {}) {
   const clauses: string[] = ["p.archived_at = ''", "p.purged_at = ''"];
   const params: string[] = [];
+  if (filters.status === "inactive") {
+    clauses.push("p.active = 0");
+  } else if (filters.status !== "all") {
+    clauses.push("p.active = 1");
+  }
   if (filters.q) {
     clauses.push("(p.name LIKE ? OR p.brand LIKE ? OR p.description LIKE ?)");
     const value = `%${filters.q}%`;
@@ -601,13 +611,13 @@ export function getProducts(filters: CatalogFilters = {}) {
   if (filters.stock === "disponible") {
     clauses.push("EXISTS (SELECT 1 FROM variants vx JOIN inventory ix ON ix.variant_id = vx.id WHERE vx.product_id = p.id AND ix.quantity > 0)");
   }
-  let orderBy = "ORDER BY p.featured DESC, p.name";
+  let orderBy = "ORDER BY p.active DESC, p.featured DESC, p.name";
   if (filters.sort === "price_asc") {
-    orderBy = "ORDER BY (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) ASC, p.name";
+    orderBy = "ORDER BY p.active DESC, (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) ASC, p.name";
   } else if (filters.sort === "price_desc") {
-    orderBy = "ORDER BY (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) DESC, p.name";
+    orderBy = "ORDER BY p.active DESC, (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) DESC, p.name";
   } else if (filters.sort === "stock_desc") {
-    orderBy = "ORDER BY (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
+    orderBy = "ORDER BY p.active DESC, (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
   }
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
   const rows = db.prepare(`${baseSelect}${where} ${orderBy}`).all(...params) as ProductRow[];
@@ -615,13 +625,13 @@ export function getProducts(filters: CatalogFilters = {}) {
 }
 
 export function getProduct(slug: string) {
-  const row = db.prepare(`${baseSelect} WHERE p.slug = ? AND p.archived_at = '' AND p.purged_at = ''`).get(slug) as ProductRow | undefined;
+  const row = db.prepare(`${baseSelect} WHERE p.slug = ? AND p.active = 1 AND p.archived_at = '' AND p.purged_at = ''`).get(slug) as ProductRow | undefined;
   return row ? hydrateProduct(row) : undefined;
 }
 
 export function getFeaturedProducts() {
   // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
-  const rows = db.prepare(`${baseSelect} WHERE p.featured = 1 AND p.archived_at = '' AND p.purged_at = '' ORDER BY p.name LIMIT 4`).all() as ProductRow[];
+  const rows = db.prepare(`${baseSelect} WHERE p.featured = 1 AND p.active = 1 AND p.archived_at = '' AND p.purged_at = '' ORDER BY p.name LIMIT 4`).all() as ProductRow[];
   return hydrateProducts(rows);
 }
 
@@ -649,7 +659,7 @@ export function getLowStockItems(threshold: number): LowStockItem[] {
     JOIN variants v ON v.id = i.variant_id
     JOIN products p ON p.id = v.product_id
     JOIN branches b ON b.id = i.branch_id
-    WHERE i.quantity <= ? AND p.archived_at = '' AND p.purged_at = ''
+    WHERE i.quantity <= ? AND p.active = 1 AND p.archived_at = '' AND p.purged_at = ''
     ORDER BY i.quantity ASC, p.name, v.label
   `).all(threshold) as LowStockItem[];
 }
@@ -818,7 +828,7 @@ function mapAdminOrders(): OrderRecord[] {
 }
 
 export function getAdminSnapshot() {
-  return { products: getProducts(), branches: getBranches(), orders: mapAdminOrders(), wholesaleClients: getWholesaleClients() };
+  return { products: getProducts({ status: "all" }), branches: getBranches(), orders: mapAdminOrders(), wholesaleClients: getWholesaleClients() };
 }
 
 export function getCatalogFacets() {
@@ -1208,6 +1218,7 @@ export function updateProduct(input: {
   description: string;
   featured: boolean;
   requiresAdvice: boolean;
+  active: boolean;
   color: string;
   imageUrl?: string;
   variants: ProductVariantInput[];
@@ -1217,7 +1228,7 @@ export function updateProduct(input: {
     db.prepare(`
       UPDATE products SET
         name = ?, brand = ?, category_id = ?, species = ?, subcategory_slug = ?, subcategory_name = ?,
-        life_stage = ?, size = ?, need = ?, description = ?, featured = ?, requires_advice = ?, color = ?, image_url = ?
+        life_stage = ?, size = ?, need = ?, description = ?, featured = ?, requires_advice = ?, active = ?, color = ?, image_url = ?
       WHERE id = ?
     `).run(
       input.name.trim(),
@@ -1232,6 +1243,7 @@ export function updateProduct(input: {
       input.description.trim(),
       input.featured ? 1 : 0,
       input.requiresAdvice ? 1 : 0,
+      input.active ? 1 : 0,
       input.color,
       input.imageUrl ?? "",
       input.id,
@@ -1268,6 +1280,7 @@ export function createProduct(input: {
   description: string;
   featured: boolean;
   requiresAdvice: boolean;
+  active: boolean;
   color: string;
   imageUrl?: string;
   variants: ProductVariantInput[];
@@ -1280,8 +1293,8 @@ export function createProduct(input: {
     const inserted = db.prepare(`
       INSERT INTO products (
         slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-        description, featured, requires_advice, color, image_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        description, featured, requires_advice, active, color, image_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       slug,
       input.name.trim(),
@@ -1296,6 +1309,7 @@ export function createProduct(input: {
       input.description.trim(),
       input.featured ? 1 : 0,
       input.requiresAdvice ? 1 : 0,
+      input.active ? 1 : 0,
       input.color,
       input.imageUrl ?? "",
     );
@@ -1315,6 +1329,11 @@ export function createProduct(input: {
     }
     bumpSyncVersion();
   })();
+}
+
+export function setProductActive(id: number, active: boolean) {
+  db.prepare("UPDATE products SET active = ? WHERE id = ? AND archived_at = '' AND purged_at = ''").run(active ? 1 : 0, id);
+  bumpSyncVersion();
 }
 
 export function updateInventory(variantId: number, branchId: number, quantity: number) {
@@ -1383,7 +1402,12 @@ export function createOrder(input: {
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number }[] = [];
     for (const item of input.items) {
-      const row = db.prepare("SELECT price_cents AS priceCents FROM variants WHERE id = ?").get(item.variantId) as { priceCents?: number } | undefined;
+      const row = db.prepare(`
+        SELECT v.price_cents AS priceCents
+        FROM variants v
+        JOIN products p ON p.id = v.product_id
+        WHERE v.id = ? AND p.active = 1 AND p.archived_at = '' AND p.purged_at = ''
+      `).get(item.variantId) as { priceCents?: number } | undefined;
       if (!row || item.quantity < 1) {
         throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
       }

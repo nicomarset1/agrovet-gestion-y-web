@@ -20,6 +20,7 @@ import {
   addInventory,
   emptyTrash,
   restoreTrashItem,
+  setProductActive,
   updateOrder,
   updateOrderPayment,
   updateCategory,
@@ -322,6 +323,7 @@ const productBaseSchema = z.object({
   imageUrl: z.string().trim().optional(),
   featured: z.enum(["on"]).optional(),
   requiresAdvice: z.enum(["on"]).optional(),
+  active: z.enum(["on"]).optional(),
   returnTo: z.string().trim().min(1),
 });
 
@@ -367,6 +369,7 @@ export async function createProductAction(formData: FormData) {
     ...parsed.data,
     featured: parsed.data.featured === "on",
     requiresAdvice: parsed.data.requiresAdvice === "on",
+    active: parsed.data.active === "on",
     imageUrl: parsed.data.imageUrl ?? "",
     variants: variants.map((variant) => ({
       id: variant.id,
@@ -464,6 +467,21 @@ export async function deleteOrderAction(formData: FormData) {
   if (returnTo) redirect(safeInternalPath(returnTo));
 }
 
+export async function updateProductActiveAction(formData: FormData) {
+  await requireAdmin();
+  const parsed = z.object({
+    id: z.coerce.number().int().positive(),
+    active: z.enum(["on"]).optional(),
+    returnTo: z.string().trim().min(1).optional(),
+  }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) throw new Error("Estado de producto inválido.");
+  await setProductActive(parsed.data.id, parsed.data.active === "on");
+  revalidatePath("/");
+  revalidatePath("/tienda");
+  revalidatePath("/admin");
+  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
+}
+
 export async function restoreTrashItemAction(formData: FormData) {
   await requireAdmin();
   const parsed = z.object({
@@ -515,6 +533,7 @@ export async function updateProductAction(formData: FormData) {
     description: parsed.data.description,
     featured: parsed.data.featured === "on",
     requiresAdvice: parsed.data.requiresAdvice === "on",
+    active: parsed.data.active === "on",
     color: parsed.data.color,
     imageUrl: parsed.data.imageUrl ?? "",
     variants: variants.map((variant) => ({

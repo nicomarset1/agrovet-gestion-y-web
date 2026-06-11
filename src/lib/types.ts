@@ -40,6 +40,7 @@ export type Product = {
   description: string;
   featured: boolean;
   requiresAdvice: boolean;
+  active: boolean;
   color: string;
   imageUrl: string;
   variants: Variant[];
@@ -121,6 +122,7 @@ export type CatalogFilters = {
   minPrice?: string;
   maxPrice?: string;
   stock?: string;
+  status?: string;
   sort?: string;
 };
 

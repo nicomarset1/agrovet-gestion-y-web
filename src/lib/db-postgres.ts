@@ -146,6 +146,7 @@ async function ensureSchema() {
         description TEXT NOT NULL,
         featured BOOLEAN NOT NULL DEFAULT FALSE,
         requires_advice BOOLEAN NOT NULL DEFAULT FALSE,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
         color TEXT NOT NULL,
         image_url TEXT NOT NULL DEFAULT '',
         archived_at TIMESTAMPTZ,
@@ -232,6 +233,7 @@ async function ensureSchema() {
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`;
 
       const [seedCheck] = await schemaTx`SELECT COUNT(*)::int AS count FROM branches`;
       if (Number(seedCheck.count) === 0) {
@@ -285,11 +287,11 @@ async function ensureSchema() {
           await tx`
             INSERT INTO products (
               id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-              description, featured, requires_advice, color, image_url, archived_at
+              description, featured, requires_advice, active, color, image_url, archived_at
             ) VALUES (
               ${product.id}, ${product.slug}, ${product.name}, ${product.brand}, ${product.categoryId}, ${product.species}, ${product.subcategorySlug},
               ${product.subcategoryName}, ${product.lifeStage}, ${product.size}, ${product.need}, ${product.description},
-              ${product.featured}, ${product.requiresAdvice}, ${product.color}, ${product.imageUrl}, NULL
+              ${product.featured}, ${product.requiresAdvice}, TRUE, ${product.color}, ${product.imageUrl}, NULL
             )
             ON CONFLICT (id) DO UPDATE SET
               slug = EXCLUDED.slug,
@@ -305,6 +307,7 @@ async function ensureSchema() {
               description = EXCLUDED.description,
               featured = EXCLUDED.featured,
               requires_advice = EXCLUDED.requires_advice,
+              active = products.active,
               color = EXCLUDED.color,
               image_url = EXCLUDED.image_url
           `;
@@ -359,7 +362,7 @@ export async function getSyncVersion() {
 type ProductRow = {
   id: number; slug: string; name: string; brand: string; category: string; categorySlug: string;
   subcategory: string; subcategorySlug: string; species: Product["species"]; lifeStage: string; size: string; need: string;
-  description: string; featured: boolean; requiresAdvice: boolean; color: string; imageUrl: string;
+  description: string; featured: boolean; requiresAdvice: boolean; active: boolean; color: string; imageUrl: string;
 };
 
 type VariantRow = {
@@ -404,7 +407,7 @@ async function buildVariantsByProduct(productIds: number[], db: Db = sql): Promi
 }
 
 function toProduct(row: ProductRow, variants: Variant[]): Product {
-  return { ...row, featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), variants };
+  return { ...row, featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), active: Boolean(row.active), variants };
 }
 
 async function hydrateProducts(rows: ProductRow[], db: Db = sql): Promise<Product[]> {
@@ -426,7 +429,7 @@ const baseSelect = `
     COALESCE(NULLIF(p.subcategory_name, ''), '${uncategorizedSubcategoryName}') AS subcategory,
     COALESCE(NULLIF(p.subcategory_slug, ''), '${uncategorizedSubcategorySlug}') AS "subcategorySlug",
     p.species, p.life_stage AS "lifeStage", p.size, p.need, p.description, p.featured,
-    p.requires_advice AS "requiresAdvice", p.color, p.image_url AS "imageUrl"
+    p.requires_advice AS "requiresAdvice", p.active, p.color, p.image_url AS "imageUrl"
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at IS NULL
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at IS NULL
@@ -451,6 +454,11 @@ export async function getProducts(filters: CatalogFilters = {}) {
   await ensureSchema();
   const clauses: string[] = ["p.archived_at IS NULL", "p.purged_at IS NULL"];
   const params: unknown[] = [];
+  if (filters.status === "inactive") {
+    clauses.push("p.active = FALSE");
+  } else if (filters.status !== "all") {
+    clauses.push("p.active = TRUE");
+  }
   if (filters.q) {
     const value = `%${filters.q}%`;
     clauses.push(`(p.name ILIKE ${pushParam(params, value)} OR p.brand ILIKE ${pushParam(params, value)} OR p.description ILIKE ${pushParam(params, value)})`);
@@ -490,13 +498,13 @@ export async function getProducts(filters: CatalogFilters = {}) {
   if (filters.stock === "disponible") {
     clauses.push("EXISTS (SELECT 1 FROM variants vx JOIN inventory ix ON ix.variant_id = vx.id WHERE vx.product_id = p.id AND ix.quantity > 0)");
   }
-  let orderBy = "ORDER BY p.featured DESC, p.name";
+  let orderBy = "ORDER BY p.active DESC, p.featured DESC, p.name";
   if (filters.sort === "price_asc") {
-    orderBy = "ORDER BY (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) ASC, p.name";
+    orderBy = "ORDER BY p.active DESC, (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) ASC, p.name";
   } else if (filters.sort === "price_desc") {
-    orderBy = "ORDER BY (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) DESC, p.name";
+    orderBy = "ORDER BY p.active DESC, (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) DESC, p.name";
   } else if (filters.sort === "stock_desc") {
-    orderBy = "ORDER BY (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
+    orderBy = "ORDER BY p.active DESC, (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
   }
   const rows = await sql.unsafe(`${baseSelect} WHERE ${clauses.join(" AND ")} ${orderBy}`, params as never[]) as unknown as ProductRow[];
   return hydrateProducts(rows);
@@ -504,14 +512,14 @@ export async function getProducts(filters: CatalogFilters = {}) {
 
 export async function getProduct(slug: string) {
   await ensureSchema();
-  const rows = await sql.unsafe(`${baseSelect} WHERE p.slug = $1 AND p.archived_at IS NULL AND p.purged_at IS NULL`, [slug] as never[]) as unknown as ProductRow[];
+  const rows = await sql.unsafe(`${baseSelect} WHERE p.slug = $1 AND p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL`, [slug] as never[]) as unknown as ProductRow[];
   return rows[0] ? hydrateProduct(rows[0]) : undefined;
 }
 
 export async function getFeaturedProducts() {
   await ensureSchema();
   // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
-  const rows = await sql.unsafe(`${baseSelect} WHERE p.featured = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL ORDER BY p.name LIMIT 4`, [] as never[]) as unknown as ProductRow[];
+  const rows = await sql.unsafe(`${baseSelect} WHERE p.featured = TRUE AND p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL ORDER BY p.name LIMIT 4`, [] as never[]) as unknown as ProductRow[];
   return hydrateProducts(rows);
 }
 
@@ -542,7 +550,7 @@ export async function getLowStockItems(threshold: number): Promise<LowStockItem[
     JOIN variants v ON v.id = i.variant_id
     JOIN products p ON p.id = v.product_id
     JOIN branches b ON b.id = i.branch_id
-    WHERE i.quantity <= ${threshold} AND p.archived_at IS NULL AND p.purged_at IS NULL
+    WHERE i.quantity <= ${threshold} AND p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL
     ORDER BY i.quantity ASC, p.name, v.label
   ` as unknown as LowStockItem[];
   return rows.map((row) => ({
@@ -748,7 +756,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
 
 export async function getAdminSnapshot() {
   await ensureSchema();
-  const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts(), getBranches(), mapAdminOrders(), getWholesaleClients()]);
+  const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts({ status: "all" }), getBranches(), mapAdminOrders(), getWholesaleClients()]);
   return { products, branches, orders, wholesaleClients };
 }
 
@@ -1116,6 +1124,7 @@ export async function updateProduct(input: {
   description: string;
   featured: boolean;
   requiresAdvice: boolean;
+  active: boolean;
   color: string;
   imageUrl?: string;
   variants: ProductVariantInput[];
@@ -1128,7 +1137,7 @@ export async function updateProduct(input: {
         name = ${input.name.trim()}, brand = ${input.brand.trim()}, category_id = ${placement.categoryId}, species = ${input.species},
         subcategory_slug = ${placement.subcategorySlug}, subcategory_name = ${placement.subcategoryName}, life_stage = ${input.lifeStage ?? ""},
         size = ${input.size ?? ""}, need = ${input.need ?? ""}, description = ${input.description.trim()}, featured = ${input.featured},
-        requires_advice = ${input.requiresAdvice}, color = ${input.color}, image_url = ${input.imageUrl ?? ""}
+        requires_advice = ${input.requiresAdvice}, active = ${input.active}, color = ${input.color}, image_url = ${input.imageUrl ?? ""}
       WHERE id = ${input.id}
     `;
     const takenSkus = new Set<string>();
@@ -1166,6 +1175,7 @@ export async function createProduct(input: {
   description: string;
   featured: boolean;
   requiresAdvice: boolean;
+  active: boolean;
   color: string;
   imageUrl?: string;
   variants: ProductVariantInput[];
@@ -1178,11 +1188,11 @@ export async function createProduct(input: {
     const [inserted] = await tx`
       INSERT INTO products (
         slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
-        description, featured, requires_advice, color, image_url
+        description, featured, requires_advice, active, color, image_url
       ) VALUES (
         ${slug}, ${input.name.trim()}, ${input.brand.trim()}, ${placement.categoryId}, ${input.species}, ${placement.subcategorySlug},
         ${placement.subcategoryName}, ${input.lifeStage ?? ""}, ${input.size ?? ""}, ${input.need ?? ""}, ${input.description.trim()},
-        ${input.featured}, ${input.requiresAdvice}, ${input.color}, ${input.imageUrl ?? ""}
+        ${input.featured}, ${input.requiresAdvice}, ${input.active}, ${input.color}, ${input.imageUrl ?? ""}
       )
       RETURNING id
     `;
@@ -1198,6 +1208,14 @@ export async function createProduct(input: {
         await tx`INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (${variantId}, ${stock.branchId}, ${Math.max(0, stock.quantity)})`;
       }
     }
+    await bumpSyncVersion(tx);
+  });
+}
+
+export async function setProductActive(id: number, active: boolean) {
+  await ensureSchema();
+  await sql.begin(async (tx) => {
+    await tx`UPDATE products SET active = ${active} WHERE id = ${id} AND archived_at IS NULL AND purged_at IS NULL`;
     await bumpSyncVersion(tx);
   });
 }
@@ -1273,7 +1291,12 @@ export async function createOrder(input: {
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
-      const [row] = await tx`SELECT price_cents AS "priceCents" FROM variants WHERE id = ${item.variantId}` as unknown as { priceCents?: number }[];
+      const [row] = await tx`
+        SELECT v.price_cents AS "priceCents"
+        FROM variants v
+        JOIN products p ON p.id = v.product_id
+        WHERE v.id = ${item.variantId} AND p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL
+      ` as unknown as { priceCents?: number }[];
       if (!row || item.quantity < 1) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
       if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");

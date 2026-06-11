@@ -143,6 +143,10 @@ export async function createProduct(input: Parameters<SqliteDriver["createProduc
   return (await getDriver()).createProduct(input);
 }
 
+export async function setProductActive(id: number, active: boolean) {
+  return (await getDriver()).setProductActive(id, active);
+}
+
 export async function updateInventory(variantId: number, branchId: number, quantity: number) {
   return (await getDriver()).updateInventory(variantId, branchId, quantity);
 }
