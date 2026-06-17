@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createOrder } from "@/lib/db";
+import { createMercadoPagoPreference } from "@/lib/mercadopago";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const orderSchema = z.object({
@@ -8,6 +9,7 @@ const orderSchema = z.object({
   email: z.email(),
   fulfillment: z.enum(["retiro", "envio"]),
   source: z.string().trim().max(120).optional(),
+  paymentMethod: z.enum(["mercado_pago", "efectivo"]).default("efectivo"),
   address: z.string().trim().max(160).optional(),
   distanceKm: z.number().min(0).max(100).nullable().optional(),
   branchId: z.number().int().positive(),
@@ -28,6 +30,18 @@ export async function POST(request: Request) {
   }
   try {
     const order = await createOrder(result.data);
+    if (result.data.paymentMethod === "mercado_pago") {
+      const preference = await createMercadoPagoPreference({
+        code: order.code,
+        totalCents: order.totalCents,
+        payer: {
+          name: result.data.name,
+          email: result.data.email,
+          phone: result.data.phone,
+        },
+      });
+      return Response.json({ ...order, ...preference }, { status: 201 });
+    }
     return Response.json(order, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo reservar stock." }, { status: 409 });

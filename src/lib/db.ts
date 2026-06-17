@@ -166,6 +166,7 @@ export async function createOrder(input: {
   fulfillment: string;
   branchId: number;
   source?: string;
+  paymentMethod?: "mercado_pago" | "efectivo";
   address?: string;
   distanceKm?: number | null;
   items: CartItemPayload[];
@@ -179,6 +180,10 @@ export async function createWholesaleOrder(input: Parameters<SqliteDriver["creat
 
 export async function updateOrderPayment(input: { id: number; paidCents: number; paymentMethod?: string }) {
   return (await getDriver()).updateOrderPayment(input);
+}
+
+export async function markOrderPaidByCode(code: string, paymentMethod: string) {
+  return (await getDriver()).markOrderPaidByCode(code, paymentMethod);
 }
 
 export async function updateOrder(input: Parameters<SqliteDriver["updateOrder"]>[0]) {

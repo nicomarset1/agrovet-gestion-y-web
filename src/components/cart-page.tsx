@@ -12,6 +12,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
   const { items, totalCents, change, remove, clear } = useCart();
   const [branchId, setBranchId] = useState(branches[0]?.id ?? 0);
   const [fulfillment, setFulfillment] = useState<"retiro" | "envio">("retiro");
+  const [paymentMethod, setPaymentMethod] = useState<"mercado_pago" | "efectivo">("mercado_pago");
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<{ distanceKm: number; deliveryAvailable: boolean; error?: string } | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean; code?: string } | null>(null);
@@ -35,6 +36,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
   const belowDeliveryMinimum = totalCents < deliveryMinimumCents;
   const cashTotalCents = applyCashDiscount(totalCents);
   const cashDiscountNote = "Pagando en efectivo en sucursal tenés 10% de descuento en todos los productos.";
+  const effectivePaymentMethod = fulfillment === "envio" ? "mercado_pago" : paymentMethod;
 
   async function checkZone(value: string) {
     setAddress(value);
@@ -79,20 +81,25 @@ export function CartPage({ branches }: { branches: Branch[] }) {
         email: form.get("email"),
         fulfillment,
         source: "Tienda online",
+        paymentMethod: effectivePaymentMethod,
         address: fulfillment === "envio" ? address : "",
         distanceKm: fulfillment === "envio" ? zone?.distanceKm ?? null : null,
         branchId: effectiveBranchId,
         items: items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
       }),
     });
-    const result = await response.json() as { code?: string; error?: string };
+    const result = await response.json() as { code?: string; error?: string; paymentUrl?: string };
     setPending(false);
     if (!response.ok) {
       setMessage({ text: result.error ?? "No se pudo crear el pedido.", error: true });
       return;
     }
+    if (result.paymentUrl) {
+      window.location.href = result.paymentUrl;
+      return;
+    }
     clear();
-    setMessage({ code: result.code, text: `Pedido ${result.code} reservado. Agrovet confirmará pago y entrega por WhatsApp.` });
+    setMessage({ code: result.code, text: `Pedido ${result.code} reservado. Te esperamos para abonar en efectivo en sucursal.` });
   }
 
   return (
@@ -144,6 +151,22 @@ export function CartPage({ branches }: { branches: Branch[] }) {
               </button>
             </div>
             <p className="notice cash-discount-notice">{cashDiscountNote}</p>
+            <div className="choice-grid two">
+              <button className={`choice-card ${effectivePaymentMethod === "mercado_pago" ? "active" : ""}`} onClick={() => setPaymentMethod("mercado_pago")} type="button">
+                <strong>Mercado Pago</strong>
+                <span>Credito, debito, saldo MP y cuotas</span>
+              </button>
+              <button
+                className={`choice-card ${effectivePaymentMethod === "efectivo" ? "active" : ""}`}
+                disabled={fulfillment === "envio"}
+                onClick={() => setPaymentMethod("efectivo")}
+                type="button"
+              >
+                <strong>Efectivo</strong>
+                <span>En sucursal con 10% de descuento</span>
+              </button>
+            </div>
+            {fulfillment === "envio" && <p className="notice">Los pedidos con envio se abonan online con Mercado Pago antes de salir a reparto.</p>}
             {belowDeliveryMinimum && <p className="notice error">El envío se habilita desde {formatPrice(deliveryMinimumCents)}. Con este total, el pedido es solo retiro por sucursal.</p>}
             {fulfillment === "envio" && (
               <>
@@ -190,10 +213,10 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             )}
             {unavailable.length > 0 && <p className="notice error">Sin unidades suficientes en este local: {unavailable.map((item) => item.name).join(", ")}.</p>}
             <div className="checkout-total"><span>Total</span><span>{formatPrice(totalCents)}</span></div>
-            <div className="checkout-total-cash"><span>Total en efectivo</span><span>{formatPrice(cashTotalCents)}</span></div>
+            {effectivePaymentMethod === "efectivo" && <div className="checkout-total-cash"><span>Total en efectivo</span><span>{formatPrice(cashTotalCents)}</span></div>}
             <Link className="button button-light" href="/tienda">Seguir comprando</Link>
-            <button className="button button-primary" disabled={pending || unavailable.length > 0}>{pending ? "Reservando..." : "Confirmar pedido"}</button>
-            <p className="notice">El pago y la entrega se confirman con el local. Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
+            <button className="button button-primary" disabled={pending || unavailable.length > 0}>{pending ? "Procesando..." : effectivePaymentMethod === "mercado_pago" ? "Pagar con Mercado Pago" : "Reservar pedido"}</button>
+            <p className="notice">Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
           </form>
         </aside>
       )}

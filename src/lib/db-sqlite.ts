@@ -1385,7 +1385,7 @@ function resolveDeliveryAllocationPlan(items: CartItemPayload[]) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source?: string; address?: string; distanceKm?: number | null; items: CartItemPayload[];
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source?: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
 }) {
   return db.transaction(() => {
     const deliveryPlan = input.fulfillment === "envio" ? resolveDeliveryAllocationPlan(input.items) : null;
@@ -1394,11 +1394,15 @@ export function createOrder(input: {
     if (!branch) throw new Error("Sucursal inválida.");
     const source = (input.source ?? "Tienda online").trim() || "Tienda online";
     const isCashSale = source.toLowerCase().startsWith("caja");
-    const status = isCashSale
+    const isMercadoPago = input.paymentMethod === "mercado_pago";
+    const status = isMercadoPago
+      ? "Pendiente de pago"
+      : isCashSale
       ? "Cerrado"
       : input.fulfillment === "envio"
         ? "Pendiente de envío"
         : "Pendiente de retiro";
+    const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number }[] = [];
     for (const item of input.items) {
@@ -1421,8 +1425,8 @@ export function createOrder(input: {
     const code = `AGV-${Date.now().toString().slice(-8)}`;
     const order = db.prepare(`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
-    `).run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, totalCents);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, isCashSale ? totalCents : 0);
     const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (?, ?, ?, ?)");
     const deduct = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
     for (const line of lines) {
@@ -1436,6 +1440,21 @@ export function createOrder(input: {
     bumpSyncVersion();
     return { code, totalCents };
   })();
+}
+
+export function markOrderPaidByCode(code: string, paymentMethod: string) {
+  db.prepare(`
+    UPDATE orders
+    SET paid_cents = total_cents,
+        payment_method = ?,
+        status = CASE
+          WHEN status = 'Pendiente de pago' AND fulfillment = 'envio' THEN 'Pendiente de envío'
+          WHEN status = 'Pendiente de pago' THEN 'Pendiente de retiro'
+          ELSE status
+        END
+    WHERE code = ? AND deleted_at = ''
+  `).run(paymentMethod.trim() || "Mercado Pago", code);
+  bumpSyncVersion();
 }
 
 export function createWholesaleOrder(input: {

@@ -29,6 +29,16 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | null>(null);
 const key = "agrovet-cart";
 
+function readCartItems() {
+  const saved = window.localStorage.getItem(key);
+  if (!saved) return [];
+  try {
+    return JSON.parse(saved) as CartItem[];
+  } catch {
+    return [];
+  }
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const hydrated = useRef(false);
@@ -36,11 +46,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const saved = window.localStorage.getItem(key);
-      if (saved) setItems(JSON.parse(saved) as CartItem[]);
+      setItems(readCartItems());
       hydrated.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      hydrated.current = true;
+      setItems(readCartItems());
+    };
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") syncFromStorage();
+    };
+    window.addEventListener("pageshow", syncFromStorage);
+    window.addEventListener("focus", syncFromStorage);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      window.removeEventListener("pageshow", syncFromStorage);
+      window.removeEventListener("focus", syncFromStorage);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
   }, []);
 
   useEffect(() => {

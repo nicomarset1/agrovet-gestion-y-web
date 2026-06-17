@@ -244,6 +244,10 @@ function isCancelledOrder(order: OrderRecord) {
   return /cancelad/i.test(order.status);
 }
 
+function isAwaitingOnlinePayment(order: OrderRecord) {
+  return isWebOrder(order) && /mercado pago/i.test(order.paymentMethod) && order.paidCents < order.totalCents && /pendiente de pago/i.test(order.status);
+}
+
 function trashTypeLabel(type: TrashItem["type"]) {
   if (type === "order") return "Pedidos";
   if (type === "product") return "Productos";
@@ -276,7 +280,7 @@ function belongsToDashboardBranch(order: OrderRecord, branchId: number) {
 }
 
 function isPendingWebOrder(order: OrderRecord) {
-  return isWebOrder(order) && !/entregado|completado|cancelado|cerrado|retirado/i.test(order.status);
+  return isWebOrder(order) && !isAwaitingOnlinePayment(order) && !/entregado|completado|cancelado|cerrado|retirado/i.test(order.status);
 }
 
 function isCompletedWebOrder(order: OrderRecord) {
@@ -336,6 +340,7 @@ function orderHasBranch(order: OrderRecord, branchId: number) {
 
 function getOrderBranchRevenueCents(order: OrderRecord, branchId: number) {
   if (isCancelledOrder(order)) return 0;
+  if (isAwaitingOnlinePayment(order)) return 0;
 
   const branchTotal = order.items.reduce((sum, item) => {
     const allocatedQuantity = item.allocations?.reduce((quantity, allocation) => {
@@ -3179,7 +3184,7 @@ export function AdminConsole({
     const orderDate = toDate(order.createdAt);
     return orderDate >= webPeriodRange.start && orderDate < webPeriodRange.end;
   });
-  const webPeriodBillableOrders = webPeriodOrders.filter((order) => !isCancelledOrder(order));
+  const webPeriodBillableOrders = webPeriodOrders.filter((order) => !isCancelledOrder(order) && !isAwaitingOnlinePayment(order));
   const webOrdersTotal = webPeriodBillableOrders.reduce((sum, order) => sum + order.totalCents, 0);
   const webOrdersActive = webPeriodOrders.filter((order) => !isCancelledWebOrder(order));
   const webOrdersPending = webPeriodOrders.filter((order) => isPendingWebOrder(order));
@@ -3199,7 +3204,7 @@ export function AdminConsole({
     branch: branch.name,
     value: orders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, branch.id), 0),
   }));
-  const billingOrders = orders.filter((order) => !isCancelledOrder(order) && dateKey(toDate(order.createdAt)) === billingDate && orderHasBranch(order, selectedBranch.id));
+  const billingOrders = orders.filter((order) => !isCancelledOrder(order) && !isAwaitingOnlinePayment(order) && dateKey(toDate(order.createdAt)) === billingDate && orderHasBranch(order, selectedBranch.id));
   const billingTotal = billingOrders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranch.id), 0);
 
   useEffect(() => {

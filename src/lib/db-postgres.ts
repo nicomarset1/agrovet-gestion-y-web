@@ -1278,7 +1278,7 @@ async function insertOrderAllocation(db: Db, orderId: number, variantId: number,
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source?: string; address?: string; distanceKm?: number | null; items: CartItemPayload[];
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source?: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
@@ -1287,7 +1287,9 @@ export async function createOrder(input: {
     if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new Error("Sucursal invÃ¡lida.");
     const source = (input.source ?? "Tienda online").trim() || "Tienda online";
     const isCashSale = source.toLowerCase().startsWith("caja");
-    const status = isCashSale ? "Cerrado" : input.fulfillment === "envio" ? "Pendiente de envÃ­o" : "Pendiente de retiro";
+    const isMercadoPago = input.paymentMethod === "mercado_pago";
+    const status = isMercadoPago ? "Pendiente de pago" : isCashSale ? "Cerrado" : input.fulfillment === "envio" ? "Pendiente de envÃ­o" : "Pendiente de retiro";
+    const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
@@ -1306,7 +1308,7 @@ export async function createOrder(input: {
     const code = `AGV-${Date.now().toString().slice(-8)}`;
     const [order] = await tx`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-      VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, '', ${totalCents})
+      VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isCashSale ? totalCents : 0})
       RETURNING id
     `;
     for (const line of lines) {
@@ -1320,6 +1322,22 @@ export async function createOrder(input: {
     await bumpSyncVersion(tx);
     return { code, totalCents };
   });
+}
+
+export async function markOrderPaidByCode(code: string, paymentMethod: string) {
+  await ensureSchema();
+  await sql`
+    UPDATE orders
+    SET paid_cents = total_cents,
+        payment_method = ${paymentMethod.trim() || "Mercado Pago"},
+        status = CASE
+          WHEN status = 'Pendiente de pago' AND fulfillment = 'envio' THEN 'Pendiente de envÃ­o'
+          WHEN status = 'Pendiente de pago' THEN 'Pendiente de retiro'
+          ELSE status
+        END
+    WHERE code = ${code} AND deleted_at IS NULL
+  `;
+  await bumpSyncVersion();
 }
 
 export async function createWholesaleOrder(input: {
