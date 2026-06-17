@@ -82,9 +82,12 @@ export async function createMercadoPagoPreference(input: PreferenceInput) {
     throw new Error(data?.message ?? "No se pudo iniciar Mercado Pago.");
   }
 
+  const paymentUrl = data.init_point ?? data.sandbox_init_point ?? "";
+  if (!paymentUrl) throw new Error("Mercado Pago no devolvió un link de pago.");
+
   return {
     preferenceId: data.id,
-    paymentUrl: data.init_point ?? data.sandbox_init_point ?? "",
+    paymentUrl,
   };
 }
 

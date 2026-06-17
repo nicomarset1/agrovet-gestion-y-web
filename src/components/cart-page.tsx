@@ -98,6 +98,10 @@ export function CartPage({ branches }: { branches: Branch[] }) {
       window.location.href = result.paymentUrl;
       return;
     }
+    if (effectivePaymentMethod === "mercado_pago") {
+      setMessage({ text: "No se pudo abrir Mercado Pago. Probá de nuevo en unos segundos.", error: true });
+      return;
+    }
     clear();
     setMessage({ code: result.code, text: `Pedido ${result.code} reservado. Te esperamos para abonar en efectivo en sucursal.` });
   }

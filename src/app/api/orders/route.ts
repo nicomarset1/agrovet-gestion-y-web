@@ -9,7 +9,7 @@ const orderSchema = z.object({
   email: z.email(),
   fulfillment: z.enum(["retiro", "envio"]),
   source: z.string().trim().max(120).optional(),
-  paymentMethod: z.enum(["mercado_pago", "efectivo"]).default("efectivo"),
+  paymentMethod: z.enum(["mercado_pago", "efectivo"]),
   address: z.string().trim().max(160).optional(),
   distanceKm: z.number().min(0).max(100).nullable().optional(),
   branchId: z.number().int().positive(),
