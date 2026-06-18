@@ -1842,6 +1842,7 @@ function BranchPickerModal({
 }) {
   return (
     <AdminModal
+      className="admin-branch-picker-modal"
       dismissible={!mandatory}
       onClose={onClose}
       subtitle={mandatory ? "Cada día al entrar, elegí la sucursal que vas a administrar." : "Definí la sucursal activa para el panel y el stock editable."}
