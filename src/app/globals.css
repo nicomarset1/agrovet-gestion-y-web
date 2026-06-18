@@ -1577,34 +1577,43 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-current-branch {
-  margin-top: 8px;
+  margin: 0;
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--forest);
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: .04em;
   text-transform: uppercase;
   cursor: pointer;
+  line-height: 1.15;
+  text-align: right;
 }
 
 .admin-current-branch-banner {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 16px;
+  min-height: 78px;
+  padding: 18px 20px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fcf9ff;
 }
 
 .admin-current-branch-banner span {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .08em;
+  line-height: 1.2;
 }
 
 .admin-nav {
@@ -2294,6 +2303,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 
 .admin-modal.admin-branch-picker-modal {
   width: min(560px, calc(100vw - 48px));
+  margin-inline: auto;
   overflow: hidden;
 }
 
@@ -3004,17 +3014,6 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   background: transparent;
 }
 
-.admin-branch-picker-grid {
-  gap: 12px;
-}
-
-.admin-branch-picker-grid .button {
-  min-height: 58px;
-  justify-content: flex-start;
-  padding: 0 18px;
-  border-radius: 16px;
-}
-
 .admin-donut-card-head {
   display: flex;
   justify-content: space-between;
@@ -3141,7 +3140,15 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     justify-content: flex-start;
   }
   .admin-current-branch-banner {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 6px;
+    min-height: 0;
+    padding: 16px 18px;
+  }
+  .admin-current-branch {
+    text-align: left;
+    font-size: 18px;
   }
   .admin-period-toggle {
     width: 100%;
