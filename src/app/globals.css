@@ -875,6 +875,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 .admin-brand strong { display: block; font-size: 18px; color: var(--ink); }
 .admin-brand span { display: block; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+.admin-menu-toggle { display: none; }
+.admin-sidebar-body { display: grid; gap: 16px; }
 .admin-nav { display: grid; gap: 8px; }
 .admin-nav button {
   min-height: 48px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink);
@@ -3126,14 +3128,76 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   }
   .admin-sidebar {
     padding: 16px;
+    overflow: hidden;
+    transition: box-shadow .28s ease, border-color .28s ease, transform .28s ease;
+  }
+  .admin-brand {
+    display: grid;
+    padding-bottom: 0;
+    border-bottom: 0;
+    grid-template-columns: 46px minmax(0, 1fr) 44px;
+    align-items: center;
+  }
+  .admin-menu-toggle {
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: #fff;
+    color: var(--forest);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 12px 24px rgba(53, 12, 86, .08);
+    transition: transform .22s ease, background .22s ease, border-color .22s ease, box-shadow .22s ease;
+  }
+  .admin-menu-toggle svg {
+    transform: rotate(90deg);
+    transition: transform .32s cubic-bezier(.2, .8, .2, 1);
+  }
+  .admin-sidebar.open .admin-menu-toggle {
+    background: var(--forest);
+    border-color: var(--forest);
+    color: #fff;
+    box-shadow: 0 16px 30px rgba(91, 15, 115, .2);
+  }
+  .admin-sidebar.open .admin-menu-toggle svg {
+    transform: rotate(-90deg);
+  }
+  .admin-sidebar-body {
+    display: grid;
+    gap: 0;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition:
+      max-height .42s cubic-bezier(.2, .8, .2, 1),
+      opacity .22s ease,
+      transform .32s cubic-bezier(.2, .8, .2, 1),
+      padding-top .32s ease;
+    padding-top: 0;
+  }
+  .admin-sidebar.open .admin-sidebar-body {
+    max-height: 720px;
+    gap: 16px;
+    opacity: 1;
+    transform: translateY(0);
+    padding-top: 18px;
+  }
+  .admin-sidebar.open .admin-brand {
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
   }
   .admin-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .admin-nav button {
+  .admin-nav button,
+  .admin-nav a {
     grid-template-columns: 18px 1fr;
   }
-  .admin-nav button svg:last-child {
+  .admin-nav button svg:last-child,
+  .admin-nav a svg:last-child {
     display: none;
   }
   .admin-section-head {

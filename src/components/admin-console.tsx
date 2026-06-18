@@ -3138,6 +3138,7 @@ export function AdminConsole({
   const [webHistoryTypeFilter, setWebHistoryTypeFilter] = useState<"all" | "retiro" | "envio">("all");
   const [trashQuery, setTrashQuery] = useState("");
   const [trashTypeFilter, setTrashTypeFilter] = useState<TrashItem["type"] | "all">("all");
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const selectableProductCategories = useMemo(() => leafCategories(categories), [categories]);
   const requestDeleteOrder = (order: OrderRecord) => {
     setOrderToEdit(null);
@@ -3279,26 +3280,37 @@ export function AdminConsole({
 
   return (
     <div className="admin-layout">
-      <aside className="admin-sidebar card">
+      <aside className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />
           <div>
             <strong>Veterinaria Admin</strong>
             <span>Panel de gestión</span>
           </div>
+          <button
+            aria-expanded={adminMenuOpen}
+            aria-label={adminMenuOpen ? "Cerrar panel de gestión" : "Abrir panel de gestión"}
+            className="admin-menu-toggle"
+            onClick={() => setAdminMenuOpen((current) => !current)}
+            type="button"
+          >
+            <ChevronRight size={22} />
+          </button>
         </div>
-        <nav className="admin-nav">
-          {options.map(({ id, href, label, icon: Icon }) => (
-            <Link className={section === id ? "active" : ""} href={href} key={id}>
-              <Icon size={18} />
-              <span>{label}</span>
-              <ChevronRight size={16} />
-            </Link>
-          ))}
-        </nav>
-        <form action={logoutAction} className="admin-logout">
-          <button className="button button-light" type="submit">Cerrar sesión</button>
-        </form>
+        <div className="admin-sidebar-body">
+          <nav className="admin-nav">
+            {options.map(({ id, href, label, icon: Icon }) => (
+              <Link className={section === id ? "active" : ""} href={href} key={id}>
+                <Icon size={18} />
+                <span>{label}</span>
+                <ChevronRight size={16} />
+              </Link>
+            ))}
+          </nav>
+          <form action={logoutAction} className="admin-logout">
+            <button className="button button-light" type="submit">Cerrar sesión</button>
+          </form>
+        </div>
       </aside>
 
       <main className="admin-main">
