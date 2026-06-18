@@ -2308,13 +2308,15 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-modal.admin-branch-picker-modal {
-  width: min(560px, calc(100vw - 48px));
+  width: min(560px, 100%);
   margin-inline: auto;
   overflow: hidden;
+  text-align: center;
 }
 
 .admin-branch-picker-modal .admin-modal-head {
   padding: 30px 32px 22px;
+  justify-content: center;
 }
 
 .admin-branch-picker-modal .admin-modal-head h2 {
@@ -2327,6 +2329,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   font-size: 16px;
   line-height: 1.55;
   max-width: 420px;
+  margin-inline: auto;
 }
 
 .admin-branch-picker-grid {
@@ -2338,11 +2341,12 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 .admin-branch-picker-grid .button {
   width: 100%;
   min-height: 64px;
-  justify-content: flex-start;
+  justify-content: center;
   padding: 0 22px;
   border-radius: 8px;
   font-size: 17px;
   line-height: 1.2;
+  text-align: center;
 }
 
 .admin-branch-picker-grid .button.active {
@@ -3248,13 +3252,13 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
     width: min(100vw - 22px, 880px);
   }
   .admin-modal.admin-branch-picker-modal {
-    width: min(100vw - 28px, 560px);
+    width: min(100%, 560px);
   }
   .admin-branch-picker-modal .admin-modal-head {
-    padding: 24px 22px 18px;
+    padding: 24px 24px 18px;
   }
   .admin-branch-picker-grid {
-    padding: 4px 22px 24px;
+    padding: 4px 24px 24px;
   }
   .admin-branch-picker-grid .button {
     min-height: 58px;
