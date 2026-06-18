@@ -1835,8 +1835,8 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-donut-chart {
-  width: 220px;
-  height: 220px;
+  width: min(220px, 100%);
+  aspect-ratio: 1;
   border-radius: 50%;
   background: conic-gradient(var(--forest) 0% 100%);
   border: 14px solid #f4ecff;
@@ -3088,6 +3088,29 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   display: grid;
   grid-template-columns: minmax(240px, 320px) 1fr;
   align-items: end;
+}
+
+@media (max-width: 1460px) and (min-width: 1121px) {
+  .admin-stat-grid,
+  .admin-chart-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-chart-grid .admin-span-2 {
+    grid-column: auto;
+  }
+  .admin-donut-card {
+    grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  }
+  .admin-donut-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .admin-donut-row span {
+    justify-self: end;
+  }
+  .admin-donut-row small {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
 }
 
 @media (max-width: 1120px) {
