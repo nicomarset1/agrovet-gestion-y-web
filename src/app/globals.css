@@ -1577,8 +1577,11 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-current-branch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
   margin: 0;
-  min-height: 32px;
+  min-height: 26px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1588,7 +1591,7 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   letter-spacing: .04em;
   text-transform: uppercase;
   cursor: pointer;
-  line-height: 1.15;
+  line-height: 1;
   text-align: right;
 }
 
@@ -1596,8 +1599,9 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  align-content: center;
   gap: 16px;
-  min-height: 78px;
+  min-height: 76px;
   padding: 18px 20px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1605,15 +1609,15 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
 }
 
 .admin-current-branch-banner span {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 26px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .08em;
-  line-height: 1.2;
+  line-height: 1;
 }
 
 .admin-nav {
@@ -3141,13 +3145,15 @@ button:active, .button:active, .chip:active, .catalog-trigger:active, .filter-op
   }
   .admin-current-branch-banner {
     grid-template-columns: 1fr;
-    justify-items: start;
-    gap: 6px;
+    justify-items: center;
+    gap: 9px;
     min-height: 0;
-    padding: 16px 18px;
+    padding: 18px;
+    text-align: center;
   }
   .admin-current-branch {
-    text-align: left;
+    justify-content: center;
+    text-align: center;
     font-size: 18px;
   }
   .admin-period-toggle {
