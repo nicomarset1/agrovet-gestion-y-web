@@ -2,13 +2,13 @@ import { z } from "zod";
 import { createOrder } from "@/lib/db";
 import { createMercadoPagoPreference } from "@/lib/mercadopago";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
+import { forbiddenMutationResponse, isSameOriginMutation, readBoundedJson } from "@/lib/request-security";
 
 const orderSchema = z.object({
   name: z.string().trim().min(3).max(100),
   phone: z.string().trim().min(8).max(30),
   email: z.email(),
   fulfillment: z.enum(["retiro", "envio"]),
-  source: z.string().trim().max(120).optional(),
   paymentMethod: z.enum(["mercado_pago", "efectivo"]),
   address: z.string().trim().max(160).optional(),
   distanceKm: z.number().min(0).max(100).nullable().optional(),
@@ -20,16 +20,30 @@ const orderSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const limit = rateLimit(`orders:${clientKey(request)}`, 10, 60_000);
+  if (!isSameOriginMutation(request)) return forbiddenMutationResponse();
+
+  const limit = rateLimit(`orders:${clientKey(request)}`, 6, 60_000);
   if (limit.limited) {
     return tooManyRequests(limit.retryAfterSeconds, "Demasiados pedidos seguidos. Probá de nuevo en un momento.");
   }
-  const result = orderSchema.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request);
+  } catch {
+    return Response.json({ error: "Revisa los datos del pedido." }, { status: 400 });
+  }
+  const result = orderSchema.safeParse(body);
   if (!result.success) {
     return Response.json({ error: "Revisa los datos del pedido." }, { status: 400 });
   }
+  if (result.data.fulfillment === "envio" && result.data.paymentMethod !== "mercado_pago") {
+    return Response.json({ error: "Los envíos solo se pueden pagar con Mercado Pago." }, { status: 400 });
+  }
   try {
-    const order = await createOrder(result.data);
+    const order = await createOrder({
+      ...result.data,
+      source: "Tienda online",
+    });
     if (result.data.paymentMethod === "mercado_pago") {
       const preference = await createMercadoPagoPreference({
         code: order.code,

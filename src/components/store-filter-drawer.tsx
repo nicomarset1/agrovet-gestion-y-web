@@ -110,15 +110,11 @@ function clamp(value: number, min: number, max: number) {
 export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters: Filters }) {
   const [open, setOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(() => selected(filters.category));
-  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(() => selected(filters.subcategory));
   const selectedBrands = selected(filters.brand);
   const selectedStages = selected(filters.stage);
   const selectedSizes = selected(filters.size);
   const selectedNeeds = selected(filters.need);
   const selectedPresentations = selected(filters.presentation);
-  const selectedCategoryFacets = facets.categories.filter((item) => selectedCategories.includes(item.slug));
-  const subcategories = selectedCategoryFacets.length ? selectedCategoryFacets.flatMap((item) => item.subcategories) : [];
-  const subcategoryEnabled = selectedCategoryFacets.length > 0;
   const prices = useMemo(() => facets.priceRange ?? { min: 0, max: 0 }, [facets.priceRange]);
   const initialMinPrice = clamp(Number(filters.minPrice ?? prices.min), prices.min, prices.max);
   const initialMaxPrice = clamp(Number(filters.maxPrice ?? prices.max), initialMinPrice, prices.max);
@@ -138,16 +134,9 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
   const handleBPercent = ((handleB - prices.min) / rangeSpan) * 100;
   const rangePad = 14;
   const toggleCategory = (slug: string) => {
-    setSelectedCategories((current) => {
-      const next = current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug];
-      const allowed = new Set(facets.categories.filter((item) => next.includes(item.slug)).flatMap((item) => item.subcategories.map((subcategory) => subcategory.slug)));
-      setSelectedSubcategories((currentSubcategories) => currentSubcategories.filter((subcategory) => allowed.has(subcategory)));
-      return next;
-    });
-  };
-
-  const toggleSubcategory = (slug: string) => {
-    setSelectedSubcategories((current) => (current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug]));
+    setSelectedCategories((current) => (
+      current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug]
+    ));
   };
 
   const setHandle = useCallback((handle: "a" | "b", value: number) => {
@@ -273,22 +262,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
                 />
               ))}
             </div>
-          </Section>
-          <Section title="Subcategoría">
-            {subcategoryEnabled ? (
-              <div className="filter-choice-grid">
-                {subcategories.map((subcategory) => (
-                  <ChoiceCheck
-                    checked={selectedSubcategories.includes(subcategory.slug)}
-                    key={subcategory.slug}
-                    label={subcategory.name}
-                    name="subcategory"
-                    onChange={() => toggleSubcategory(subcategory.slug)}
-                    value={subcategory.slug}
-                  />
-                ))}
-              </div>
-            ) : <p className="description">Elegí una categoría para ver sus subcategorías.</p>}
           </Section>
           <Section title="Precio">
             <input name="minPrice" type="hidden" value={minPrice} />

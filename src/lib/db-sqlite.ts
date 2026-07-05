@@ -3,6 +3,15 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import {
+  catalogCategorySeeds,
+  catalogProductStartId,
+  catalogProductSeeds,
+  catalogSubcategorySeeds,
+  catalogVariantSeeds,
+  catalogVersion,
+} from "./catalog-data";
+import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -24,6 +33,7 @@ db.exec(`
   );
 `);
 db.prepare("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('sync_version', 0)").run();
+db.prepare("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('catalog_version', 0)").run();
 
 function ensureColumn(table: string, column: string, definition: string) {
   const exists = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
@@ -162,6 +172,8 @@ ensureColumn("orders", "delivery_distance_km", "REAL");
 ensureColumn("orders", "payment_method", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "paid_cents", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("orders", "deleted_at", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("orders", "refund_method", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("orders", "refund_note", "TEXT NOT NULL DEFAULT ''");
 db.prepare("UPDATE orders SET paid_cents = total_cents WHERE paid_cents = 0 AND payment_method != 'Cuenta corriente'").run();
 ensureColumn("categories", "description", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("categories", "parent_category_id", "INTEGER REFERENCES categories(id) ON DELETE SET NULL");
@@ -272,11 +284,13 @@ const upsertBranch = db.prepare(`
 `);
 const upsertCategory = db.prepare(`
   INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu)
-  VALUES (@id, @slug, @name, @description, NULL, @showInMenu)
+  VALUES (@id, @slug, @name, @description, @parentCategoryId, @showInMenu)
   ON CONFLICT(id) DO UPDATE SET
     slug = excluded.slug,
     name = excluded.name,
     description = excluded.description,
+    parent_category_id = excluded.parent_category_id,
+    deleted_at = NULL,
     show_in_menu = excluded.show_in_menu
 `);
 const upsertSpecialCategory = db.prepare(`
@@ -316,9 +330,11 @@ const upsertProduct = db.prepare(`
     description = excluded.description,
     featured = excluded.featured,
     requires_advice = excluded.requires_advice,
-    active = products.active,
+    active = 1,
     color = excluded.color,
-    image_url = excluded.image_url
+    image_url = excluded.image_url,
+    archived_at = '',
+    purged_at = ''
 `);
 const upsertVariant = db.prepare(`
   INSERT INTO variants (id, product_id, label, sku, barcode, price_cents)
@@ -410,18 +426,36 @@ const subcategorySeed = [...new Map(productSeed.map((product) => ([
     description: "",
   },
 ] as const))).values()];
+void categorySeed;
+void variantSeed;
+void subcategorySeed;
 
 db.transaction(() => {
   branchSeed.forEach((branch) => upsertBranch.run(branch));
-  categorySeed.forEach((category) => upsertCategory.run(category));
   specialCategorySeed.forEach((category) => upsertSpecialCategory.run(category));
-  subcategorySeed.forEach((subcategory) => upsertSubcategory.run(subcategory));
-  productSeed.forEach((product) => upsertProduct.run(product));
-  variantSeed.forEach(([id, productId, label, sku, priceCents, branch1, branch2]) => {
-    upsertVariant.run({ id, productId, label, sku, barcode: sku, priceCents });
-    upsertInventory.run({ variantId: id, branchId: 1, quantity: branch1 });
-    upsertInventory.run({ variantId: id, branchId: 2, quantity: branch2 });
-  });
+  const currentCatalogVersion = Number(
+    (db.prepare("SELECT value FROM app_meta WHERE key = 'catalog_version'").get() as { value?: number } | undefined)?.value ?? 0,
+  );
+  if (currentCatalogVersion < catalogVersion) {
+    db.prepare("UPDATE products SET slug = 'legacy-' || id || '-' || slug, active = 0, featured = 0, archived_at = CURRENT_TIMESTAMP, purged_at = CURRENT_TIMESTAMP WHERE id < ? AND purged_at = ''")
+      .run(catalogProductStartId);
+    catalogCategorySeeds.forEach((category) => upsertCategory.run({
+      ...category,
+      showInMenu: category.showInMenu ? 1 : 0,
+    }));
+    catalogSubcategorySeeds.forEach((subcategory) => upsertSubcategory.run(subcategory));
+    catalogProductSeeds.forEach((product) => upsertProduct.run({
+      ...product,
+      featured: product.featured ? 1 : 0,
+      requiresAdvice: product.requiresAdvice ? 1 : 0,
+    }));
+    catalogVariantSeeds.forEach((variant) => {
+      upsertVariant.run(variant);
+      upsertInventory.run({ variantId: variant.id, branchId: 1, quantity: variant.branch1 });
+      upsertInventory.run({ variantId: variant.id, branchId: 2, quantity: variant.branch2 });
+    });
+    db.prepare("UPDATE app_meta SET value = ? WHERE key = 'catalog_version'").run(catalogVersion);
+  }
 })();
 
 db.prepare("UPDATE orders SET source = 'Tienda online' WHERE source = 'Caja' AND status NOT LIKE 'Cerrado%'").run();
@@ -777,7 +811,8 @@ function mapAdminOrders(): OrderRecord[] {
     WHERE o.deleted_at = ''
     ORDER BY o.created_at DESC, o.id DESC
   `).all() as Omit<OrderRecord, "itemCount" | "items">[];
-  if (!orders.length) return [];
+  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago)$/i.test(order.status)));
+  if (!visibleOrders.length) return [];
   const items = db.prepare(`
     SELECT oi.order_id AS orderId, oi.variant_id AS variantId, p.name AS productName, p.brand,
       v.label, v.sku, oi.quantity, oi.unit_price_cents AS unitPriceCents
@@ -794,7 +829,8 @@ function mapAdminOrders(): OrderRecord[] {
     FROM order_item_allocations oa
     JOIN branches b ON b.id = oa.branch_id
     ORDER BY oa.order_id DESC, oa.variant_id, oa.branch_id
-  `).all() as OrderAllocationRow[];
+    `).all() as OrderAllocationRow[];
+  const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
   for (const row of allocationRows) {
     const orderBuckets = allocationBuckets.get(row.orderId) ?? new Map<number, OrderItemAllocation[]>();
     const current = orderBuckets.get(row.variantId) ?? [];
@@ -803,6 +839,7 @@ function mapAdminOrders(): OrderRecord[] {
     allocationBuckets.set(row.orderId, orderBuckets);
   }
   for (const item of items) {
+    if (!visibleOrderIds.has(item.orderId)) continue;
     const current = itemsByOrder.get(item.orderId) ?? [];
     const orderBuckets = allocationBuckets.get(item.orderId);
     const allocations = orderBuckets?.get(item.variantId) ?? [];
@@ -818,7 +855,7 @@ function mapAdminOrders(): OrderRecord[] {
     });
     itemsByOrder.set(item.orderId, current);
   }
-  return orders.map((order) => ({
+  return visibleOrders.map((order) => ({
     ...order,
     paymentMethod: order.paymentMethod ?? "",
     paidCents: order.paidCents ?? order.totalCents,
@@ -921,6 +958,10 @@ export function getSearchIndex(): SearchIndexItem[] {
 }
 
 export function getCatalogMenu(): CatalogMenuNode[] {
+  return buildCustomerCatalogMenu(getProducts(), getCategories());
+}
+
+export function getLegacyCatalogMenu(): CatalogMenuNode[] {
   const products = getProducts();
   const categories = getCategories();
   const subcategories = getSubcategories();
@@ -1385,26 +1426,23 @@ function resolveDeliveryAllocationPlan(items: CartItemPayload[]) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source?: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
 }) {
   return db.transaction(() => {
     const deliveryPlan = input.fulfillment === "envio" ? resolveDeliveryAllocationPlan(input.items) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
     const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(resolvedBranchId);
     if (!branch) throw new Error("Sucursal inválida.");
-    const source = (input.source ?? "Tienda online").trim() || "Tienda online";
-    const isCashSale = source.toLowerCase().startsWith("caja");
+    const source = "Tienda online";
     const isMercadoPago = input.paymentMethod === "mercado_pago";
     const status = isMercadoPago
-      ? "Pendiente de pago"
-      : isCashSale
-      ? "Cerrado"
+      ? "Esperando pago"
       : input.fulfillment === "envio"
         ? "Pendiente de envío"
         : "Pendiente de retiro";
     const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
     let totalCents = 0;
-    const lines: { variantId: number; quantity: number; unitPrice: number }[] = [];
+    const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const row = db.prepare(`
         SELECT v.price_cents AS priceCents
@@ -1418,22 +1456,28 @@ export function createOrder(input: {
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
       const totalAllocated = allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
       if (totalAllocated !== item.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+      for (const allocation of allocations) {
+        const stock = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(item.variantId, allocation.branchId) as { quantity?: number } | undefined;
+        if ((stock?.quantity ?? 0) < allocation.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+      }
       const priceCents = row.priceCents ?? 0;
       totalCents += priceCents * item.quantity;
-      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents });
+      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
     }
     const code = `AGV-${Date.now().toString().slice(-8)}`;
     const order = db.prepare(`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, isCashSale ? totalCents : 0);
+    `).run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, isMercadoPago ? 0 : totalCents);
     const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (?, ?, ?, ?)");
-    const deduct = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
+    const deduct = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
     for (const line of lines) {
       insertLine.run(order.lastInsertRowid, line.variantId, line.quantity, line.unitPrice);
-      const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === line.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: line.quantity }];
-      for (const allocation of allocations) {
-        deduct.run(allocation.quantity, line.variantId, allocation.branchId);
+      for (const allocation of line.allocations) {
+        if (!isMercadoPago) {
+          const result = deduct.run(allocation.quantity, line.variantId, allocation.branchId, allocation.quantity);
+          if (result.changes === 0) throw new Error("No hay stock suficiente para reservar.");
+        }
         insertOrderAllocation.run(order.lastInsertRowid, line.variantId, allocation.branchId, allocation.quantity);
       }
     }
@@ -1442,19 +1486,60 @@ export function createOrder(input: {
   })();
 }
 
-export function markOrderPaidByCode(code: string, paymentMethod: string) {
-  db.prepare(`
-    UPDATE orders
-    SET paid_cents = total_cents,
-        payment_method = ?,
-        status = CASE
-          WHEN status = 'Pendiente de pago' AND fulfillment = 'envio' THEN 'Pendiente de envío'
-          WHEN status = 'Pendiente de pago' THEN 'Pendiente de retiro'
-          ELSE status
-        END
-    WHERE code = ? AND deleted_at = ''
-  `).run(paymentMethod.trim() || "Mercado Pago", code);
-  bumpSyncVersion();
+export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
+  return db.transaction(() => {
+    const order = db.prepare(`
+      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents
+      FROM orders
+      WHERE code = ? AND deleted_at = ''
+    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number } | undefined;
+    if (!order) return false;
+    if (!Number.isSafeInteger(amountCents) || amountCents !== order.totalCents) return false;
+
+    const method = paymentMethod.trim() || "Mercado Pago";
+    const awaitingPayment = /^(Esperando pago|Pendiente de pago)$/i.test(order.status);
+    if (order.paidCents >= order.totalCents || !awaitingPayment) {
+      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ? WHERE id = ?").run(method, order.id);
+      bumpSyncVersion();
+      return true;
+    }
+
+    const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(order.id) as Array<{ variantId: number; quantity: number }>;
+    const allocations = getAllocationBuckets(order.id);
+    const required: Array<{ variantId: number; branchId: number; quantity: number }> = [];
+    for (const item of items) {
+      const buckets = allocations.get(item.variantId) ?? [{ branchId: order.branchId, branchName: "", quantity: item.quantity }];
+      for (const allocation of buckets) required.push({ variantId: item.variantId, branchId: allocation.branchId, quantity: allocation.quantity });
+    }
+
+    for (const allocation of required) {
+      const stock = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(allocation.variantId, allocation.branchId) as { quantity?: number } | undefined;
+      if ((stock?.quantity ?? 0) < allocation.quantity) {
+        db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
+        bumpSyncVersion();
+        return true;
+      }
+    }
+
+    const reserve = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
+    for (const allocation of required) {
+      const result = reserve.run(allocation.quantity, allocation.variantId, allocation.branchId, allocation.quantity);
+      if (result.changes === 0) throw new Error("No hay stock suficiente para acreditar el pago.");
+    }
+
+    db.prepare(`
+      UPDATE orders
+      SET paid_cents = total_cents,
+          payment_method = ?,
+          status = CASE
+            WHEN fulfillment = 'envio' THEN 'Pendiente de envío'
+            ELSE 'Pendiente de retiro'
+          END
+      WHERE id = ?
+    `).run(method, order.id);
+    bumpSyncVersion();
+    return true;
+  })();
 }
 
 export function createWholesaleOrder(input: {
@@ -1581,6 +1666,8 @@ export function updateOrder(input: {
   status: string;
   source: string;
   paymentMethod?: string;
+  refundMethod?: string;
+  refundNote?: string;
   items: { variantId: number; quantity: number }[];
   allocations?: { variantId: number; allocations: { branchId: number; quantity: number }[] }[];
 }) {
@@ -1681,7 +1768,9 @@ export function updateOrder(input: {
     db.prepare(`
       UPDATE orders
       SET customer_name = ?, phone = ?, email = ?, fulfillment = ?, branch_id = ?,
-        delivery_address = ?, delivery_distance_km = ?, status = ?, source = ?, total_cents = ?, payment_method = ?
+        delivery_address = ?, delivery_distance_km = ?, status = ?, source = ?, total_cents = ?, payment_method = ?,
+        refund_method = CASE WHEN ? != '' THEN ? ELSE refund_method END,
+        refund_note = CASE WHEN ? != '' THEN ? ELSE refund_note END
       WHERE id = ?
     `).run(
       input.customerName.trim(),
@@ -1695,6 +1784,10 @@ export function updateOrder(input: {
       input.source.trim(),
       totalCents,
       input.paymentMethod?.trim() ?? order.paymentMethod ?? "",
+      input.refundMethod?.trim() ?? "",
+      input.refundMethod?.trim() ?? "",
+      input.refundNote?.trim() ?? "",
+      input.refundNote?.trim() ?? "",
       input.id,
     );
 
@@ -1714,7 +1807,10 @@ export function updateOrder(input: {
   })();
 }
 
-export function deleteOrder(id: number) {
+export function deleteOrder(input: number | { id: number; refundMethod?: string; refundNote?: string }) {
+  const id = typeof input === "number" ? input : input.id;
+  const refundMethod = typeof input === "number" ? "" : input.refundMethod?.trim() ?? "";
+  const refundNote = typeof input === "number" ? "" : input.refundNote?.trim() ?? "";
   db.transaction(() => {
     const order = db.prepare("SELECT id, branch_id AS branchId, status, deleted_at AS deletedAt FROM orders WHERE id = ?").get(id) as { id: number; branchId: number; status: string; deletedAt: string } | undefined;
     if (!order) return;
@@ -1722,7 +1818,7 @@ export function deleteOrder(id: number) {
     const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }>;
     const allocations = getAllocationBuckets(id);
     const restore = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
-    if (!isCanceledStatus(order.status)) {
+    if (!isCanceledStatus(order.status) && !/^Esperando pago$/i.test(order.status)) {
       for (const item of items) {
         const buckets = allocations.get(item.variantId);
         if (!buckets?.length) {
@@ -1734,7 +1830,13 @@ export function deleteOrder(id: number) {
         }
       }
     }
-    db.prepare("UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    db.prepare(`
+      UPDATE orders
+      SET deleted_at = CURRENT_TIMESTAMP,
+        refund_method = CASE WHEN ? != '' THEN ? ELSE refund_method END,
+        refund_note = CASE WHEN ? != '' THEN ? ELSE refund_note END
+      WHERE id = ?
+    `).run(refundMethod, refundMethod, refundNote, refundNote, id);
     bumpSyncVersion();
   })();
 }
@@ -1742,11 +1844,12 @@ export function deleteOrder(id: number) {
 export function getTrashItems(): TrashItem[] {
   purgeExpiredTrashItems();
   const orders = db.prepare(`
-    SELECT id, code, customer_name AS customerName, total_cents AS amountCents, status, source, deleted_at AS deletedAt
+    SELECT id, code, customer_name AS customerName, total_cents AS amountCents, status, source, deleted_at AS deletedAt,
+      refund_method AS refundMethod, refund_note AS refundNote
     FROM orders
     WHERE deleted_at != ''
     ORDER BY deleted_at DESC
-  `).all() as Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: string }>;
+  `).all() as Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: string; refundMethod: string; refundNote: string }>;
   const products = db.prepare(`
     SELECT p.id, p.brand, p.name, COALESCE(c.name, 'Sin categoria') AS category, p.archived_at AS deletedAt,
       COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0) AS stock
@@ -1785,6 +1888,8 @@ export function getTrashItems(): TrashItem[] {
       deletedAt: order.deletedAt,
       status: order.status,
       source: order.source,
+      refundMethod: order.refundMethod ?? "",
+      refundNote: order.refundNote ?? "",
     })),
     ...products.map((product): TrashItem => ({
       type: "product",

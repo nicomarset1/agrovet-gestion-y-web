@@ -14,14 +14,14 @@ const categories = [
     name: "Gatos",
   },
   {
-    href: "/tienda?category=accesorios",
+    href: "/tienda?category=perro-snacks",
     image: "/home-assets/category-accessories-clean.png",
-    name: "Accesorios",
+    name: "Snacks y cuidado",
   },
   {
-    href: "/tienda?category=farmacia",
+    href: "/tienda?category=perro-alimento-veterinario",
     image: "/home-assets/category-pharmacy-clean.png",
-    name: "Farmacia",
+    name: "Alimento veterinario",
   },
 ];
 

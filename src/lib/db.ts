@@ -165,7 +165,7 @@ export async function createOrder(input: {
   email: string;
   fulfillment: string;
   branchId: number;
-  source?: string;
+  source: string;
   paymentMethod?: "mercado_pago" | "efectivo";
   address?: string;
   distanceKm?: number | null;
@@ -182,16 +182,16 @@ export async function updateOrderPayment(input: { id: number; paidCents: number;
   return (await getDriver()).updateOrderPayment(input);
 }
 
-export async function markOrderPaidByCode(code: string, paymentMethod: string) {
-  return (await getDriver()).markOrderPaidByCode(code, paymentMethod);
+export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
+  return (await getDriver()).markOrderPaidByCode(code, paymentMethod, amountCents);
 }
 
 export async function updateOrder(input: Parameters<SqliteDriver["updateOrder"]>[0]) {
   return (await getDriver()).updateOrder(input);
 }
 
-export async function deleteOrder(id: number) {
-  return (await getDriver()).deleteOrder(id);
+export async function deleteOrder(input: number | { id: number; refundMethod?: string; refundNote?: string }) {
+  return (await getDriver()).deleteOrder(input);
 }
 
 export async function getLowStockThreshold() {

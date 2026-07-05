@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
+import { forbiddenMutationResponse, isSameOriginMutation, readBoundedJson } from "@/lib/request-security";
 
 const origin = { lat: -38.0033, lon: -57.5596 };
 
@@ -22,12 +23,20 @@ function distanceKm(a: typeof origin, b: typeof origin) {
 }
 
 export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) return forbiddenMutationResponse();
+
   // Protege el proxy a Nominatim (su politica de uso prohibe trafico abusivo).
   const limit = rateLimit(`delivery-zone:${clientKey(request)}`, 15, 60_000);
   if (limit.limited) {
     return tooManyRequests(limit.retryAfterSeconds, "Demasiadas consultas de zona. Esperá un momento e intentá de nuevo.");
   }
-  const parsed = schema.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, 2_000);
+  } catch {
+    return Response.json({ error: "Direccion invalida." }, { status: 400 });
+  }
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "Direccion invalida." }, { status: 400 });
   }

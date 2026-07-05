@@ -22,8 +22,9 @@ Abrir `http://localhost:3000`.
 El acceso al panel usa el codigo numerico configurado en `.env.local`:
 
 ```env
-ADMIN_PASSWORD=1234567890
-AUTH_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
+ADMIN_PASSWORD=<codigo-numerico-de-8-a-12-digitos>
+AUTH_SECRET=<secreto-aleatorio-de-al-menos-32-caracteres>
+MERCADOPAGO_WEBHOOK_SECRET=<clave-secreta-del-webhook>
 ```
 
 ## Verificacion
@@ -38,9 +39,10 @@ npm run build
 No subir `.env.local`, bases locales ni archivos generados. Las variables deben configurarse en el hosting:
 
 ```env
-ADMIN_PASSWORD=1234567890
-AUTH_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
+ADMIN_PASSWORD=<codigo-numerico-de-8-a-12-digitos>
+AUTH_SECRET=<secreto-aleatorio-de-al-menos-32-caracteres>
 DATABASE_URL=postgres://...
+MERCADOPAGO_WEBHOOK_SECRET=<clave-secreta-del-webhook>
 ```
 
 La base local SQLite (`data/agrovet.sqlite`) solo sirve para desarrollo. En Vercel la app usa `DATABASE_URL` y guarda todo en Postgres, asi dos computadoras administrando el panel ven el mismo stock, ventas y productos.
@@ -64,6 +66,7 @@ En Project Settings > Environment Variables configurar:
 - `ADMIN_PASSWORD`: codigo numerico de 8 a 12 digitos.
 - `AUTH_SECRET`: secreto aleatorio de al menos 32 caracteres.
 - `DATABASE_URL`: conexion Postgres compartida.
+- `MERCADOPAGO_WEBHOOK_SECRET`: clave secreta del webhook de Mercado Pago para validar la firma `x-signature`.
 
 Despues de cargar datos y variables, correr `npm run build` localmente y hacer deploy desde Vercel conectado al repositorio.
 
@@ -79,3 +82,4 @@ Con el secret definido, los backups se suben como `agrovet-postgres-*.dump.enc` 
 
 - Las cabeceras `Content-Security-Policy` y `Strict-Transport-Security` se aplican solo en produccion (`next start`/Vercel), no en `next dev`.
 - Los endpoints publicos `POST /api/orders` y `POST /api/delivery-zone` tienen rate-limit en memoria por instancia. Para un limite estricto entre instancias, migrar a Redis/Upstash.
+- Los pedidos de `Tienda online` que aun esperan pago con Mercado Pago no se muestran en el panel hasta que el webhook firmado confirma la operacion.

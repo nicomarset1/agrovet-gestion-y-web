@@ -1,6 +1,15 @@
 ﻿import "server-only";
 
 import postgres from "postgres";
+import {
+  catalogCategorySeeds,
+  catalogProductStartId,
+  catalogProductSeeds,
+  catalogSubcategorySeeds,
+  catalogVariantSeeds,
+  catalogVersion,
+} from "./catalog-data";
+import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -104,6 +113,8 @@ async function ensureSchema() {
       );
       INSERT INTO app_meta (key, value) VALUES ('sync_version', 0)
       ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_meta (key, value) VALUES ('catalog_version', 0)
+      ON CONFLICT (key) DO NOTHING;
 
       CREATE TABLE IF NOT EXISTS branches (
         id INTEGER PRIMARY KEY,
@@ -183,7 +194,9 @@ async function ensureSchema() {
         payment_method TEXT NOT NULL DEFAULT '',
         paid_cents INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        deleted_at TIMESTAMPTZ
+        deleted_at TIMESTAMPTZ,
+        refund_method TEXT NOT NULL DEFAULT '',
+        refund_note TEXT NOT NULL DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS order_items (
         order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -231,6 +244,8 @@ async function ensureSchema() {
       await schemaTx`ALTER TABLE categories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE subcategories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_method TEXT NOT NULL DEFAULT ''`;
+      await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_note TEXT NOT NULL DEFAULT ''`;
       await schemaTx`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`;
@@ -339,6 +354,114 @@ async function ensureSchema() {
           `;
         }
         await tx`UPDATE app_meta SET value = 0 WHERE key = 'sync_version'`;
+      }
+
+      const [catalogMeta] = await schemaTx`
+        SELECT value FROM app_meta WHERE key = 'catalog_version'
+      `;
+      if (Number(catalogMeta?.value ?? 0) < catalogVersion) {
+        const tx = schemaTx;
+        await tx`
+          UPDATE products
+          SET slug = 'legacy-' || id || '-' || slug,
+              active = FALSE,
+              featured = FALSE,
+              archived_at = CURRENT_TIMESTAMP,
+              purged_at = CURRENT_TIMESTAMP
+          WHERE id < ${catalogProductStartId}
+            AND purged_at IS NULL
+        `;
+        for (const category of catalogCategorySeeds) {
+          await tx`
+            INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu, deleted_at)
+            VALUES (
+              ${category.id}, ${category.slug}, ${category.name}, ${category.description},
+              ${category.parentCategoryId}, ${category.showInMenu}, NULL
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              parent_category_id = EXCLUDED.parent_category_id,
+              show_in_menu = EXCLUDED.show_in_menu,
+              deleted_at = NULL
+          `;
+        }
+        for (const subcategory of catalogSubcategorySeeds) {
+          await tx`
+            INSERT INTO subcategories (slug, category_id, name, description, deleted_at)
+            VALUES (${subcategory.slug}, ${subcategory.categoryId}, ${subcategory.name}, ${subcategory.description}, NULL)
+            ON CONFLICT (slug) DO UPDATE SET
+              category_id = EXCLUDED.category_id,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              deleted_at = NULL
+          `;
+        }
+        for (const product of catalogProductSeeds) {
+          await tx`
+            INSERT INTO products (
+              id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name,
+              life_stage, size, need, description, featured, requires_advice, active, color,
+              image_url, archived_at, purged_at
+            ) VALUES (
+              ${product.id}, ${product.slug}, ${product.name}, ${product.brand}, ${product.categoryId},
+              ${product.species}, ${product.subcategorySlug}, ${product.subcategoryName}, ${product.lifeStage},
+              ${product.size}, ${product.need}, ${product.description}, ${product.featured},
+              ${product.requiresAdvice}, TRUE, ${product.color}, ${product.imageUrl}, NULL, NULL
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              brand = EXCLUDED.brand,
+              category_id = EXCLUDED.category_id,
+              species = EXCLUDED.species,
+              subcategory_slug = EXCLUDED.subcategory_slug,
+              subcategory_name = EXCLUDED.subcategory_name,
+              life_stage = EXCLUDED.life_stage,
+              size = EXCLUDED.size,
+              need = EXCLUDED.need,
+              description = EXCLUDED.description,
+              featured = EXCLUDED.featured,
+              requires_advice = EXCLUDED.requires_advice,
+              active = TRUE,
+              color = EXCLUDED.color,
+              image_url = EXCLUDED.image_url,
+              archived_at = NULL,
+              purged_at = NULL
+          `;
+        }
+        for (const variant of catalogVariantSeeds) {
+          await tx`
+            INSERT INTO variants (id, product_id, label, sku, barcode, price_cents)
+            VALUES (
+              ${variant.id}, ${variant.productId}, ${variant.label}, ${variant.sku},
+              ${variant.barcode}, ${variant.priceCents}
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              product_id = EXCLUDED.product_id,
+              label = EXCLUDED.label,
+              sku = EXCLUDED.sku,
+              barcode = EXCLUDED.barcode,
+              price_cents = EXCLUDED.price_cents
+          `;
+          await tx`
+            INSERT INTO inventory (variant_id, branch_id, quantity)
+            VALUES (${variant.id}, 1, ${variant.branch1})
+            ON CONFLICT (variant_id, branch_id) DO NOTHING
+          `;
+          await tx`
+            INSERT INTO inventory (variant_id, branch_id, quantity)
+            VALUES (${variant.id}, 2, ${variant.branch2})
+            ON CONFLICT (variant_id, branch_id) DO NOTHING
+          `;
+        }
+        await tx`SELECT setval(pg_get_serial_sequence('categories', 'id'), GREATEST((SELECT MAX(id) FROM categories), 1), TRUE)`;
+        await tx`SELECT setval(pg_get_serial_sequence('subcategories', 'id'), GREATEST((SELECT MAX(id) FROM subcategories), 1), TRUE)`;
+        await tx`SELECT setval(pg_get_serial_sequence('products', 'id'), GREATEST((SELECT MAX(id) FROM products), 1), TRUE)`;
+        await tx`SELECT setval(pg_get_serial_sequence('variants', 'id'), GREATEST((SELECT MAX(id) FROM variants), 1), TRUE)`;
+        await tx`UPDATE app_meta SET value = ${catalogVersion} WHERE key = 'catalog_version'`;
+        await tx`UPDATE app_meta SET value = value + 1 WHERE key = 'sync_version'`;
       }
     });
   })();
@@ -704,7 +827,8 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     WHERE o.deleted_at IS NULL
     ORDER BY o.created_at DESC, o.id DESC
   ` as unknown as Array<Omit<OrderRecord, "itemCount" | "items" | "createdAt"> & { createdAt: unknown }>;
-  if (!orders.length) return [];
+  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago)$/i.test(order.status)));
+  if (!visibleOrders.length) return [];
   const items = await sql`
     SELECT oi.order_id AS "orderId", oi.variant_id AS "variantId", p.name AS "productName", p.brand,
       v.label, v.sku, oi.quantity, oi.unit_price_cents AS "unitPriceCents"
@@ -728,8 +852,10 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     orderBuckets.set(row.variantId, current);
     allocationBuckets.set(row.orderId, orderBuckets);
   }
+  const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
   const itemsByOrder = new Map<number, OrderRecord["items"]>();
   for (const item of items) {
+    if (!visibleOrderIds.has(item.orderId)) continue;
     const current = itemsByOrder.get(item.orderId) ?? [];
     const allocations = allocationBuckets.get(item.orderId)?.get(item.variantId) ?? [];
     current.push({
@@ -744,7 +870,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     });
     itemsByOrder.set(item.orderId, current);
   }
-  return orders.map((order) => ({
+  return visibleOrders.map((order) => ({
     ...order,
     totalCents: Number(order.totalCents),
     paidCents: Number(order.paidCents ?? order.totalCents),
@@ -847,6 +973,10 @@ export async function getSearchIndex(): Promise<SearchIndexItem[]> {
 }
 
 export async function getCatalogMenu(): Promise<CatalogMenuNode[]> {
+  return buildCustomerCatalogMenu(await getProducts(), await getCategories());
+}
+
+export async function getLegacyCatalogMenu(): Promise<CatalogMenuNode[]> {
   const products = await getProducts();
   const categories = await getCategories();
   const subcategories = await getSubcategories();
@@ -1278,17 +1408,16 @@ async function insertOrderAllocation(db: Db, orderId: number, variantId: number,
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source?: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
     const deliveryPlan = input.fulfillment === "envio" ? await resolveDeliveryAllocationPlan(input.items, tx) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
     if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new Error("Sucursal invÃ¡lida.");
-    const source = (input.source ?? "Tienda online").trim() || "Tienda online";
-    const isCashSale = source.toLowerCase().startsWith("caja");
+    const source = "Tienda online";
     const isMercadoPago = input.paymentMethod === "mercado_pago";
-    const status = isMercadoPago ? "Pendiente de pago" : isCashSale ? "Cerrado" : input.fulfillment === "envio" ? "Pendiente de envÃ­o" : "Pendiente de retiro";
+    const status = isMercadoPago ? "Esperando pago" : input.fulfillment === "envio" ? "Pendiente de envÃ­o" : "Pendiente de retiro";
     const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
@@ -1302,20 +1431,26 @@ export async function createOrder(input: {
       if (!row || item.quantity < 1) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
       if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");
+      for (const allocation of allocations) {
+        const [stock] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${item.variantId} AND branch_id = ${allocation.branchId}` as unknown as { quantity?: number }[];
+        if (Number(stock?.quantity ?? 0) < allocation.quantity) throw new Error("El stock cambiÃ³. RevisÃ¡ la sucursal o la cantidad seleccionada.");
+      }
       totalCents += Number(row.priceCents) * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: Number(row.priceCents), allocations });
     }
     const code = `AGV-${Date.now().toString().slice(-8)}`;
     const [order] = await tx`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-      VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isCashSale ? totalCents : 0})
+      VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isMercadoPago ? 0 : totalCents})
       RETURNING id
     `;
     for (const line of lines) {
       await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice})`;
       for (const allocation of line.allocations) {
-        const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
-        if (!result.count) throw new Error("No hay stock suficiente para reservar.");
+        if (!isMercadoPago) {
+          const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
+          if (!result.count) throw new Error("No hay stock suficiente para reservar.");
+        }
         await insertOrderAllocation(tx, Number(order.id), line.variantId, allocation.branchId, allocation.quantity);
       }
     }
@@ -1324,20 +1459,64 @@ export async function createOrder(input: {
   });
 }
 
-export async function markOrderPaidByCode(code: string, paymentMethod: string) {
+export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
   await ensureSchema();
-  await sql`
-    UPDATE orders
-    SET paid_cents = total_cents,
-        payment_method = ${paymentMethod.trim() || "Mercado Pago"},
-        status = CASE
-          WHEN status = 'Pendiente de pago' AND fulfillment = 'envio' THEN 'Pendiente de envÃ­o'
-          WHEN status = 'Pendiente de pago' THEN 'Pendiente de retiro'
-          ELSE status
-        END
-    WHERE code = ${code} AND deleted_at IS NULL
-  `;
-  await bumpSyncVersion();
+  return sql.begin(async (tx) => {
+    const [order] = await tx`
+      SELECT id, branch_id AS "branchId", fulfillment, status, total_cents AS "totalCents", paid_cents AS "paidCents"
+      FROM orders
+      WHERE code = ${code} AND deleted_at IS NULL
+    ` as unknown as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number }[];
+    if (!order) return false;
+    if (!Number.isSafeInteger(amountCents) || amountCents !== Number(order.totalCents)) return false;
+
+    const method = paymentMethod.trim() || "Mercado Pago";
+    const awaitingPayment = /^(Esperando pago|Pendiente de pago)$/i.test(order.status);
+    if (Number(order.paidCents) >= Number(order.totalCents) || !awaitingPayment) {
+      await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method} WHERE id = ${order.id}`;
+      await bumpSyncVersion(tx);
+      return true;
+    }
+
+    const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${order.id}` as unknown as Array<{ variantId: number; quantity: number }>;
+    const allocations = await getAllocationBuckets(order.id, tx);
+    const required: Array<{ variantId: number; branchId: number; quantity: number }> = [];
+    for (const item of items) {
+      const buckets = allocations.get(item.variantId) ?? [{ branchId: order.branchId, branchName: "", quantity: item.quantity }];
+      for (const allocation of buckets) required.push({ variantId: item.variantId, branchId: allocation.branchId, quantity: allocation.quantity });
+    }
+
+    for (const allocation of required) {
+      const [stock] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${allocation.variantId} AND branch_id = ${allocation.branchId}` as unknown as { quantity?: number }[];
+      if (Number(stock?.quantity ?? 0) < allocation.quantity) {
+        await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method}, status = 'Pago recibido - revisar stock' WHERE id = ${order.id}`;
+        await bumpSyncVersion(tx);
+        return true;
+      }
+    }
+
+    for (const allocation of required) {
+      const result = await tx`
+        UPDATE inventory
+        SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP
+        WHERE variant_id = ${allocation.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}
+      `;
+      if (!result.count) throw new Error("No hay stock suficiente para acreditar el pago.");
+    }
+
+    await tx`
+      UPDATE orders
+      SET paid_cents = total_cents,
+          payment_method = ${method},
+          status = CASE
+            WHEN fulfillment = 'envio' THEN 'Pendiente de envÃ­o'
+            ELSE 'Pendiente de retiro'
+          END
+      WHERE id = ${order.id}
+    `;
+    await bumpSyncVersion(tx);
+    return true;
+  });
 }
 
 export async function createWholesaleOrder(input: {
@@ -1442,6 +1621,8 @@ export async function updateOrder(input: {
   status: string;
   source: string;
   paymentMethod?: string;
+  refundMethod?: string;
+  refundNote?: string;
   items: { variantId: number; quantity: number }[];
   allocations?: { variantId: number; allocations: { branchId: number; quantity: number }[] }[];
 }) {
@@ -1520,7 +1701,9 @@ export async function updateOrder(input: {
       UPDATE orders
       SET customer_name = ${input.customerName.trim()}, phone = ${input.phone.trim()}, email = ${input.email.trim()}, fulfillment = ${input.fulfillment.trim()}, branch_id = ${resolvedBranchId},
         delivery_address = ${input.deliveryAddress ?? ""}, delivery_distance_km = ${input.deliveryDistanceKm ?? null}, status = ${input.status.trim()}, source = ${input.source.trim()},
-        total_cents = ${totalCents}, payment_method = ${input.paymentMethod?.trim() ?? order.paymentMethod ?? ""}
+        total_cents = ${totalCents}, payment_method = ${input.paymentMethod?.trim() ?? order.paymentMethod ?? ""},
+        refund_method = CASE WHEN ${input.refundMethod?.trim() ?? ""} != '' THEN ${input.refundMethod?.trim() ?? ""} ELSE refund_method END,
+        refund_note = CASE WHEN ${input.refundNote?.trim() ?? ""} != '' THEN ${input.refundNote?.trim() ?? ""} ELSE refund_note END
       WHERE id = ${input.id}
     `;
     await tx`DELETE FROM order_items WHERE order_id = ${input.id}`;
@@ -1534,15 +1717,18 @@ export async function updateOrder(input: {
   });
 }
 
-export async function deleteOrder(id: number) {
+export async function deleteOrder(input: number | { id: number; refundMethod?: string; refundNote?: string }) {
   await ensureSchema();
+  const id = typeof input === "number" ? input : input.id;
+  const refundMethod = typeof input === "number" ? "" : input.refundMethod?.trim() ?? "";
+  const refundNote = typeof input === "number" ? "" : input.refundNote?.trim() ?? "";
   await sql.begin(async (tx) => {
     const [order] = await tx`SELECT id, branch_id AS "branchId", status, deleted_at AS "deletedAt" FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string; deletedAt: unknown }[];
     if (!order) return;
     if (order.deletedAt) return;
     const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }>;
     const allocations = await getAllocationBuckets(id, tx);
-    if (!isCanceledStatus(order.status)) {
+    if (!isCanceledStatus(order.status) && !/^Esperando pago$/i.test(order.status)) {
       for (const item of items) {
         const buckets = allocations.get(item.variantId);
         if (!buckets?.length) {
@@ -1554,7 +1740,13 @@ export async function deleteOrder(id: number) {
         }
       }
     }
-    await tx`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ${id}`;
+    await tx`
+      UPDATE orders
+      SET deleted_at = CURRENT_TIMESTAMP,
+        refund_method = CASE WHEN ${refundMethod} != '' THEN ${refundMethod} ELSE refund_method END,
+        refund_note = CASE WHEN ${refundNote} != '' THEN ${refundNote} ELSE refund_note END
+      WHERE id = ${id}
+    `;
     await bumpSyncVersion(tx);
   });
 }
@@ -1564,11 +1756,12 @@ export async function getTrashItems(): Promise<TrashItem[]> {
   await purgeExpiredTrashItems();
   const [orders, products, categories, subcategories, clients] = await Promise.all([
     sql`
-      SELECT id, code, customer_name AS "customerName", total_cents AS "amountCents", status, source, deleted_at AS "deletedAt"
+      SELECT id, code, customer_name AS "customerName", total_cents AS "amountCents", status, source, deleted_at AS "deletedAt",
+        refund_method AS "refundMethod", refund_note AS "refundNote"
       FROM orders
       WHERE deleted_at IS NOT NULL
       ORDER BY deleted_at DESC
-    ` as unknown as Promise<Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: unknown }>>,
+    ` as unknown as Promise<Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: unknown; refundMethod: string; refundNote: string }>>,
     sql`
       SELECT p.id, p.brand, p.name, COALESCE(c.name, 'Sin categoria') AS category, p.archived_at AS "deletedAt",
         COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0)::int AS stock
@@ -1608,6 +1801,8 @@ export async function getTrashItems(): Promise<TrashItem[]> {
       deletedAt: toIso(order.deletedAt),
       status: order.status,
       source: order.source,
+      refundMethod: order.refundMethod ?? "",
+      refundNote: order.refundNote ?? "",
     })),
     ...products.map((product): TrashItem => ({
       type: "product",

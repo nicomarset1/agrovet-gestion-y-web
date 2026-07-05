@@ -410,6 +410,8 @@ const orderSchema = z.object({
   status: z.string().trim().min(2).max(80),
   source: z.string().trim().min(2).max(80),
   paymentMethod: z.string().trim().max(80).optional(),
+  refundMethod: z.string().trim().max(80).optional(),
+  refundNote: z.string().trim().max(240).optional(),
   returnTo: z.string().trim().min(1).optional(),
 });
 
@@ -440,6 +442,8 @@ export async function updateOrderAction(formData: FormData) {
     status: parsed.data.status,
     source: parsed.data.source,
     paymentMethod: parsed.data.paymentMethod ?? "",
+    refundMethod: parsed.data.refundMethod ?? "",
+    refundNote: parsed.data.refundNote ?? "",
     items: variantIds.map((variantId, index) => ({ variantId, quantity: quantities[index] })),
     allocations: allocationVariantIds.length
       ? variantIds.map((variantId) => ({

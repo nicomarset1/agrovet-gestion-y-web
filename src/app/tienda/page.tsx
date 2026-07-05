@@ -62,10 +62,10 @@ export default async function StorePage({ searchParams }: { searchParams: Search
           <Link className={`chip ${!filters.category && !filters.pet ? "active" : ""}`} href="/tienda">Todas</Link>
           <Link className={`chip ${filters.pet === "perro" ? "active" : ""}`} href="/tienda?pet=perro">Perro</Link>
           <Link className={`chip ${filters.pet === "gato" ? "active" : ""}`} href="/tienda?pet=gato">Gato</Link>
-          <Link className={`chip ${selectedCategory === "alimentos" ? "active" : ""}`} href="/tienda?category=alimentos">Alimentos</Link>
-          <Link className={`chip ${selectedCategory === "farmacia" ? "active" : ""}`} href="/tienda?category=farmacia">Farmacia</Link>
-          <Link className={`chip ${selectedCategory === "accesorios" ? "active" : ""}`} href="/tienda?category=accesorios">Accesorios</Link>
-          <Link className={`chip ${selectedCategory === "higiene" ? "active" : ""}`} href="/tienda?category=higiene">Higiene</Link>
+          <Link className={`chip ${selectedCategory === "perro-alimento-seco" ? "active" : ""}`} href="/tienda?category=perro-alimento-seco">Seco perro</Link>
+          <Link className={`chip ${selectedCategory === "gato-alimento-seco" ? "active" : ""}`} href="/tienda?category=gato-alimento-seco">Seco gato</Link>
+          <Link className={`chip ${selectedCategory === "perro-alimento-veterinario" ? "active" : ""}`} href="/tienda?category=perro-alimento-veterinario">Veterinario perro</Link>
+          <Link className={`chip ${selectedCategory === "gato-alimento-veterinario" ? "active" : ""}`} href="/tienda?category=gato-alimento-veterinario">Veterinario gato</Link>
         </div>
         <div className="results-header"><span>{products.length} productos encontrados</span><span>Stock actualizado por sucursal</span></div>
         {products.length ? <div className="product-grid">{products.map((product) => <ProductCard key={product.id} product={product} />)}</div> : (

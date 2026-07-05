@@ -17,8 +17,13 @@ type PreferenceResponse = {
 };
 
 type MercadoPagoPayment = {
+  id?: number;
   status?: string;
+  status_detail?: string;
   external_reference?: string;
+  transaction_amount?: number;
+  payment_method_id?: string;
+  payment_type_id?: string;
 };
 
 function getSiteUrl() {
@@ -56,13 +61,16 @@ export async function createMercadoPagoPreference(input: PreferenceInput) {
     },
     external_reference: input.code,
     statement_descriptor: "AGROVET MDP",
+    metadata: {
+      order_code: input.code,
+    },
   };
 
   if (siteUrl.startsWith("https://")) {
     body.back_urls = {
-      success: `${siteUrl}/carrito?payment=success&order=${input.code}`,
-      failure: `${siteUrl}/carrito?payment=failure&order=${input.code}`,
-      pending: `${siteUrl}/carrito?payment=pending&order=${input.code}`,
+      success: `${siteUrl}/api/mercadopago/return`,
+      failure: `${siteUrl}/api/mercadopago/return`,
+      pending: `${siteUrl}/api/mercadopago/return`,
     };
     body.auto_return = "approved";
     body.notification_url = `${siteUrl}/api/mercadopago/webhook`;
@@ -97,6 +105,21 @@ export async function getMercadoPagoPayment(paymentId: string) {
       authorization: `Bearer ${getAccessToken()}`,
     },
   });
-  if (!response.ok) throw new Error("No se pudo consultar el pago en Mercado Pago.");
+  if (!response.ok) {
+    const data = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(data?.message ?? `No se pudo consultar el pago en Mercado Pago (${response.status}).`);
+  }
   return response.json() as Promise<MercadoPagoPayment>;
+}
+
+export function paymentAmountCents(payment: MercadoPagoPayment) {
+  if (typeof payment.transaction_amount !== "number" || !Number.isFinite(payment.transaction_amount)) {
+    return null;
+  }
+  return Math.round(payment.transaction_amount * 100);
+}
+
+export function mercadoPagoMethodLabel(payment: MercadoPagoPayment) {
+  const method = payment.payment_method_id?.trim();
+  return method ? `Mercado Pago (${method})` : "Mercado Pago";
 }

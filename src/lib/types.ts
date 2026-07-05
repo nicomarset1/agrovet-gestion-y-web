@@ -67,6 +67,8 @@ export type TrashItem =
       deletedAt: string;
       status: string;
       source: string;
+      refundMethod: string;
+      refundNote: string;
     }
   | {
       type: "product";

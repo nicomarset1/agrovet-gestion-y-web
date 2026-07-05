@@ -50,6 +50,7 @@ import {
 
 type Subcategory = { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number };
 type Section = "resumen" | "productos" | "categorias" | "punto-venta" | "ventas" | "ventas-web" | "clientes" | "papelera";
+type WebOrderStatus = "Entregado" | "Retirado" | "Cancelado";
 type Period = "day" | "week" | "month" | "year";
 const WEB_PERIOD_STORAGE_KEY = "agrovet-web-period";
 const UNCATEGORIZED_CATEGORY_VALUE = "__none";
@@ -109,6 +110,7 @@ function DeleteOrderModal({
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   const branchSummary = getOrderBranchBuckets(order)
     .map((bucket) => `${bucket.branchName}: ${bucket.quantity}`)
     .join(" | ") || order.branchName;
@@ -127,12 +129,17 @@ function DeleteOrderModal({
           event.preventDefault();
           if (submitting) return;
           setSubmitting(true);
+          setError("");
           const response = await fetch("/api/admin/orders/delete", {
             method: "POST",
             body: new FormData(event.currentTarget),
           });
           setSubmitting(false);
-          if (!response.ok) return;
+          if (!response.ok) {
+            const result = await response.json().catch(() => null) as { error?: string } | null;
+            setError(result?.error ?? "No se pudo eliminar el registro.");
+            return;
+          }
           onClose();
           router.refresh();
         }}
@@ -152,6 +159,7 @@ function DeleteOrderModal({
         <p className="admin-confirm-text">
           Se quitará de las ventas activas y se devolverá el stock reservado. Podrás restaurarlo desde Papelera si todavía hay stock suficiente.
         </p>
+        {error ? <p className="notice error admin-span-2">{error}</p> : null}
         <div className="admin-product-list admin-span-2">
           {order.items.map((item) => {
             const allocations = item.allocations?.length
@@ -245,7 +253,7 @@ function isCancelledOrder(order: OrderRecord) {
 }
 
 function isAwaitingOnlinePayment(order: OrderRecord) {
-  return isWebOrder(order) && /mercado pago/i.test(order.paymentMethod) && order.paidCents < order.totalCents && /pendiente de pago/i.test(order.status);
+  return isWebOrder(order) && /mercado pago/i.test(order.paymentMethod) && order.paidCents < order.totalCents && /pendiente de pago|esperando pago/i.test(order.status);
 }
 
 function trashTypeLabel(type: TrashItem["type"]) {
@@ -1513,6 +1521,7 @@ function PendingOrderCard({
   order,
   onEditDistribution,
   onCompleteOrder,
+  onCancelOrder,
   returnTo,
   dense = false,
   branchId,
@@ -1521,7 +1530,8 @@ function PendingOrderCard({
   onSelectOrder: (order: OrderRecord) => void;
   order: OrderRecord;
   onEditDistribution?: (order: OrderRecord) => void;
-  onCompleteOrder?: (order: OrderRecord, status: "Entregado" | "Retirado") => void;
+  onCompleteOrder?: (order: OrderRecord, status: WebOrderStatus) => void;
+  onCancelOrder?: (order: OrderRecord) => void;
   returnTo: string;
   dense?: boolean;
   branchId?: number;
@@ -1555,7 +1565,11 @@ function PendingOrderCard({
                 ) : (
                   <OrderStatusButton label="Entregado" order={order} returnTo={returnTo} status="Entregado" />
                 )}
-                <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
+                {onCancelOrder ? (
+                  <button className="button button-light" onClick={() => onCancelOrder(order)} type="button">Cancelar</button>
+                ) : (
+                  <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
+                )}
               </>
             ) : (
               <>
@@ -1564,7 +1578,11 @@ function PendingOrderCard({
                 ) : (
                   <OrderStatusButton label="Retirado" order={order} returnTo={returnTo} status="Retirado" />
                 )}
-                <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
+                {onCancelOrder ? (
+                  <button className="button button-light" onClick={() => onCancelOrder(order)} type="button">Cancelar</button>
+                ) : (
+                  <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
+                )}
               </>
             )
           ) : null}
@@ -1588,19 +1606,21 @@ function WebOrderStatusModal({
   onClose: () => void;
   order: OrderRecord;
   returnTo: string;
-  status: "Entregado" | "Retirado";
+  status: WebOrderStatus;
 }) {
   const paymentMatch = /^(Tarjeta)(?: \((\d+) cuotas\))?/i.exec(order.paymentMethod);
   const [paymentMethod, setPaymentMethod] = useState(paymentMatch?.[1] ?? (order.paymentMethod || "Efectivo"));
   const [installments, setInstallments] = useState(paymentMatch?.[2] ?? "1");
   const [submitting, setSubmitting] = useState(false);
+  const isCancellation = status === "Cancelado";
+  const needsRefundRecord = isCancellation && order.paidCents > 0 && /mercado pago/i.test(order.paymentMethod);
   const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installments} cuotas)` : paymentMethod;
   return (
     <AdminModal
       dismissible={!submitting}
       onClose={onClose}
-      subtitle={`${order.code} | ${order.branchName} | ${status.toLowerCase() === "entregado" ? "cierre de envío" : "cierre de retiro"}`}
-      title={`Marcar como ${status.toLowerCase()}`}
+      subtitle={`${order.code} | ${order.branchName} | ${isCancellation ? "cancelación de pedido" : status.toLowerCase() === "entregado" ? "cierre de envío" : "cierre de retiro"}`}
+      title={isCancellation ? "Cancelar pedido" : `Marcar como ${status.toLowerCase()}`}
     >
       <form
         action={updateOrderAction}
@@ -1617,7 +1637,7 @@ function WebOrderStatusModal({
         <input name="deliveryDistanceKm" type="hidden" value={order.deliveryDistanceKm ?? ""} />
         <input name="source" type="hidden" value={order.source} />
         <input name="status" type="hidden" value={status} />
-        <input name="paymentMethod" type="hidden" value={paymentMethodValue} />
+        <input name="paymentMethod" type="hidden" value={isCancellation ? order.paymentMethod : paymentMethodValue} />
         <input name="returnTo" type="hidden" value={returnTo} />
         {order.items.map((item) => (
           <div key={`${order.id}-${item.variantId}`}>
@@ -1625,34 +1645,58 @@ function WebOrderStatusModal({
             <input name="itemQuantity" type="hidden" value={item.quantity} />
           </div>
         ))}
-        <label className="admin-field admin-span-2">
-          <span>Medio de pago</span>
-          <select className="field" onChange={(event) => setPaymentMethod(event.target.value)} value={paymentMethod}>
-            <option>Efectivo</option>
-            <option>Tarjeta</option>
-            <option>Transferencia</option>
-            <option>QR</option>
-          </select>
-        </label>
-        {paymentMethod === "Tarjeta" ? (
-          <label className="admin-field admin-span-2">
-            <span>Cuotas</span>
-            <select className="field" onChange={(event) => setInstallments(event.target.value)} value={installments}>
-              <option value="1">1 cuota</option>
-              <option value="2">2 cuotas</option>
-              <option value="3">3 cuotas</option>
-              <option value="6">6 cuotas</option>
-              <option value="12">12 cuotas</option>
-            </select>
-          </label>
-        ) : null}
+        {isCancellation ? (
+          <>
+            <p className="notice admin-span-2">
+              Se cancelará el pedido y se devolverá el stock reservado.
+            </p>
+            {needsRefundRecord ? (
+              <div className="admin-span-2 admin-confirm-refund">
+                <label>Devolución al cliente</label>
+                <select className="field" name="refundMethod" required defaultValue="">
+                  <option value="" disabled>Seleccionar cómo se devolvió</option>
+                  <option value="Devuelto por Mercado Pago">Devuelto por Mercado Pago</option>
+                  <option value="Transferencia bancaria">Transferencia bancaria</option>
+                  <option value="Efectivo">Efectivo</option>
+                  <option value="Queda pendiente de devolución">Queda pendiente de devolución</option>
+                  <option value="Otro acuerdo con el cliente">Otro acuerdo con el cliente</option>
+                </select>
+                <textarea className="field" maxLength={240} name="refundNote" placeholder="Detalle opcional: número de operación, alias, fecha o aclaración para el local." />
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <label className="admin-field admin-span-2">
+              <span>Medio de pago</span>
+              <select className="field" onChange={(event) => setPaymentMethod(event.target.value)} value={paymentMethod}>
+                <option>Efectivo</option>
+                <option>Tarjeta</option>
+                <option>Transferencia</option>
+                <option>QR</option>
+              </select>
+            </label>
+            {paymentMethod === "Tarjeta" ? (
+              <label className="admin-field admin-span-2">
+                <span>Cuotas</span>
+                <select className="field" onChange={(event) => setInstallments(event.target.value)} value={installments}>
+                  <option value="1">1 cuota</option>
+                  <option value="2">2 cuotas</option>
+                  <option value="3">3 cuotas</option>
+                  <option value="6">6 cuotas</option>
+                  <option value="12">12 cuotas</option>
+                </select>
+              </label>
+            ) : null}
+          </>
+        )}
         <div className="admin-detail-summary compact admin-span-2">
           <strong>{order.code}</strong>
-          <span>{order.customerName} | {formatPrice(order.totalCents)} | {paymentMethodValue}</span>
+          <span>{order.customerName} | {formatPrice(order.totalCents)} | {isCancellation ? order.paymentMethod : paymentMethodValue}</span>
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light" disabled={submitting} onClick={onClose} type="button">Cancelar</button>
-          <button className="button button-primary" disabled={submitting} type="submit">Confirmar cierre</button>
+          <button className="button button-primary" disabled={submitting} type="submit">{isCancellation ? "Confirmar cancelación" : "Confirmar cierre"}</button>
         </div>
       </form>
     </AdminModal>
@@ -1767,15 +1811,17 @@ function StockEditModal({
   branches,
   onClose,
   product,
+  variantId,
   returnTo,
 }: {
   branch: Branch;
   branches: Branch[];
   onClose: () => void;
   product: Product;
+  variantId?: number;
   returnTo: string;
 }) {
-  const mainVariant = product.variants[0];
+  const mainVariant = product.variants.find((variant) => variant.id === variantId) ?? product.variants[0];
   if (!mainVariant) return null;
   const currentStock = mainVariant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0;
   const otherStocks = branches.filter((item) => item.id !== branch.id);
@@ -1886,8 +1932,8 @@ function DashboardDetailModal({
   branches: Branch[];
   detail: DashboardDetail;
   onClose: () => void;
-  onCompleteOrder: (order: OrderRecord, status: "Entregado" | "Retirado") => void;
-  onEditStock: (product: Product) => void;
+  onCompleteOrder: (order: OrderRecord, status: WebOrderStatus) => void;
+  onEditStock: (product: Product, variantId?: number) => void;
   orders: OrderRecord[];
   products: Product[];
   selectedBranch: Branch;
@@ -1908,11 +1954,13 @@ function DashboardDetailModal({
     return [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   }, [selectedBranch.id, selectedBranchOrders]);
   const activeProducts = useMemo(() => products.filter((product) => product.active), [products]);
-  const outOfStock = useMemo(() => activeProducts.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0)), [activeProducts, selectedBranch.id]);
-  const lowStock = useMemo(() => activeProducts.filter((product) => product.variants.some((variant) => {
-    const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
-    return quantity > 0 && quantity <= 3;
-  })), [activeProducts, selectedBranch.id]);
+  const stockPresentations = useMemo(() => activeProducts.flatMap((product) => product.variants.map((variant) => ({
+    product,
+    variant,
+    quantity: variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0,
+  }))), [activeProducts, selectedBranch.id]);
+  const outOfStock = useMemo(() => stockPresentations.filter((item) => item.quantity === 0), [stockPresentations]);
+  const lowStock = useMemo(() => stockPresentations.filter((item) => item.quantity > 0 && item.quantity <= 3), [stockPresentations]);
   const allDays = useMemo(() => {
     const groups = new Map<string, { orders: OrderRecord[]; totalCents: number }>();
     for (const order of selectedBranchOrders) {
@@ -1951,7 +1999,18 @@ function DashboardDetailModal({
     return { branch, zero };
   }), [activeProducts, branches]);
   const stockAlertList = alertView === "out" ? outOfStock : lowStock;
-  const stockAlertTitle = alertView === "out" ? "Productos sin stock" : "Productos con stock bajo";
+  const stockAlertProducts = useMemo(() => {
+    const grouped = new Map<number, { product: Product; alertCount: number }>();
+    for (const item of stockAlertList) {
+      const current = grouped.get(item.product.id);
+      grouped.set(item.product.id, {
+        product: item.product,
+        alertCount: (current?.alertCount ?? 0) + 1,
+      });
+    }
+    return [...grouped.values()];
+  }, [stockAlertList]);
+  const stockAlertTitle = alertView === "out" ? "Presentaciones sin stock" : "Presentaciones con stock bajo";
 
   return (
     <AdminModal
@@ -1998,7 +2057,7 @@ function DashboardDetailModal({
         {detail.type === "out-stock" ? (
           <>
             <div className="admin-detail-summary">
-              <strong>{alertView === "out" ? `${outOfStock.length} productos sin stock` : `${lowStock.length} productos con stock bajo`}</strong>
+              <strong>{alertView === "out" ? `${outOfStock.length} presentaciones sin stock` : `${lowStock.length} presentaciones con stock bajo`}</strong>
               <span>La sucursal activa es {selectedBranch.name}</span>
             </div>
             <div className="admin-view-tabs">
@@ -2006,17 +2065,35 @@ function DashboardDetailModal({
               <button className={`choice-card ${alertView === "low" ? "active" : ""}`} onClick={() => setAlertView("low")} type="button">Stock bajo</button>
             </div>
             <div className="admin-product-list">
-              {stockAlertList.map((product) => (
-                <div className="admin-table-row compact" key={product.id}>
-                  <div>
-                    <strong>{product.brand} {product.name}</strong>
-                    <small>{product.category} | {product.subcategory} | {product.variants[0]?.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0} unidades en {selectedBranch.name}</small>
+              {stockAlertProducts.map(({ product, alertCount }) => (
+                <details className="admin-table-row compact admin-stock-product" key={product.id}>
+                  <summary className="admin-stock-product-summary">
+                    <span>
+                      <strong>{product.brand} {product.name}</strong>
+                      <small>{product.category} | {product.subcategory} | {product.variants.length} presentaciones</small>
+                    </span>
+                    <span className={`admin-stock-pill ${alertView === "out" ? "danger" : ""}`}>
+                      {alertCount} {alertView === "out" ? "sin stock" : "con stock bajo"}
+                    </span>
+                  </summary>
+                  <div className="admin-stock-variant-list">
+                    {product.variants.map((variant) => {
+                      const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
+                      return (
+                        <div className="admin-stock-variant-row" key={variant.id}>
+                          <div>
+                            <strong>{variant.label}</strong>
+                            <small>{quantity} unidades en {selectedBranch.name}</small>
+                          </div>
+                          <div className="admin-row-actions">
+                            {quantity === 0 ? <span className="admin-stock-pill danger">Sin stock</span> : quantity <= 3 ? <span className="admin-stock-pill">Stock bajo</span> : <span className="admin-stock-pill muted">Disponible</span>}
+                            <button className="button button-light" onClick={() => onEditStock(product, variant.id)} type="button">Sumar stock</button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="admin-row-actions">
-                    <span className={`admin-stock-pill ${alertView === "out" ? "danger" : ""}`}>{alertView === "out" ? "Sin stock" : "Stock bajo"}</span>
-                    <button className="button button-light" onClick={() => onEditStock(product)} type="button">Agregar stock</button>
-                  </div>
-                </div>
+                </details>
               ))}
             </div>
             <button className="button button-light" onClick={() => setAlertView(alertView === "out" ? "low" : "out")} type="button">
@@ -2054,6 +2131,7 @@ function DashboardDetailModal({
                 <PendingOrderCard
                   key={order.id}
                   onCompleteOrder={onCompleteOrder}
+                  onCancelOrder={(nextOrder) => onCompleteOrder?.(nextOrder, "Cancelado")}
                   onSelectOrder={onSelectOrder}
                   order={order}
                   returnTo={currentHref}
@@ -3105,7 +3183,7 @@ export function AdminConsole({
   const [orderToDelete, setOrderToDelete] = useState<OrderRecord | null>(null);
   const [trashItemToRestore, setTrashItemToRestore] = useState<TrashItem | null>(null);
   const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
-  const [webOrderStatusTarget, setWebOrderStatusTarget] = useState<{ order: OrderRecord; status: string } | null>(null);
+  const [webOrderStatusTarget, setWebOrderStatusTarget] = useState<{ order: OrderRecord; status: WebOrderStatus } | null>(null);
   const [webOrderDistributionTarget, setWebOrderDistributionTarget] = useState<OrderRecord | null>(null);
   const [billingDate, setBillingDate] = useState(dateKey(new Date()));
   const selectedBranch = branches.find((branch) => branch.id === selectedBranchId) ?? branches[0];
@@ -3119,7 +3197,7 @@ export function AdminConsole({
     | { type: "product-create" }
     | { type: "product-edit"; product: Product }
     | { type: "product-delete"; product: Product }
-    | { type: "stock-edit"; product: Product; returnTo: string }
+    | { type: "stock-edit"; product: Product; variantId?: number; returnTo: string }
     | { type: "wholesale-client-create" }
     | { type: "wholesale-client-edit"; client: WholesaleClient }
     | null
@@ -3173,11 +3251,11 @@ export function AdminConsole({
     });
   }, [trashItems, trashQuery, trashTypeFilter]);
   const stockTrackedProducts = products.filter((product) => product.active);
-  const zeroStockProducts = stockTrackedProducts.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0));
-  const lowStockProducts = stockTrackedProducts.filter((product) => product.variants.some((variant) => {
+  const zeroStockPresentations = stockTrackedProducts.flatMap((product) => product.variants).filter((variant) => (variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0) === 0);
+  const lowStockPresentations = stockTrackedProducts.flatMap((product) => product.variants).filter((variant) => {
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
     return quantity > 0 && quantity <= 3;
-  })).length;
+  }).length;
   const totalRevenue = orders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranch.id), 0);
   const pendingOrders = orders.filter((order) => belongsToDashboardBranch(order, selectedBranch.id) && isPendingWebOrder(order));
   const webOrders = orders.filter((order) => isWebOrder(order));
@@ -3188,7 +3266,7 @@ export function AdminConsole({
   });
   const webPeriodBillableOrders = webPeriodOrders.filter((order) => !isCancelledOrder(order) && !isAwaitingOnlinePayment(order));
   const webOrdersTotal = webPeriodBillableOrders.reduce((sum, order) => sum + order.totalCents, 0);
-  const webOrdersActive = webPeriodOrders.filter((order) => !isCancelledWebOrder(order));
+  const webOrdersActive = webPeriodOrders.filter((order) => !isCancelledWebOrder(order) && !isAwaitingOnlinePayment(order));
   const webOrdersPending = webPeriodOrders.filter((order) => isPendingWebOrder(order));
   const webOrdersCompleted = webPeriodBillableOrders.filter((order) => isCompletedWebOrder(order));
   const webOpenOrders = webOrders.filter((order) => isPendingWebOrder(order));
@@ -3196,6 +3274,7 @@ export function AdminConsole({
   const webDeliveryOrders = webOpenOrders.filter((order) => isDeliveryWebOrder(order));
   const webHistoryOrders = [...webPeriodOrders].filter((order) => {
     if (isPendingWebOrder(order)) return false;
+    if (isAwaitingOnlinePayment(order)) return false;
     if (webHistoryStatusFilter === "done" && !isCompletedWebOrder(order)) return false;
     if (webHistoryStatusFilter === "cancelled" && !isCancelledWebOrder(order)) return false;
     if (webHistoryTypeFilter === "retiro" && !isPickupWebOrder(order)) return false;
@@ -3325,7 +3404,7 @@ export function AdminConsole({
             <SectionHeader subtitle="Resumen general del negocio" title="Dashboard" />
             <div className="admin-stat-grid">
               <StatCard href={detailHref("revenue")} label="Ingresos totales" value={formatPrice(totalRevenue)} note="Incluye la facturación del día y meses anteriores" />
-              <StatCard href={detailHref("out-stock")} label="Sin stock" value={String(zeroStockProducts.length)} note={`${lowStockProducts} productos con stock bajo`} />
+              <StatCard href={detailHref("out-stock")} label="Sin stock" value={String(zeroStockPresentations.length)} note={`${lowStockPresentations} productos con stock bajo`} />
               <StatCard href={detailHref("pending-orders")} label="Pedidos pendientes" value={String(pendingOrders.length)} note="Pedidos de la web en curso" />
             </div>
             <DashboardCharts basePath={pathname} branchRevenue={branchRevenue} branches={branches} orders={orders} products={products} selectedBranchId={selectedBranch.id} />
@@ -3716,6 +3795,7 @@ export function AdminConsole({
                             <PendingOrderCard
                               key={`${order.id}-${branch.id}`}
                               onCompleteOrder={(nextOrder, status) => setWebOrderStatusTarget({ order: nextOrder, status })}
+                              onCancelOrder={(nextOrder) => setWebOrderStatusTarget({ order: nextOrder, status: "Cancelado" })}
                               onEditDistribution={(nextOrder) => setWebOrderDistributionTarget(nextOrder)}
                               onSelectOrder={setOrderToEdit}
                               branchId={branch.id}
@@ -3747,6 +3827,7 @@ export function AdminConsole({
                             <PendingOrderCard
                               key={`${order.id}-${branch.id}`}
                               onCompleteOrder={(nextOrder, status) => setWebOrderStatusTarget({ order: nextOrder, status })}
+                              onCancelOrder={(nextOrder) => setWebOrderStatusTarget({ order: nextOrder, status: "Cancelado" })}
                               onEditDistribution={(nextOrder) => setWebOrderDistributionTarget(nextOrder)}
                               onSelectOrder={setOrderToEdit}
                               branchId={branch.id}
@@ -3842,6 +3923,9 @@ export function AdminConsole({
                       <div>
                         <strong>{item.title}</strong>
                         <small>{trashTypeLabel(item.type)} | {item.subtitle} | {item.status} | {formatAdminDateTime(item.deletedAt, { dateStyle: "short", timeStyle: "short" })}</small>
+                        {item.type === "order" && item.refundMethod ? (
+                          <small>Devolución: {item.refundMethod}{item.refundNote ? ` | ${item.refundNote}` : ""}</small>
+                        ) : null}
                       </div>
                       <div className="admin-row-actions">
                         <span className={`admin-stock-pill ${daysLeft === 0 ? "danger" : ""}`}>
@@ -3905,7 +3989,7 @@ export function AdminConsole({
       {modal?.type === "product-delete" ? <ProductDeleteModal onClose={() => setModal(null)} product={modal.product} /> : null}
       {trashItemToRestore ? <RestoreTrashItemModal item={trashItemToRestore} onClose={() => setTrashItemToRestore(null)} returnTo={sectionHref("papelera")} /> : null}
       {emptyTrashOpen ? <EmptyTrashModal count={trashItems.length} onClose={() => setEmptyTrashOpen(false)} returnTo={sectionHref("papelera")} /> : null}
-      {modal?.type === "stock-edit" ? <StockEditModal branch={selectedBranch} branches={branches} onClose={() => setModal(null)} product={modal.product} returnTo={modal.returnTo} /> : null}
+      {modal?.type === "stock-edit" ? <StockEditModal branch={selectedBranch} branches={branches} onClose={() => setModal(null)} product={modal.product} variantId={modal.variantId} returnTo={modal.returnTo} /> : null}
       {modal?.type === "wholesale-client-create" ? <WholesaleClientModal onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}
       {modal?.type === "wholesale-client-edit" ? <WholesaleClientModal client={modal.client} onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}
       {webOrderStatusTarget ? (
@@ -3913,7 +3997,7 @@ export function AdminConsole({
           onClose={() => setWebOrderStatusTarget(null)}
           order={webOrderStatusTarget.order}
           returnTo={sectionHref("ventas-web")}
-          status={webOrderStatusTarget.status as "Entregado" | "Retirado"}
+          status={webOrderStatusTarget.status}
         />
       ) : null}
       {webOrderDistributionTarget ? (
@@ -3936,7 +4020,7 @@ export function AdminConsole({
             router.replace(detailCloseHref);
           }}
           onCompleteOrder={(order, status) => setWebOrderStatusTarget({ order, status })}
-          onEditStock={(product) => setModal({ type: "stock-edit", product, returnTo: currentDetailHref })}
+          onEditStock={(product, variantId) => setModal({ type: "stock-edit", product, variantId, returnTo: currentDetailHref })}
           onSelectOrder={(order) => setOrderToEdit(order)}
           orders={orders}
           products={products}

@@ -1,21 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Check, CheckCircle2, Clock3, MessageCircle, ShoppingBag } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Branch } from "@/lib/types";
 import { useCart } from "./cart-provider";
 
 const deliveryMinimumCents = 5000000;
 
+type CheckoutMessage = {
+  text: string;
+  title?: string;
+  error?: boolean;
+  code?: string;
+  final?: boolean;
+  finalStatus?: "success" | "pending";
+  outsideCheckout?: boolean;
+};
+
+function getMercadoPagoReturn(params: URLSearchParams) {
+  const explicitPayment = params.get("payment");
+  const status = params.get("status") ?? params.get("collection_status");
+  if (explicitPayment === "success" || status === "approved") return "success";
+  if (explicitPayment === "pending" || status === "pending" || status === "in_process") return "pending";
+  if (explicitPayment === "failure" || status === "rejected" || status === "cancelled") return "failure";
+  return "";
+}
+
 export function CartPage({ branches }: { branches: Branch[] }) {
   const { items, totalCents, change, remove, clear } = useCart();
+  const handledPaymentReturn = useRef(false);
   const [branchId, setBranchId] = useState(branches[0]?.id ?? 0);
   const [fulfillment, setFulfillment] = useState<"retiro" | "envio">("retiro");
   const [paymentMethod, setPaymentMethod] = useState<"mercado_pago" | "efectivo">("mercado_pago");
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<{ distanceKm: number; deliveryAvailable: boolean; error?: string } | null>(null);
-  const [message, setMessage] = useState<{ text: string; error?: boolean; code?: string } | null>(null);
+  const [message, setMessage] = useState<CheckoutMessage | null>(null);
   const [pending, setPending] = useState(false);
   const [checkingZone, setCheckingZone] = useState(false);
   const deliveryBranchId = useMemo(() => {
@@ -37,6 +58,52 @@ export function CartPage({ branches }: { branches: Branch[] }) {
   const cashTotalCents = applyCashDiscount(totalCents);
   const cashDiscountNote = "Pagando en efectivo en sucursal tenés 10% de descuento en todos los productos.";
   const effectivePaymentMethod = fulfillment === "envio" ? "mercado_pago" : paymentMethod;
+  const showFinalMessage = Boolean(message?.final);
+  const showCartMessage = Boolean(message?.outsideCheckout && !showFinalMessage);
+
+  useEffect(() => {
+    if (handledPaymentReturn.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const payment = getMercadoPagoReturn(params);
+    if (!payment) return;
+
+    handledPaymentReturn.current = true;
+    const timer = window.setTimeout(() => {
+      const order = params.get("order") ?? params.get("external_reference") ?? undefined;
+      if (payment === "success") {
+        clear({ silent: true });
+        setMessage({
+          code: order,
+          final: true,
+          finalStatus: "success",
+          title: "¡Compra realizada con éxito!",
+          text: order
+            ? `Tu pago fue aprobado y el pedido ${order} ya quedó confirmado.`
+            : "Tu pago fue aprobado y el pedido ya quedó confirmado.",
+        });
+      } else if (payment === "pending") {
+        clear({ silent: true });
+        setMessage({
+          code: order,
+          final: true,
+          finalStatus: "pending",
+          title: "Pedido recibido",
+          text: order
+            ? `Recibimos el pedido ${order}, pero Mercado Pago todavia esta procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
+            : "Recibimos tu pedido, pero Mercado Pago todavia esta procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
+        });
+      } else if (payment === "failure") {
+        setMessage({
+          error: true,
+          outsideCheckout: true,
+          title: "No se completo el pago",
+          text: "Mercado Pago rechazo o cancelo el pago. Tu carrito sigue guardado para que puedas revisar los datos e intentar nuevamente.",
+        });
+      }
+      window.history.replaceState(null, "", window.location.pathname);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [clear]);
 
   async function checkZone(value: string) {
     setAddress(value);
@@ -107,11 +174,60 @@ export function CartPage({ branches }: { branches: Branch[] }) {
   }
 
   return (
-    <div className="container cart-page">
+    <div className={`container cart-page${showFinalMessage ? " cart-page-confirmed" : ""}`}>
       <section>
-        <p className="eyebrow">Tu compra</p>
-        <h1 className="display">Carrito</h1>
-        {items.length === 0 && !message ? (
+        {!showFinalMessage ? (
+          <>
+            <p className="eyebrow">Tu compra</p>
+            <h1 className="display">Carrito</h1>
+          </>
+        ) : null}
+        {items.length > 0 && showCartMessage ? (
+          <div className="card empty">
+            <h2>{message?.title}</h2>
+            <p>{message?.text}</p>
+          </div>
+        ) : null}
+        {showFinalMessage ? (
+          <div className={`order-confirmation ${message?.finalStatus === "pending" ? "is-pending" : "is-success"}`}>
+            <div className="order-confirmation-glow" aria-hidden="true" />
+            <div className="order-confirmation-icon" aria-hidden="true">
+              {message?.finalStatus === "pending" ? <Clock3 /> : <CheckCircle2 />}
+            </div>
+            <p className="order-confirmation-kicker">
+              {message?.finalStatus === "pending" ? "Pago en proceso" : "Pago aprobado"}
+            </p>
+            <h1 className="display">{message?.title}</h1>
+            <p className="order-confirmation-lead">{message?.text}</p>
+            {message?.code ? (
+              <div className="order-confirmation-code">
+                <span>Número de pedido</span>
+                <strong>{message.code}</strong>
+              </div>
+            ) : null}
+            <div className="order-confirmation-steps">
+              <div>
+                <span><Check size={17} /></span>
+                <p><strong>Pedido recibido</strong>Ya está registrado en Agrovet.</p>
+              </div>
+              <div>
+                <span><MessageCircle size={17} /></span>
+                <p><strong>Te contactamos</strong>Coordinamos retiro o entrega por WhatsApp.</p>
+              </div>
+            </div>
+            <div className="order-confirmation-actions">
+              <Link className="button button-primary" href="/tienda"><ShoppingBag size={17} /> Seguir comprando</Link>
+              <Link className="button button-light" href="/">Volver al inicio</Link>
+            </div>
+            <p className="order-confirmation-thanks">Gracias por elegir Agrovet para cuidar a tus mascotas.</p>
+          </div>
+        ) : items.length === 0 && message ? (
+          <div className="card empty">
+            <h2>{message?.title ?? (message?.error ? "No se completo el pago" : "Pedido recibido")}</h2>
+            <p>{message?.text}</p>
+            <Link className="button button-primary" href="/tienda">Volver a la tienda</Link>
+          </div>
+        ) : items.length === 0 ? (
           <div className="card empty"><h2>Tu carrito está vacío</h2><p>Encontrá alimento, accesorios o farmacia para tu mascota.</p><Link className="button button-primary" href="/tienda">Ir a la tienda</Link></div>
         ) : items.map((item) => (
           <article className="card cart-line" key={item.variantId}>
@@ -129,10 +245,10 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           </article>
         ))}
       </section>
-      {items.length > 0 && (
+      {items.length > 0 && !showFinalMessage && (
         <aside className="card checkout">
           <h2>Finalizar pedido</h2>
-          {message && <p className={`notice ${message.error ? "error" : ""}`}>{message.text}</p>}
+          {message && !message.outsideCheckout && <p className={`notice ${message.error ? "error" : ""}`}>{message.text}</p>}
           <form onSubmit={submit}>
             <input className="field" name="name" placeholder="Nombre y apellido" required />
             <input className="field" name="phone" placeholder="WhatsApp" required />

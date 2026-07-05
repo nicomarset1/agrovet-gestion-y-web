@@ -23,7 +23,7 @@ type CartContextValue = {
   add: (item: Omit<CartItem, "quantity">) => void;
   change: (variantId: number, quantity: number) => void;
   remove: (variantId: number) => void;
-  clear: () => void;
+  clear: (options?: { silent?: boolean }) => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -99,8 +99,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (found) push({ title: "Producto eliminado", message: `${found.brand} ${found.name}`, type: "danger" });
       setItems((current) => current.filter((item) => item.variantId !== variantId));
     },
-    clear: () => {
-      if (items.length) push({ title: "Carrito vaciado", type: "info", icon: RotateCcw });
+    clear: (options) => {
+      if (items.length && !options?.silent) push({ title: "Carrito vaciado", type: "info", icon: RotateCcw });
+      window.localStorage.removeItem(key);
       setItems([]);
     },
   }), [items, push]);

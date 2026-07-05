@@ -17,9 +17,10 @@ export async function Footer() {
           <div>
             <h3>Comprar</h3>
             <div className="footer-links">
-              <Link href="/tienda?category=alimentos">Alimentos</Link>
-              <Link href="/tienda?category=accesorios">Accesorios</Link>
-              <Link href="/tienda?category=farmacia">Farmacia</Link>
+              <Link href="/tienda?pet=perro">Perros</Link>
+              <Link href="/tienda?pet=gato">Gatos</Link>
+              <Link href="/tienda?category=perro-alimento-veterinario">Veterinario perro</Link>
+              <Link href="/tienda?category=gato-alimento-veterinario">Veterinario gato</Link>
               <Link href="/admin">Administración</Link>
             </div>
           </div>
@@ -44,7 +45,7 @@ export async function Footer() {
         </div>
         <div className="footer-bottom">
           © 2026 Agrovet Mar del Plata. Sitio creado por{" "}
-          <Link href="https://servicio-ventas.netlify.app/" rel="noreferrer" target="_blank">Nicolás Marset</Link>.
+          <Link href="https://nmsoftware.com.ar" rel="noreferrer" target="_blank">Nicolás Marset</Link>.
         </div>
       </div>
     </footer>
