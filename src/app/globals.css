@@ -3668,6 +3668,136 @@ a.catalog-mega-root { grid-template-columns: 25px minmax(0, 1fr); }
 .lowstock-badge-low { background: #fff3cd; color: #8a6d00; }
 .lowstock-badge-out { background: #ffeceb; color: #a4232b; }
 
+/* Inventario del dashboard: agrupación por producto y stock de la sucursal activa. */
+.admin-product-list > details.admin-stock-product {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.admin-product-list .admin-stock-product-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 150px;
+  align-items: center;
+  gap: 18px;
+  min-height: 84px;
+  padding: 16px 20px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-product-list .admin-stock-product-summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-product-list .admin-stock-product-summary::after {
+  content: none;
+}
+
+.admin-product-list .admin-stock-product-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-product-list .admin-stock-product-summary .admin-stock-pill {
+  justify-self: center;
+  min-width: 112px;
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.admin-stock-product-toggle {
+  justify-self: end;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-stock-product-toggle::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #f5ecf8;
+}
+
+.admin-stock-product[open] .admin-stock-product-toggle {
+  font-size: 0;
+}
+
+.admin-stock-product[open] .admin-stock-product-toggle::after {
+  content: "Ocultar presentaciones";
+  font-size: 13px;
+}
+
+.admin-stock-product[open] .admin-stock-product-toggle::before {
+  content: "−";
+  font-size: 13px;
+}
+
+.admin-product-list .admin-stock-variant-list {
+  display: grid;
+  gap: 0;
+  margin: 0 20px 16px;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fcfafc;
+}
+
+.admin-product-list .admin-stock-variant-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 72px;
+  padding: 12px 16px;
+}
+
+.admin-product-list .admin-stock-variant-row + .admin-stock-variant-row {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .admin-product-list .admin-stock-product-summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 15px 16px;
+  }
+
+  .admin-product-list .admin-stock-product-summary .admin-stock-pill {
+    justify-self: end;
+    min-width: 0;
+  }
+
+  .admin-stock-product-toggle {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .admin-product-list .admin-stock-variant-list {
+    margin: 0 12px 12px;
+  }
+
+  .admin-product-list .admin-stock-variant-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .admin-product-list .admin-stock-variant-row .admin-row-actions {
+    justify-content: space-between;
+  }
+}
+
 /* Ajuste final de la franja de beneficios del home.
    Va al final para ganar sobre reglas responsive generales de grids. */
 @media (max-width: 1100px) {

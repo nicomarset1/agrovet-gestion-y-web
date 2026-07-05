@@ -1808,14 +1808,12 @@ function WebOrderDistributionModal({
 
 function StockEditModal({
   branch,
-  branches,
   onClose,
   product,
   variantId,
   returnTo,
 }: {
   branch: Branch;
-  branches: Branch[];
   onClose: () => void;
   product: Product;
   variantId?: number;
@@ -1824,7 +1822,6 @@ function StockEditModal({
   const mainVariant = product.variants.find((variant) => variant.id === variantId) ?? product.variants[0];
   if (!mainVariant) return null;
   const currentStock = mainVariant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0;
-  const otherStocks = branches.filter((item) => item.id !== branch.id);
   return (
     <AdminModal
       onClose={onClose}
@@ -1849,22 +1846,11 @@ function StockEditModal({
             type="number"
             required
           />
-          <small className="description">Se suma al stock actual de {branch.name}. Usa teclado o flechas.</small>
+          <small className="description">Se suma únicamente al stock de {branch.name}. Usa teclado o flechas.</small>
         </label>
         <div className="admin-modal-actions admin-span-2 admin-modal-actions-sticky">
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
           <button className="button button-primary" type="submit">Guardar stock</button>
-        </div>
-        <div className="admin-mini-list admin-span-2">
-          {otherStocks.map((item) => {
-            const otherStock = mainVariant.stocks.find((stock) => stock.branchId === item.id)?.quantity ?? 0;
-            return (
-              <div className="admin-mini-list-row" key={item.id}>
-                <span>{item.name}</span>
-                <small>{otherStock} u.</small>
-              </div>
-            );
-          })}
         </div>
       </form>
     </AdminModal>
@@ -2068,13 +2054,14 @@ function DashboardDetailModal({
               {stockAlertProducts.map(({ product, alertCount }) => (
                 <details className="admin-table-row compact admin-stock-product" key={product.id}>
                   <summary className="admin-stock-product-summary">
-                    <span>
+                    <span className="admin-stock-product-copy">
                       <strong>{product.brand} {product.name}</strong>
-                      <small>{product.category} | {product.subcategory} | {product.variants.length} presentaciones</small>
+                      <small>{product.category} | {product.subcategory} | {product.variants.length} presentaciones | {selectedBranch.name}</small>
                     </span>
                     <span className={`admin-stock-pill ${alertView === "out" ? "danger" : ""}`}>
                       {alertCount} {alertView === "out" ? "sin stock" : "con stock bajo"}
                     </span>
+                    <span className="admin-stock-product-toggle">Ver presentaciones</span>
                   </summary>
                   <div className="admin-stock-variant-list">
                     {product.variants.map((variant) => {
@@ -3989,7 +3976,7 @@ export function AdminConsole({
       {modal?.type === "product-delete" ? <ProductDeleteModal onClose={() => setModal(null)} product={modal.product} /> : null}
       {trashItemToRestore ? <RestoreTrashItemModal item={trashItemToRestore} onClose={() => setTrashItemToRestore(null)} returnTo={sectionHref("papelera")} /> : null}
       {emptyTrashOpen ? <EmptyTrashModal count={trashItems.length} onClose={() => setEmptyTrashOpen(false)} returnTo={sectionHref("papelera")} /> : null}
-      {modal?.type === "stock-edit" ? <StockEditModal branch={selectedBranch} branches={branches} onClose={() => setModal(null)} product={modal.product} variantId={modal.variantId} returnTo={modal.returnTo} /> : null}
+      {modal?.type === "stock-edit" ? <StockEditModal branch={selectedBranch} onClose={() => setModal(null)} product={modal.product} variantId={modal.variantId} returnTo={modal.returnTo} /> : null}
       {modal?.type === "wholesale-client-create" ? <WholesaleClientModal onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}
       {modal?.type === "wholesale-client-edit" ? <WholesaleClientModal client={modal.client} onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}
       {webOrderStatusTarget ? (
