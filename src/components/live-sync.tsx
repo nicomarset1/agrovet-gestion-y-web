@@ -3,28 +3,39 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-const baseDelay = 5000;
-const maxDelay = 60000;
+const adminDelay = 2000;
+const publicBaseDelay = 8000;
+const publicMaxDelay = 30000;
 
 export function LiveSync({ initialVersion }: { initialVersion: number }) {
   const router = useRouter();
   const pathname = usePathname();
   const versionRef = useRef(initialVersion);
   const timerRef = useRef<number | null>(null);
-  const delayRef = useRef(baseDelay);
+  const delayRef = useRef(pathname.startsWith("/admin") ? adminDelay : publicBaseDelay);
+  const pollingRef = useRef(false);
+  const pollAgainRef = useRef(false);
 
   useEffect(() => {
     let active = true;
+    const isAdmin = pathname.startsWith("/admin");
+    const baseDelay = isAdmin ? adminDelay : publicBaseDelay;
+    const maxDelay = isAdmin ? adminDelay : publicMaxDelay;
+    delayRef.current = baseDelay;
 
     const schedule = () => {
       if (!active) return;
-      // Jitter ±20% para que los clientes no consulten todos en sincronía.
-      const jitter = 0.8 + Math.random() * 0.4;
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      const jitter = isAdmin ? 1 : 0.8 + Math.random() * 0.4;
       timerRef.current = window.setTimeout(poll, Math.round(delayRef.current * jitter));
     };
 
     async function poll() {
       if (!active) return;
+      if (pollingRef.current) {
+        pollAgainRef.current = true;
+        return;
+      }
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -33,44 +44,56 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
         schedule();
         return;
       }
+
+      pollingRef.current = true;
       try {
         const response = await fetch("/api/sync-version", { cache: "no-store" });
         if (response.ok) {
           const data = await response.json() as { version?: number };
           if (typeof data.version === "number" && data.version !== versionRef.current) {
             versionRef.current = data.version;
-            delayRef.current = baseDelay; // Hubo cambios: volver a consultar seguido.
+            delayRef.current = baseDelay;
             router.refresh();
           } else {
-            // Sin cambios: backoff exponencial hasta el máximo.
-            delayRef.current = Math.min(maxDelay, Math.round(delayRef.current * 1.6));
+            delayRef.current = isAdmin
+              ? adminDelay
+              : Math.min(maxDelay, Math.round(delayRef.current * 1.35));
           }
         }
       } catch {
-        // Silencioso: si cae la red, reintenta en el próximo ciclo.
+        delayRef.current = baseDelay;
+      } finally {
+        pollingRef.current = false;
+      }
+
+      if (pollAgainRef.current) {
+        pollAgainRef.current = false;
+        void poll();
+        return;
       }
       schedule();
     }
 
     const pollNow = () => {
-      // Interacción del usuario: resetear el backoff y consultar ya.
       delayRef.current = baseDelay;
       void poll();
     };
-
-    const handleFocus = () => pollNow();
     const handleVisibility = () => {
       if (document.visibilityState === "visible") pollNow();
     };
 
-    window.addEventListener("focus", handleFocus);
+    window.addEventListener("focus", pollNow);
+    window.addEventListener("online", pollNow);
     document.addEventListener("visibilitychange", handleVisibility);
-    schedule();
+    // Detecta cambios ocurridos entre el render del servidor y la hidratación.
+    void poll();
 
     return () => {
       active = false;
+      pollAgainRef.current = false;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("focus", pollNow);
+      window.removeEventListener("online", pollNow);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [pathname, router]);
