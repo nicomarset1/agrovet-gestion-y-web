@@ -812,7 +812,7 @@ function mapAdminOrders(): OrderRecord[] {
     WHERE o.deleted_at = ''
     ORDER BY o.created_at DESC, o.id DESC
   `).all() as Omit<OrderRecord, "itemCount" | "items">[];
-  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago)$/i.test(order.status)));
+  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(order.status)));
   if (!visibleOrders.length) return [];
   const items = db.prepare(`
     SELECT oi.order_id AS orderId, oi.variant_id AS variantId, p.name AS productName, p.brand,
@@ -1426,6 +1426,18 @@ function resolveDeliveryAllocationPlan(items: CartItemPayload[]) {
   };
 }
 
+// Código AGV- con los últimos 8 dígitos de la hora en ms. Si choca con uno existente (UNIQUE),
+// se reintenta con un desfase aleatorio, sin cambiar el formato.
+function newOrderCode(attempt: number) {
+  const offset = attempt === 0 ? 0 : 1 + Math.floor(Math.random() * 997);
+  return `AGV-${(Date.now() + offset).toString().slice(-8)}`;
+}
+
+function isOrderCodeConflict(error: unknown) {
+  const sqliteError = error as { code?: string; message?: string } | null;
+  return sqliteError?.code === "SQLITE_CONSTRAINT_UNIQUE" && /orders\.code/.test(sqliteError.message ?? "");
+}
+
 export function createOrder(input: {
   name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
 }) {
@@ -1466,11 +1478,21 @@ export function createOrder(input: {
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
     }
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
-    const code = `AGV-${Date.now().toString().slice(-8)}`;
-    const order = db.prepare(`
+    const insertOrder = db.prepare(`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, isMercadoPago ? 0 : totalCents);
+    `);
+    let code = "";
+    let order: ReturnType<typeof insertOrder.run> | undefined;
+    for (let attempt = 0; !order; attempt++) {
+      code = newOrderCode(attempt);
+      try {
+        // En SQLite el error de UNIQUE revierte solo esta sentencia, así que se puede reintentar dentro de la transacción.
+        order = insertOrder.run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, isMercadoPago ? 0 : totalCents);
+      } catch (error) {
+        if (attempt >= 2 || !isOrderCodeConflict(error)) throw error;
+      }
+    }
     const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (?, ?, ?, ?)");
     const deduct = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
     for (const line of lines) {
