@@ -1635,6 +1635,12 @@ function isCanceledStatus(status: string) {
   return /cancelad/i.test(status);
 }
 
+// Un pedido tiene stock tomado salvo que esté cancelado, esperando el cobro de Mercado Pago
+// o pagado pendiente de revisión: esos nunca descontaron stock, así que tampoco hay que devolverlo.
+function holdsStock(status: string) {
+  return !isCanceledStatus(status) && !isAwaitingPaymentStatus(status) && !/^Pago recibido - revisar/i.test(status.trim());
+}
+
 async function readCurrentAllocations(orderId: number, fallbackBranchId: number, currentItems: Array<{ variantId: number; quantity: number }>, db: Db) {
   const grouped = await getAllocationBuckets(orderId, db);
   return currentItems.map((item) => ({
@@ -1687,8 +1693,8 @@ export async function updateOrder(input: {
       for (const item of input.allocations) for (const allocation of item.allocations) totals.set(allocation.branchId, (totals.get(allocation.branchId) ?? 0) + allocation.quantity);
       resolvedBranchId = [...totals.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? resolvedBranchId;
     }
-    const currentCanceled = isCanceledStatus(order.status);
-    const nextCanceled = isCanceledStatus(input.status);
+    const currentHoldsStock = holdsStock(order.status);
+    const nextHoldsStock = holdsStock(input.status);
     const currentAllocations = await readCurrentAllocations(input.id, order.branchId, currentItems, tx);
     const nextAllocationMap = new Map<number, { branchId: number; quantity: number }[]>();
     for (const entry of currentAllocations) nextAllocationMap.set(entry.variantId, entry.allocations);
@@ -1712,9 +1718,9 @@ export async function updateOrder(input: {
         const currentAllocated = currentByBranch.get(branchId) ?? 0;
         const nextAllocated = nextByBranch.get(branchId) ?? 0;
         let delta = 0;
-        if (!currentCanceled && !nextCanceled) delta = currentAllocated - nextAllocated;
-        else if (currentCanceled && !nextCanceled) delta = -nextAllocated;
-        else if (!currentCanceled && nextCanceled) delta = currentAllocated;
+        if (currentHoldsStock && nextHoldsStock) delta = currentAllocated - nextAllocated;
+        else if (!currentHoldsStock && nextHoldsStock) delta = -nextAllocated;
+        else if (currentHoldsStock && !nextHoldsStock) delta = currentAllocated;
         if (!delta) continue;
         const key = `${item.variantId}:${branchId}`;
         inventoryDeltas.set(key, { variantId: item.variantId, branchId, delta: (inventoryDeltas.get(key)?.delta ?? 0) + delta });
@@ -1724,11 +1730,17 @@ export async function updateOrder(input: {
       if (delta.delta < 0) {
         const required = -delta.delta;
         const [row] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId}` as unknown as { quantity?: number }[];
-        if (Number(row?.quantity ?? 0) < required) throw new Error("No hay stock suficiente para ese cambio.");
+        if (Number(row?.quantity ?? 0) < required) throw new Error(`No hay stock suficiente para ese cambio: faltan ${required - Number(row?.quantity ?? 0)} unidades en la sucursal elegida.`);
       }
     }
     for (const delta of inventoryDeltas.values()) {
-      if (delta.delta) await tx`UPDATE inventory SET quantity = quantity + ${delta.delta}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId}`;
+      if (!delta.delta) continue;
+      if (delta.delta < 0) {
+        const result = await tx`UPDATE inventory SET quantity = quantity + ${delta.delta}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId} AND quantity >= ${-delta.delta}`;
+        if (!result.count) throw new Error("No hay stock suficiente para ese cambio: el stock cambió mientras se guardaba el pedido.");
+        continue;
+      }
+      await tx`UPDATE inventory SET quantity = quantity + ${delta.delta}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId}`;
     }
     const totalCents = nextItems.reduce((sum, item) => sum + (Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
     await tx`
@@ -1762,7 +1774,7 @@ export async function deleteOrder(input: number | { id: number; refundMethod?: s
     if (order.deletedAt) return;
     const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }>;
     const allocations = await getAllocationBuckets(id, tx);
-    if (!isCanceledStatus(order.status) && !/^Esperando pago$/i.test(order.status)) {
+    if (holdsStock(order.status)) {
       for (const item of items) {
         const buckets = allocations.get(item.variantId);
         if (!buckets?.length) {

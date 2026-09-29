@@ -1675,6 +1675,12 @@ function isCanceledStatus(status: string) {
   return /cancelad/i.test(status);
 }
 
+// Un pedido tiene stock tomado salvo que esté cancelado, esperando el cobro de Mercado Pago
+// o pagado pendiente de revisión: esos nunca descontaron stock, así que tampoco hay que devolverlo.
+function holdsStock(status: string) {
+  return !isCanceledStatus(status) && !isAwaitingPaymentStatus(status) && !/^Pago recibido - revisar/i.test(status.trim());
+}
+
 function readCurrentAllocations(orderId: number, fallbackBranchId: number, currentItems: Array<{ variantId: number; quantity: number }>) {
   const grouped = getAllocationBuckets(orderId);
   return currentItems.map((item) => ({
@@ -1738,8 +1744,8 @@ export function updateOrder(input: {
       if (ranked.length) resolvedBranchId = ranked[0][0];
     }
 
-    const currentCanceled = isCanceledStatus(order.status);
-    const nextCanceled = isCanceledStatus(input.status);
+    const currentHoldsStock = holdsStock(order.status);
+    const nextHoldsStock = holdsStock(input.status);
     const currentAllocations = readCurrentAllocations(input.id, order.branchId, currentItems);
     const nextAllocationMap = new Map<number, { branchId: number; quantity: number }[]>();
     for (const entry of currentAllocations) nextAllocationMap.set(entry.variantId, entry.allocations);
@@ -1765,11 +1771,11 @@ export function updateOrder(input: {
         const currentAllocated = currentByBranch.get(branchId) ?? 0;
         const nextAllocated = nextByBranch.get(branchId) ?? 0;
         let delta = 0;
-        if (!currentCanceled && !nextCanceled) {
+        if (currentHoldsStock && nextHoldsStock) {
           delta = currentAllocated - nextAllocated;
-        } else if (currentCanceled && !nextCanceled) {
+        } else if (!currentHoldsStock && nextHoldsStock) {
           delta = -nextAllocated;
-        } else if (!currentCanceled && nextCanceled) {
+        } else if (currentHoldsStock && !nextHoldsStock) {
           delta = currentAllocated;
         }
         if (!delta) continue;
@@ -1786,11 +1792,17 @@ export function updateOrder(input: {
       if (delta.delta < 0) {
         const required = -delta.delta;
         const row = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(delta.variantId, delta.branchId) as { quantity?: number } | undefined;
-        if ((row?.quantity ?? 0) < required) throw new Error("No hay stock suficiente para ese cambio.");
+        if ((row?.quantity ?? 0) < required) throw new Error(`No hay stock suficiente para ese cambio: faltan ${required - Number(row?.quantity ?? 0)} unidades en la sucursal elegida.`);
       }
     }
     for (const delta of inventoryDeltas.values()) {
       if (!delta.delta) continue;
+      if (delta.delta < 0) {
+        const result = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?")
+          .run(delta.delta, delta.variantId, delta.branchId, -delta.delta);
+        if (result.changes === 0) throw new Error("No hay stock suficiente para ese cambio: el stock cambió mientras se guardaba el pedido.");
+        continue;
+      }
       db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?")
         .run(delta.delta, delta.variantId, delta.branchId);
     }
@@ -1849,7 +1861,7 @@ export function deleteOrder(input: number | { id: number; refundMethod?: string;
     const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }>;
     const allocations = getAllocationBuckets(id);
     const restore = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
-    if (!isCanceledStatus(order.status) && !/^Esperando pago$/i.test(order.status)) {
+    if (holdsStock(order.status)) {
       for (const item of items) {
         const buckets = allocations.get(item.variantId);
         if (!buckets?.length) {
