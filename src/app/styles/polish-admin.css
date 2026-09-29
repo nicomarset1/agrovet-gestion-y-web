@@ -1,3 +1,206 @@
 /* Pulido 2026-09 · Panel /admin y login (nicol-a1).
    Estilos NUEVOS de esta área van acá. Se cargan después de globals.css,
-   así que pueden sobrescribir reglas existentes con la misma especificidad. */
+   así que pueden sobrescribir reglas existentes con la misma especificidad.
+   Todo va prefijado con .admin-shell para no depender del orden de los chunks
+   de CSS en el build, y cada cambio de grilla va dentro de su propio rango de
+   ancho para no pisar las reglas responsive de globals.css. */
+
+/* ===== Base: superficies, radios y números ===== */
+.admin-shell .card {
+  border-radius: var(--radius-md);
+}
+
+.admin-shell .admin-panel,
+.admin-shell .admin-stat,
+.admin-shell .admin-category-card,
+.admin-shell .admin-current-branch-banner {
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-shell .admin-current-branch-banner,
+.admin-shell .admin-subcategory-card,
+.admin-shell .admin-branch-stock-card,
+.admin-shell .admin-empty-state,
+.admin-shell .admin-order-items {
+  border-radius: var(--radius-sm);
+}
+
+.admin-shell .admin-stat strong,
+.admin-shell .admin-summary-line strong,
+.admin-shell .admin-stock-pill,
+.admin-shell .admin-donut-row,
+.admin-shell .admin-donut-actions strong,
+.admin-shell .admin-detail-summary strong,
+.admin-shell .admin-table-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .field {
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+
+.admin-shell .field:hover:not(:disabled):not(:focus) {
+  border-color: #cfb8ea;
+}
+
+.admin-shell .field:disabled {
+  background: #faf7fc;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.admin-shell .button:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Barras de scroll finas en las listas internas del panel. */
+.admin-shell .admin-sale-list,
+.admin-shell .admin-scroll-list,
+.admin-shell .admin-trash-list,
+.admin-shell .admin-pending-grid,
+.admin-shell .admin-web-branch-body,
+.admin-shell .admin-web-history-list,
+.admin-shell .admin-mini-list,
+.admin-shell .admin-modal {
+  scrollbar-width: thin;
+  scrollbar-color: #d9c6ee transparent;
+}
+
+/* ===== Entrada de secciones ===== */
+.admin-shell .admin-main > :not([id^="admin-section-"]),
+.admin-shell .admin-main > [id^="admin-section-"] > * {
+  animation: ui-fade-up var(--dur-slow) var(--ease-out) both;
+}
+
+.admin-shell .admin-main > :nth-child(2),
+.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(2) { animation-delay: 40ms; }
+.admin-shell .admin-main > :nth-child(3),
+.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(3) { animation-delay: 80ms; }
+.admin-shell .admin-main > :nth-child(n + 4),
+.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(n + 4) { animation-delay: 120ms; }
+
+/* Los contenedores de cada sección no tenían separación interna:
+   el título quedaba pegado a filtros y tarjetas. */
+.admin-shell .admin-main > [id^="admin-section-"] {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ===== Barra lateral ===== */
+.admin-shell .admin-brand-mark {
+  transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-brand-mark:hover {
+  transform: scale(1.05) rotate(-3deg);
+  box-shadow: var(--shadow-md);
+}
+
+.admin-shell .admin-nav a,
+.admin-shell .admin-nav button {
+  border-radius: var(--radius-sm);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    background var(--dur-base) ease,
+    border-color var(--dur-base) ease,
+    box-shadow var(--dur-base) ease,
+    color var(--dur-base) ease;
+}
+
+.admin-shell .admin-nav a > svg:first-child {
+  color: var(--muted);
+  transition: color var(--dur-base) ease;
+}
+
+.admin-shell .admin-nav a > svg:last-child {
+  color: #b9a7cc;
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-base) ease;
+}
+
+.admin-shell .admin-nav a:hover > svg:first-child,
+.admin-shell .admin-nav a.active > svg:first-child {
+  color: var(--forest);
+}
+
+.admin-shell .admin-nav a:hover > svg:last-child {
+  transform: translateX(3px);
+  color: var(--forest);
+}
+
+.admin-shell .admin-nav a.active {
+  color: var(--forest);
+  border-color: #e6d6fa;
+  box-shadow: inset 3px 0 0 var(--forest), 0 10px 18px rgba(53, 12, 86, .06);
+}
+
+.admin-shell .admin-nav a.active > svg:last-child {
+  color: var(--forest);
+}
+
+.admin-shell .admin-logout .button {
+  width: 100%;
+}
+
+/* ===== Sucursal activa ===== */
+.admin-shell .admin-current-branch-banner span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 9px;
+  border-radius: 50%;
+  background: #2f9e5b;
+  box-shadow: 0 0 0 0 rgba(47, 158, 91, .45);
+  animation: admin-live-dot 2.4s ease-out infinite;
+}
+
+.admin-shell .admin-current-branch {
+  position: relative;
+  transition: color var(--dur-base) ease;
+}
+
+.admin-shell .admin-current-branch::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.admin-shell .admin-current-branch:hover {
+  color: var(--forest-light);
+}
+
+.admin-shell .admin-current-branch:hover::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+@keyframes admin-live-dot {
+  0% { box-shadow: 0 0 0 0 rgba(47, 158, 91, .45); }
+  70%, 100% { box-shadow: 0 0 0 7px rgba(47, 158, 91, 0); }
+}
+
+/* ===== Encabezado de sección ===== */
+.admin-shell .admin-section-head > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.admin-shell .admin-section-head p:not(.eyebrow) {
+  max-width: 62ch;
+}
+
+@media (min-width: 821px) {
+  .admin-shell .admin-section-action {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+}
