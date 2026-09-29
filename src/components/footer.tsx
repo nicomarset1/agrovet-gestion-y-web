@@ -15,7 +15,7 @@ export async function Footer() {
             <p className="footer-brand-copy">Alimentos, accesorios y farmacia para perros y gatos. Atención personalizada con respaldo profesional.</p>
           </div>
           <div>
-            <h3>Comprar</h3>
+            <h2 className="footer-title">Comprar</h2>
             <div className="footer-links">
               <Link href="/tienda?pet=perro">Perros</Link>
               <Link href="/tienda?pet=gato">Gatos</Link>
@@ -25,7 +25,7 @@ export async function Footer() {
             </div>
           </div>
           <div>
-            <h3>Sucursales</h3>
+            <h2 className="footer-title">Sucursales</h2>
             {branches.map((branch) => (
               <p key={branch.id}>
                 <strong>{branch.name}</strong><br />
@@ -35,7 +35,7 @@ export async function Footer() {
             ))}
           </div>
           <div>
-            <h3>Seguinos</h3>
+            <h2 className="footer-title">Seguinos</h2>
             <div className="footer-links">
               <Link href="https://www.instagram.com/agrovet_tienda/" rel="noreferrer" target="_blank">Instagram</Link>
               <span className="footer-link-disabled">Facebook</span>

@@ -14,18 +14,19 @@ export async function Header() {
   const [menuItems, searchProducts] = await Promise.all([getCatalogMenu(), getSearchIndex()]);
   return (
     <>
-      <div className="topbar">
+      <aside className="topbar" aria-label="Beneficios">
         <div className="container topbar-inner">
           <div className="topbar-track">
             <span>10% de descuento en efectivo en sucursal</span>
             <span>Stock visible por sucursal</span>
             <span>Asesoramiento veterinario</span>
-            <span>10% de descuento en efectivo en sucursal</span>
-            <span>Stock visible por sucursal</span>
-            <span>Asesoramiento veterinario</span>
+            {/* Copia para el desplazamiento continuo en celular: los lectores de pantalla no la repiten. */}
+            <span aria-hidden="true">10% de descuento en efectivo en sucursal</span>
+            <span aria-hidden="true">Stock visible por sucursal</span>
+            <span aria-hidden="true">Asesoramiento veterinario</span>
           </div>
         </div>
-      </div>
+      </aside>
       <header className="header">
         <HeaderCompact />
         <div className="container header-main">
