@@ -1408,6 +1408,18 @@ async function insertOrderAllocation(db: Db, orderId: number, variantId: number,
   `;
 }
 
+// Código AGV- con los últimos 8 dígitos de la hora en ms. Si choca con uno existente (UNIQUE),
+// se reintenta con un desfase aleatorio, sin cambiar el formato.
+function newOrderCode(attempt: number) {
+  const offset = attempt === 0 ? 0 : 1 + Math.floor(Math.random() * 997);
+  return `AGV-${(Date.now() + offset).toString().slice(-8)}`;
+}
+
+function isOrderCodeConflict(error: unknown) {
+  const pgError = error as { code?: string; constraint_name?: string; detail?: string } | null;
+  return pgError?.code === "23505" && /\bcode\b|_code_/.test(`${pgError.constraint_name ?? ""} ${pgError.detail ?? ""}`);
+}
+
 export async function createOrder(input: {
   name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
 }) {
@@ -1440,12 +1452,21 @@ export async function createOrder(input: {
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: Number(row.priceCents), allocations });
     }
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
-    const code = `AGV-${Date.now().toString().slice(-8)}`;
-    const [order] = await tx`
-      INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-      VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isMercadoPago ? 0 : totalCents})
-      RETURNING id
-    `;
+    let code = "";
+    let order: { id: number } | undefined;
+    for (let attempt = 0; !order; attempt++) {
+      code = newOrderCode(attempt);
+      try {
+        // Savepoint: si el INSERT choca por código repetido, se reintenta sin abortar la transacción.
+        [order] = await tx.savepoint((sp) => sp`
+          INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
+          VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isMercadoPago ? 0 : totalCents})
+          RETURNING id
+        `) as unknown as { id: number }[];
+      } catch (error) {
+        if (attempt >= 2 || !isOrderCodeConflict(error)) throw error;
+      }
+    }
     for (const line of lines) {
       await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice})`;
       for (const allocation of line.allocations) {
