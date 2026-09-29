@@ -29,7 +29,7 @@ export default async function EnviosPage() {
 
         <section className="envios-main">
           <div className="envios-checker">
-            <DeliveryZoneChecker />
+            <DeliveryZoneChecker headingLevel={2} />
           </div>
 
           <div className="envios-card-grid">

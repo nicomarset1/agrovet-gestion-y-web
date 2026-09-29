@@ -276,6 +276,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           </div>
         ) : (
           <div className="cart-lines">
+            <h2 className="sr-only">Productos en el carrito</h2>
             {items.map((item, index) => (
               <article className="card cart-line" key={item.variantId} style={{ ["--i" as string]: Math.min(index, 8) }}>
                 <CartLineThumb src={item.imageSrc} />
@@ -319,13 +320,15 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             <input aria-label="Email" autoComplete="email" className="field" name="email" placeholder="Email" type="email" required />
             <input name="fulfillment" type="hidden" value={fulfillment} />
             <input name="branchId" type="hidden" value={effectiveBranchId} />
-            <p className="checkout-step">Entrega</p>
+            <fieldset className="checkout-fieldset">
+            <legend className="checkout-step">Entrega</legend>
             <div className="choice-grid two">
-              <button className={`choice-card ${fulfillment === "retiro" ? "active" : ""}`} onClick={() => setFulfillment("retiro")} type="button">
+              <button aria-pressed={fulfillment === "retiro"} className={`choice-card ${fulfillment === "retiro" ? "active" : ""}`} onClick={() => setFulfillment("retiro")} type="button">
                 <strong>Retiro</strong>
                 <span>Por sucursal</span>
               </button>
               <button
+                aria-pressed={fulfillment === "envio"}
                 className={`choice-card ${fulfillment === "envio" ? "active" : ""}`}
                 disabled={belowDeliveryMinimum}
                 onClick={() => setFulfillment("envio")}
@@ -335,14 +338,17 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                 <span>Mar del Plata</span>
               </button>
             </div>
-            <p className="checkout-step">Pago</p>
+            </fieldset>
+            <fieldset className="checkout-fieldset">
+            <legend className="checkout-step">Pago</legend>
             <p className="notice cash-discount-notice">{cashDiscountNote}</p>
             <div className="choice-grid two">
-              <button className={`choice-card ${effectivePaymentMethod === "mercado_pago" ? "active" : ""}`} onClick={() => setPaymentMethod("mercado_pago")} type="button">
+              <button aria-pressed={effectivePaymentMethod === "mercado_pago"} className={`choice-card ${effectivePaymentMethod === "mercado_pago" ? "active" : ""}`} onClick={() => setPaymentMethod("mercado_pago")} type="button">
                 <strong>Mercado Pago</strong>
                 <span>Crédito, débito, saldo MP y cuotas</span>
               </button>
               <button
+                aria-pressed={effectivePaymentMethod === "efectivo"}
                 className={`choice-card ${effectivePaymentMethod === "efectivo" ? "active" : ""}`}
                 disabled={fulfillment === "envio"}
                 onClick={() => setPaymentMethod("efectivo")}
@@ -352,6 +358,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                 <span>En sucursal con 10% de descuento</span>
               </button>
             </div>
+            </fieldset>
             {fulfillment === "envio" && <p className="notice">Los pedidos con envío se abonan online con Mercado Pago antes de salir a reparto.</p>}
             {belowDeliveryMinimum && <p className="notice error">El envío se habilita desde {formatPrice(deliveryMinimumCents)}. Con este total, el pedido es solo retiro por sucursal.</p>}
             {fulfillment === "envio" && (
@@ -380,15 +387,17 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                   <strong>Retiro en sucursal</strong>
                   <p>En tan solo 2 horas tu pedido estará listo para retirar en la sucursal seleccionada. Los pedidos permanecen en sucursal durante 3 días hábiles; si necesitás más tiempo, comunicate con nosotros.</p>
                 </div>
-                <p className="checkout-step">Stock a reservar en</p>
-                <div className="choice-grid">
-                  {branches.map((branch) => (
-                    <button className={`choice-card ${branchId === branch.id ? "active" : ""}`} key={branch.id} onClick={() => setBranchId(branch.id)} type="button">
-                      <strong>{branch.name.replace("Sucursal ", "")}</strong>
-                      <span>{branch.address}</span>
-                    </button>
-                  ))}
-                </div>
+                <fieldset className="checkout-fieldset">
+                  <legend className="checkout-step">Stock a reservar en</legend>
+                  <div className="choice-grid">
+                    {branches.map((branch) => (
+                      <button aria-pressed={branchId === branch.id} className={`choice-card ${branchId === branch.id ? "active" : ""}`} key={branch.id} onClick={() => setBranchId(branch.id)} type="button">
+                        <strong>{branch.name.replace("Sucursal ", "")}</strong>
+                        <span>{branch.address}</span>
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
               </>
             )}
             {fulfillment === "envio" && (
