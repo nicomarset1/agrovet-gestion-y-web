@@ -573,3 +573,72 @@
   transform-origin: top right;
   animation: ui-scale-in var(--dur-base) var(--ease-out) both;
 }
+
+/* ===== Categorías ===== */
+.admin-shell .admin-subcategory-card,
+.admin-shell .admin-branch-stock-card {
+  transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease, transform var(--dur-base) var(--ease-out);
+}
+
+.admin-shell .admin-subcategory-card:hover {
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+}
+
+.admin-shell .admin-subcategory-card small {
+  font-weight: 700;
+}
+
+.admin-shell .admin-chevron {
+  transition: transform var(--dur-base) var(--ease-out), background var(--dur-base) ease, border-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-chevron:hover {
+  transform: translateX(2px);
+  background: var(--sage);
+  border-color: #e0cdf6;
+}
+
+/* ===== Caja ===== */
+.admin-shell .admin-pos-line {
+  align-items: center;
+  animation: ui-fade-up var(--dur-base) var(--ease-out) both;
+}
+
+.admin-shell .admin-summary-line + .admin-summary-line strong {
+  color: var(--forest);
+  font-size: 22px;
+}
+
+/* ===== Pedidos web y listas ===== */
+.admin-shell .admin-pending-card {
+  transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-pending-card:hover {
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-shell .admin-web-branch-head {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-shell .admin-web-branch-head span {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.admin-shell .admin-history-row:hover {
+  border-color: #d9c4f2;
+  background: #fcf9ff;
+}
+
+.admin-shell .admin-period-toggle .button:not(.active):hover {
+  box-shadow: none;
+}
