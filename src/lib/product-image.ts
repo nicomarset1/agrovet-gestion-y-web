@@ -39,3 +39,12 @@ export function productImageSrc(product: { id: number; imageUrl?: string | null 
   if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
   return "";
 }
+
+// Para el panel: la base devuelve solo una muestra corta de la foto ("largo:inicio:final") en lugar del
+// data URL completo, y con eso se arma la misma ruta. La versión cambia si cambia la foto.
+export function productImageSrcFromSample(id: number, sample: string) {
+  if (!sample) return "";
+  const first = fnv1a(sample);
+  const second = fnv1a(sample, first);
+  return `/api/product-image/${id}?v=${first.toString(36)}${second.toString(36)}`;
+}

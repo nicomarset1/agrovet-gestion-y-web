@@ -414,7 +414,7 @@ export async function createProductAction(formData: FormData) {
     featured: parsed.data.featured === "on",
     requiresAdvice: parsed.data.requiresAdvice === "on",
     active: parsed.data.active === "on",
-    imageUrl: parsed.data.imageUrl ?? "",
+    imageUrl: productImageInput(parsed.data.imageUrl) ?? "",
     variants: variants.map((variant) => ({
       id: variant.id,
       label: variant.label,
@@ -558,6 +558,14 @@ export async function emptyTrashAction(formData: FormData) {
   if (parsed.data.returnTo) redirect(appendFlash(safeInternalPath(parsed.data.returnTo), "trash-emptied"));
 }
 
+// La foto viaja solo si el panel la cambió (data URL nueva o "" para quitarla). Sin imageUrl, o con la
+// ruta /api/product-image/... que el panel muestra como vista previa, se conserva la foto guardada.
+function productImageInput(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (value.startsWith("/api/product-image/")) return undefined;
+  return value;
+}
+
 const productUpdateSchema = productBaseSchema.extend({
   id: z.coerce.number().int().positive(),
 });
@@ -583,7 +591,7 @@ export async function updateProductAction(formData: FormData) {
     requiresAdvice: parsed.data.requiresAdvice === "on",
     active: parsed.data.active === "on",
     color: parsed.data.color,
-    imageUrl: parsed.data.imageUrl ?? "",
+    imageUrl: productImageInput(parsed.data.imageUrl),
     variants: variants.map((variant) => ({
       id: variant.id,
       label: variant.label,

@@ -1041,7 +1041,10 @@ function ProductModal({
   const [brandValue, setBrandValue] = useState(product?.brand ?? "");
   const [saveBrandAsFrequent, setSaveBrandAsFrequent] = useState(false);
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
+  // En edición, imageUrl arranca con la ruta /api/product-image/... solo para la vista previa: la foto
+  // se manda al guardar únicamente si se cambió o se quitó (si no, el servidor conserva la guardada).
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [imageChanged, setImageChanged] = useState(false);
   const [photoStatus, setPhotoStatus] = useState<
     | { state: "idle" }
     | { state: "processing" }
@@ -1295,6 +1298,7 @@ function ProductModal({
               const request = ++photoRequest.current;
               if (!file) {
                 setImageUrl(product?.imageUrl ?? "");
+                setImageChanged(false);
                 setPhotoStatus({ state: "idle" });
                 return;
               }
@@ -1303,6 +1307,7 @@ function ProductModal({
                 const result = await shrinkProductPhoto(file);
                 if (request !== photoRequest.current) return;
                 setImageUrl(result.dataUrl);
+                setImageChanged(true);
                 setPhotoStatus({ state: "done", originalBytes: result.originalBytes, finalBytes: result.finalBytes });
               } catch (error) {
                 if (request !== photoRequest.current) return;
@@ -1323,7 +1328,7 @@ function ProductModal({
                 : `Foto lista: ${formatFileSize(photoStatus.finalBytes)}.`}
             </small>
           ) : null}
-          <input name="imageUrl" type="hidden" value={imageUrl} />
+          {mode === "create" || imageChanged ? <input name="imageUrl" type="hidden" value={imageUrl} /> : null}
           <div className="admin-image-preview">
             {imageUrl ? (
               <div className="admin-image-preview-frame">
@@ -1340,7 +1345,7 @@ function ProductModal({
               <div className="admin-image-preview-empty">Subí una imagen para verla aquí</div>
             )}
             {imageUrl ? (
-              <button className="button button-light" onClick={() => { setImageUrl(""); setPhotoStatus({ state: "idle" }); }} type="button">Quitar imagen</button>
+              <button className="button button-light" onClick={() => { setImageUrl(""); setImageChanged(true); setPhotoStatus({ state: "idle" }); }} type="button">Quitar imagen</button>
             ) : null}
           </div>
         </label>
@@ -3583,10 +3588,17 @@ export function AdminConsole({
                   const stockBelgrano = mainVariant?.stocks.find((stock) => stock.branchId === 2)?.quantity ?? 0;
                   return (
                     <div className="admin-table-row" key={product.id}>
-                      <div>
-                        <strong>{product.brand} {product.name}</strong>
-                        {!product.active ? <span className="admin-status-badge muted">Desactivado en tienda</span> : null}
-                        <small>{product.description}</small>
+                      <div className="admin-product-cell">
+                        {product.imageUrl ? (
+                          <Image alt="" className="admin-product-thumb" height={48} loading="lazy" src={product.imageUrl} unoptimized width={48} />
+                        ) : (
+                          <span aria-hidden="true" className="admin-product-thumb is-empty" style={{ background: product.color }} />
+                        )}
+                        <div>
+                          <strong>{product.brand} {product.name}</strong>
+                          {!product.active ? <span className="admin-status-badge muted">Desactivado en tienda</span> : null}
+                          <small>{product.description}</small>
+                        </div>
                       </div>
                       <span>{product.category}</span>
                       <span>{product.subcategory}</span>
