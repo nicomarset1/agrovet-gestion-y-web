@@ -88,7 +88,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
           <h1 className="display">{product.name}</h1>
           <div className="store-chips detail-tags">
             <Link className="chip active" href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link>
-            <Link className="chip" href={`/tienda?subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
+            <Link className="chip" href={`/tienda?category=${product.categorySlug}&subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
             {product.lifeStage && <span className="chip">{product.lifeStage}</span>}
             {product.size && product.size !== "todos" && <span className="chip">{product.size}</span>}
             {product.need && <span className="chip">{product.need}</span>}
