@@ -611,13 +611,14 @@ export async function getProducts(filters: CatalogFilters = {}) {
   if (presentations.length) {
     clauses.push(`EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND (${presentations.map((presentation) => `vx.label ILIKE ${pushParam(params, `%${presentation}%`)}`).join(" OR ")}))`);
   }
-  if (filters.minPrice) {
-    const cents = Math.round(Number(filters.minPrice) * 100);
-    if (Number.isFinite(cents)) clauses.push(`EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND vx.price_cents >= ${pushParam(params, cents)})`);
-  }
-  if (filters.maxPrice) {
-    const cents = Math.round(Number(filters.maxPrice) * 100);
-    if (Number.isFinite(cents)) clauses.push(`EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND vx.price_cents <= ${pushParam(params, cents)})`);
+  // Mínimo y máximo se evalúan sobre la misma presentación: el producto entra si alguna presentación cae en el rango.
+  const priceConditions: string[] = [];
+  const minCents = filters.minPrice ? Math.round(Number(filters.minPrice) * 100) : Number.NaN;
+  if (Number.isFinite(minCents)) priceConditions.push(`vx.price_cents >= ${pushParam(params, minCents)}`);
+  const maxCents = filters.maxPrice ? Math.round(Number(filters.maxPrice) * 100) : Number.NaN;
+  if (Number.isFinite(maxCents)) priceConditions.push(`vx.price_cents <= ${pushParam(params, maxCents)}`);
+  if (priceConditions.length) {
+    clauses.push(`EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND ${priceConditions.join(" AND ")})`);
   }
   if (filters.stock === "disponible") {
     clauses.push("EXISTS (SELECT 1 FROM variants vx JOIN inventory ix ON ix.variant_id = vx.id WHERE vx.product_id = p.id AND ix.quantity > 0)");
