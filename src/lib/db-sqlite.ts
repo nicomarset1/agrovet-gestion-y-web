@@ -1486,22 +1486,53 @@ export function createOrder(input: {
   })();
 }
 
-export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
-  return db.transaction(() => {
+export type PaymentReconciliation = "paid" | "review" | "missing";
+
+const paymentReviewStatus = "Pago recibido - revisar";
+
+// Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
+// "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
+function isAwaitingPaymentStatus(status: string) {
+  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(status.trim());
+}
+
+export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): PaymentReconciliation {
+  // IMMEDIATE toma el lock de escritura al empezar: si hay otro proceso acreditando el mismo pago, espera y después cae en el camino idempotente.
+  return db.transaction((): PaymentReconciliation => {
     const order = db.prepare(`
-      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents
+      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents, deleted_at AS deletedAt
       FROM orders
-      WHERE code = ? AND deleted_at = ''
-    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number } | undefined;
-    if (!order) return false;
-    if (!Number.isSafeInteger(amountCents) || amountCents !== order.totalCents) return false;
+      WHERE code = ?
+      ORDER BY (deleted_at = '') DESC, id DESC
+      LIMIT 1
+    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: string } | undefined;
+    if (!order) return "missing";
 
     const method = paymentMethod.trim() || "Mercado Pago";
-    const awaitingPayment = /^(Esperando pago|Pendiente de pago)$/i.test(order.status);
-    if (order.paidCents >= order.totalCents || !awaitingPayment) {
-      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ? WHERE id = ?").run(method, order.id);
+    const deleted = Boolean(order.deletedAt);
+    const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
+    const amountMatches = validAmount && amountCents === order.totalCents;
+    const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
+
+    // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
+    if (!deleted && !awaitingPayment && order.paidCents >= order.totalCents) {
+      return /revisar/i.test(order.status) ? "review" : "paid";
+    }
+
+    // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
+    // queda visible en el panel para revisar, con lo realmente cobrado y sin mover stock.
+    if (!awaitingPayment || !amountMatches) {
+      db.prepare("UPDATE orders SET paid_cents = ?, payment_method = ?, status = ?, deleted_at = '' WHERE id = ?")
+        .run(validAmount ? amountCents : 0, method, paymentReviewStatus, order.id);
       bumpSyncVersion();
-      return true;
+      console.error("Pago de Mercado Pago aprobado que requiere revisión", {
+        code,
+        amountCents,
+        totalCents: order.totalCents,
+        previousStatus: order.status,
+        deleted,
+      });
+      return "review";
     }
 
     const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(order.id) as Array<{ variantId: number; quantity: number }>;
@@ -1517,7 +1548,7 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       if ((stock?.quantity ?? 0) < allocation.quantity) {
         db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
         bumpSyncVersion();
-        return true;
+        return "review";
       }
     }
 
@@ -1538,7 +1569,7 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       WHERE id = ?
     `).run(method, order.id);
     bumpSyncVersion();
-    return true;
+    return "paid";
   }).immediate();
 }
 

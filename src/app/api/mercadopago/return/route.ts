@@ -35,11 +35,11 @@ export async function GET(request: Request) {
     }
 
     if (payment.status === "approved") {
-      const reconciled = await markOrderPaidByCode(order, mercadoPagoMethodLabel(payment), amountCents);
+      const reconciliation = await markOrderPaidByCode(order, mercadoPagoMethodLabel(payment), amountCents);
+      // Si el pago está aprobado pero no concilia, el cliente ya pagó: se le avisa que lo estamos revisando.
       redirect(cartUrl(request, {
-        payment: reconciled ? "success" : "failure",
+        payment: reconciliation === "paid" ? "success" : "review",
         order,
-        reason: reconciled ? "" : "amount_mismatch",
       }));
     }
 

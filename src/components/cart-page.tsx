@@ -15,13 +15,14 @@ type CheckoutMessage = {
   error?: boolean;
   code?: string;
   final?: boolean;
-  finalStatus?: "success" | "pending";
+  finalStatus?: "success" | "pending" | "review";
   outsideCheckout?: boolean;
 };
 
 function getMercadoPagoReturn(params: URLSearchParams) {
   const explicitPayment = params.get("payment");
   const status = params.get("status") ?? params.get("collection_status");
+  if (explicitPayment === "review") return "review";
   if (explicitPayment === "success" || status === "approved") return "success";
   if (explicitPayment === "pending" || status === "pending" || status === "in_process") return "pending";
   if (explicitPayment === "failure" || status === "rejected" || status === "cancelled") return "failure";
@@ -91,6 +92,17 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           text: order
             ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
             : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
+        });
+      } else if (payment === "review") {
+        clear({ silent: true });
+        setMessage({
+          code: order,
+          final: true,
+          finalStatus: "review",
+          title: "Recibimos tu pago",
+          text: order
+            ? `Tu pago quedó acreditado y estamos revisando el pedido ${order} antes de confirmarlo. Te contactamos por WhatsApp a la brevedad.`
+            : "Tu pago quedó acreditado y estamos revisando el pedido antes de confirmarlo. Te contactamos por WhatsApp a la brevedad.",
         });
       } else if (payment === "failure" && params.get("reason") === "abandoned") {
         setMessage({
@@ -204,13 +216,13 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           </div>
         ) : null}
         {showFinalMessage ? (
-          <div className={`order-confirmation ${message?.finalStatus === "pending" ? "is-pending" : "is-success"}`}>
+          <div className={`order-confirmation ${message?.finalStatus === "success" ? "is-success" : "is-pending"}`}>
             <div className="order-confirmation-glow" aria-hidden="true" />
             <div className="order-confirmation-icon" aria-hidden="true">
-              {message?.finalStatus === "pending" ? <Clock3 /> : <CheckCircle2 />}
+              {message?.finalStatus === "success" ? <CheckCircle2 /> : <Clock3 />}
             </div>
             <p className="order-confirmation-kicker">
-              {message?.finalStatus === "pending" ? "Pago en proceso" : "Pago aprobado"}
+              {message?.finalStatus === "pending" ? "Pago en proceso" : message?.finalStatus === "review" ? "Pago recibido" : "Pago aprobado"}
             </p>
             <h1 className="display">{message?.title}</h1>
             <p className="order-confirmation-lead">{message?.text}</p>

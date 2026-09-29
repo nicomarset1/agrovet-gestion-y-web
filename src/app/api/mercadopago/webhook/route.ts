@@ -24,7 +24,14 @@ export async function POST(request: Request) {
     if (payment.status === "approved" && payment.external_reference) {
       const amountCents = paymentAmountCents(payment);
       if (amountCents === null) throw new Error("Mercado Pago no informó un importe válido.");
-      await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents);
+      const reconciliation = await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents);
+      if (reconciliation !== "paid") {
+        console.error("Mercado Pago webhook: pago aprobado que requiere revisión", {
+          paymentId,
+          order: payment.external_reference,
+          reconciliation,
+        });
+      }
     }
     return Response.json({ ok: true });
   } catch (error) {

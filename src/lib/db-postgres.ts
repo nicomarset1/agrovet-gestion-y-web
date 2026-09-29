@@ -1459,24 +1459,57 @@ export async function createOrder(input: {
   });
 }
 
-export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
+export type PaymentReconciliation = "paid" | "review" | "missing";
+
+const paymentReviewStatus = "Pago recibido - revisar";
+
+// Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
+// "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
+function isAwaitingPaymentStatus(status: string) {
+  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(status.trim());
+}
+
+export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): Promise<PaymentReconciliation> {
   await ensureSchema();
   return sql.begin(async (tx) => {
     const [order] = await tx`
-      SELECT id, branch_id AS "branchId", fulfillment, status, total_cents AS "totalCents", paid_cents AS "paidCents"
+      SELECT id, branch_id AS "branchId", fulfillment, status, total_cents AS "totalCents", paid_cents AS "paidCents", deleted_at AS "deletedAt"
       FROM orders
-      WHERE code = ${code} AND deleted_at IS NULL
+      WHERE code = ${code}
+      ORDER BY (deleted_at IS NULL) DESC, id DESC
+      LIMIT 1
       FOR UPDATE
-    ` as unknown as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number }[];
-    if (!order) return false;
-    if (!Number.isSafeInteger(amountCents) || amountCents !== Number(order.totalCents)) return false;
+    ` as unknown as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: unknown }[];
+    if (!order) return "missing";
 
     const method = paymentMethod.trim() || "Mercado Pago";
-    const awaitingPayment = /^(Esperando pago|Pendiente de pago)$/i.test(order.status);
-    if (Number(order.paidCents) >= Number(order.totalCents) || !awaitingPayment) {
-      await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method} WHERE id = ${order.id}`;
+    const deleted = Boolean(order.deletedAt);
+    const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
+    const amountMatches = validAmount && amountCents === Number(order.totalCents);
+    const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
+
+    // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
+    if (!deleted && !awaitingPayment && Number(order.paidCents) >= Number(order.totalCents)) {
+      return /revisar/i.test(order.status) ? "review" : "paid";
+    }
+
+    // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
+    // queda visible en el panel para revisar, con lo realmente cobrado y sin mover stock.
+    if (!awaitingPayment || !amountMatches) {
+      await tx`
+        UPDATE orders
+        SET paid_cents = ${validAmount ? amountCents : 0}, payment_method = ${method}, status = ${paymentReviewStatus}, deleted_at = NULL
+        WHERE id = ${order.id}
+      `;
       await bumpSyncVersion(tx);
-      return true;
+      console.error("Pago de Mercado Pago aprobado que requiere revisión", {
+        code,
+        amountCents,
+        totalCents: Number(order.totalCents),
+        previousStatus: order.status,
+        deleted,
+      });
+      return "review";
     }
 
     const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${order.id}` as unknown as Array<{ variantId: number; quantity: number }>;
@@ -1492,7 +1525,7 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       if (Number(stock?.quantity ?? 0) < allocation.quantity) {
         await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method}, status = 'Pago recibido - revisar stock' WHERE id = ${order.id}`;
         await bumpSyncVersion(tx);
-        return true;
+        return "review";
       }
     }
 
@@ -1516,7 +1549,7 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       WHERE id = ${order.id}
     `;
     await bumpSyncVersion(tx);
-    return true;
+    return "paid";
   });
 }
 
