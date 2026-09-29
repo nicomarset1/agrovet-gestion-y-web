@@ -204,3 +204,178 @@
     flex-wrap: nowrap;
   }
 }
+
+/* ===== Tarjetas de métricas ===== */
+@media (min-width: 1121px) {
+  .admin-shell .admin-stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1120px) {
+  .admin-shell .admin-stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+}
+
+.admin-shell .admin-stat {
+  min-height: 0;
+  gap: 8px;
+}
+
+.admin-shell .admin-stat-grid > :nth-child(2) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 50ms both; }
+.admin-shell .admin-stat-grid > :nth-child(3) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 100ms both; }
+.admin-shell .admin-stat-grid > :nth-child(4) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 150ms both; }
+
+.admin-shell .admin-stat-button {
+  position: relative;
+  color: inherit;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) ease,
+    border-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-stat-button::after {
+  content: "›";
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  color: #b9a7cc;
+  font-size: 22px;
+  line-height: 1;
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-base) ease;
+}
+
+.admin-shell .admin-stat-button small {
+  padding-right: 22px;
+}
+
+.admin-shell .admin-stat-button:hover {
+  transform: translateY(-3px);
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-md);
+}
+
+.admin-shell .admin-stat-button:hover::after {
+  transform: translateX(3px);
+  color: var(--forest);
+}
+
+/* ===== Filtros y buscadores ===== */
+.admin-shell .admin-toolbar .admin-point-field {
+  gap: 8px;
+}
+
+.admin-shell .admin-toolbar .admin-point-field > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.admin-shell .admin-search svg {
+  pointer-events: none;
+  transition: color var(--dur-fast) ease;
+}
+
+.admin-shell .admin-search:focus-within svg {
+  color: var(--forest);
+}
+
+@media (min-width: 1001px) {
+  .admin-shell .admin-toolbar .field {
+    min-height: 48px;
+  }
+
+  .admin-shell .admin-search .field {
+    min-height: 48px;
+  }
+
+  /* Productos: buscador a todo el ancho y los tres filtros alineados abajo.
+     Antes eran 4 campos en una grilla de 3 y "Estado tienda" quedaba solo. */
+  .admin-shell #admin-section-productos .admin-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-shell #admin-section-productos .admin-toolbar .admin-search {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell #admin-section-papelera .admin-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
+  }
+}
+
+.admin-shell #admin-section-papelera .admin-toolbar {
+  margin-bottom: 16px;
+}
+
+/* Grupos de filtros (fecha + resumen, reporte de ventas). */
+.admin-shell .admin-toolbar-stack {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.admin-shell .admin-toolbar-stack .admin-detail-summary.compact {
+  align-content: center;
+  min-height: 48px;
+  padding: 12px 16px;
+  gap: 2px;
+}
+
+.admin-shell .admin-toolbar-stack .admin-detail-summary.compact strong {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.admin-shell .admin-toolbar-stack .admin-detail-summary.compact span {
+  font-size: 13px;
+}
+
+/* Paneles con más de un bloque (ej. Clientes): aire antes del segundo título. */
+.admin-shell .admin-panel > :not(:first-child) + h2 {
+  margin-top: 26px;
+}
+
+/* ===== Estados vacíos ===== */
+.admin-shell .admin-sale-list > p.description,
+.admin-shell .admin-web-branch-body > p.description,
+.admin-shell .admin-web-history-list > p.description,
+.admin-shell .admin-trash-list > p.description,
+.admin-shell .admin-product-list > p.description,
+.admin-shell .admin-history-list > p.description,
+.admin-shell .admin-donut-list > p.description {
+  margin: 0;
+  padding: 22px 18px;
+  border: 1px dashed #dccbef;
+  border-radius: var(--radius-sm);
+  background: #fcf9ff;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  animation: ui-fade-in var(--dur-slow) ease both;
+}
+
+.admin-shell .admin-web-branch-body > p.description {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+}
+
+.admin-shell .admin-empty-state {
+  border-style: dashed;
+  border-color: #dccbef;
+  padding: 28px 20px;
+}
+
+.admin-shell .admin-empty-state svg {
+  color: var(--forest);
+  opacity: .35;
+}
+
+.admin-shell .admin-empty-state span {
+  font-size: 14px;
+}
