@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function ServiciosPage() {
   return (
     <SpecialPageShell
-      description={await getSpecialPageDescription("servicios", "Pronto vamos a cargar los servicios disponibles y como solicitarlos.")}
+      description={await getSpecialPageDescription("servicios", "Pronto vamos a cargar los servicios disponibles y cómo solicitarlos.")}
       title="Servicios"
     />
   );

@@ -9,7 +9,7 @@ export function CartButton() {
   return (
     <Link className="nav-cart" href="/carrito" aria-label={`Carrito con ${totalItems} productos`}>
       <ShoppingBag size={21} />
-      {totalItems > 0 && <span className="cart-count">{totalItems}</span>}
+      {totalItems > 0 && <span className="cart-count" key={totalItems}>{totalItems}</span>}
       Carrito
     </Link>
   );
