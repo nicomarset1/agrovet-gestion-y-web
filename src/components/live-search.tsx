@@ -6,7 +6,7 @@ import { ArrowRight, Cat, Dog, MessageCircle, Search, X } from "lucide-react";
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatPrice } from "@/lib/format";
 import type { SearchIndexItem } from "@/lib/types";
-import { normalizeText, prepareIndex, searchProducts, topBrands } from "./search-engine";
+import { normalizeText, prepareIndex, searchProducts, topBrands } from "@/lib/search";
 
 const SPECIES_PARAM: Record<string, "perro" | "gato"> = {
   perro: "perro", perros: "perro", perra: "perro", perras: "perro",

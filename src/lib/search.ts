@@ -1,15 +1,28 @@
-import type { SearchIndexItem } from "@/lib/types";
+import type { Product } from "./types";
 
 /*
- * Motor del buscador del header. Trabaja sobre el índice que ya llega del servidor
- * (getSearchIndex) y resuelve del lado del cliente lo que un "includes" no resolvía:
- * varias palabras en cualquier orden, tildes y mayúsculas, plurales, nombres en inglés
- * ("cachorro" encuentra "Puppy"), marcas escritas juntas ("proplan") y errores de tipeo.
+ * Motor de búsqueda de la tienda. Módulo puro (sin base de datos ni React): lo usan el
+ * buscador del header, sobre el índice de getSearchIndex, y /tienda, sobre getProducts().
+ * Resuelve lo que un LIKE o un "includes" no resolvían: varias palabras en cualquier orden,
+ * tildes y mayúsculas, plurales, nombres en inglés ("cachorro" encuentra "Puppy"), marcas
+ * escritas juntas ("proplan"), presentaciones ("15 kg") y errores de tipeo.
  */
 
-export type SearchHit = { product: SearchIndexItem; score: number };
-export type SearchResult = {
-  hits: SearchHit[];
+/** Lo mínimo que necesita el motor de cada producto. */
+export type SearchableItem = {
+  id: number;
+  name: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  species: Product["species"];
+  totalStock: number;
+  presentations?: string[];
+};
+
+export type SearchHit<T extends SearchableItem = SearchableItem> = { product: T; score: number };
+export type SearchResult<T extends SearchableItem = SearchableItem> = {
+  hits: SearchHit<T>[];
   total: number;
   /** Término corregido cuando hubo un error de tipeo ("eukanuva" → "eukanuba"). */
   correctedQuery: string | null;
@@ -17,16 +30,32 @@ export type SearchResult = {
   species: "perro" | "gato" | null;
 };
 
-type IndexedProduct = {
-  product: SearchIndexItem;
+type IndexedProduct<T extends SearchableItem> = {
+  product: T;
   nameTokens: string[];
   brandTokens: string[];
   otherTokens: string[];
+  presentationTokens: string[];
   compact: string;
   fullName: string;
 };
 
-export type PreparedIndex = { items: IndexedProduct[]; vocabulary: string[] };
+export type PreparedIndex<T extends SearchableItem = SearchableItem> = { items: IndexedProduct<T>[]; vocabulary: string[] };
+
+/** Adapta un Product de getProducts() al formato del motor. */
+export function productToSearchable(product: Product): SearchableItem & { product: Product } {
+  return {
+    id: product.id,
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    subcategory: product.subcategory,
+    species: product.species,
+    totalStock: product.variants.reduce((sum, variant) => sum + variant.totalStock, 0),
+    presentations: product.variants.map((variant) => variant.label),
+    product,
+  };
+}
 
 export function normalizeText(value: string) {
   return value
@@ -80,13 +109,13 @@ const SPECIES_WORDS: Record<string, "perro" | "gato"> = {
   gato: "gato", gata: "gato", felino: "gato", cat: "gato",
 };
 
-function speciesTokens(species: SearchIndexItem["species"]) {
+function speciesTokens(species: SearchableItem["species"]) {
   if (species === "perro") return ["perro", "canino"];
   if (species === "gato") return ["gato", "felino"];
   return ["perro", "gato", "canino", "felino"];
 }
 
-export function prepareIndex(products: SearchIndexItem[]): PreparedIndex {
+export function prepareIndex<T extends SearchableItem>(products: T[]): PreparedIndex<T> {
   const vocabulary = new Set<string>();
   const items = products.map((product) => {
     const nameTokens = tokenize(product.name).map(stem);
@@ -95,12 +124,14 @@ export function prepareIndex(products: SearchIndexItem[]): PreparedIndex {
       ...tokenize(`${product.category} ${product.subcategory}`),
       ...speciesTokens(product.species),
     ].map(stem);
+    const presentationTokens = (product.presentations ?? []).flatMap(tokenize);
     for (const token of [...nameTokens, ...brandTokens, ...otherTokens]) if (token.length >= 3) vocabulary.add(token);
     return {
       product,
       nameTokens,
       brandTokens,
       otherTokens,
+      presentationTokens,
       compact: normalizeText(`${product.brand} ${product.name}`).replace(/ /g, ""),
       fullName: normalizeText(`${product.brand} ${product.name}`),
     };
@@ -128,7 +159,7 @@ function distance(a: string, b: string, max: number) {
 const matchesToken = (tokens: string[], term: string) => tokens.some((token) => token.startsWith(term));
 
 /** Puntaje de un término contra un producto; 0 si no aparece. */
-function scoreTerm(item: IndexedProduct, alternatives: string[]) {
+function scoreTerm<T extends SearchableItem>(item: IndexedProduct<T>, alternatives: string[]) {
   let best = 0;
   for (const term of alternatives) {
     // Palabra completa pesa más que un comienzo: "canin" es la marca, no "Canine".
@@ -138,6 +169,8 @@ function scoreTerm(item: IndexedProduct, alternatives: string[]) {
     else if (item.nameTokens.includes(term)) best = Math.max(best, 9);
     else if (matchesToken(item.nameTokens, term)) best = Math.max(best, 6);
     if (matchesToken(item.otherTokens, term)) best = Math.max(best, 4);
+    // Presentaciones: "15kg" encuentra "15 kg"; "7.5kg" encuentra "7,5 kg".
+    if (/\d/.test(term) && matchesToken(item.presentationTokens, term)) best = Math.max(best, 5);
     // Marcas o nombres escritos juntos: "proplan", "royalcanin", "catchow".
     if (best === 0 && term.length >= 4 && item.compact.includes(term)) best = 6;
   }
@@ -150,7 +183,7 @@ function alternativesFor(term: string) {
 }
 
 /** Corrige un término que no aparece en ningún producto por el más parecido del vocabulario. */
-function correctTerm(term: string, index: PreparedIndex) {
+function correctTerm<T extends SearchableItem>(term: string, index: PreparedIndex<T>) {
   if (term.length < 4 || /\d/.test(term)) return null;
   const max = term.length >= 7 ? 2 : 1;
   let best: { word: string; dist: number } | null = null;
@@ -162,8 +195,8 @@ function correctTerm(term: string, index: PreparedIndex) {
   return best?.word ?? null;
 }
 
-export function searchProducts(index: PreparedIndex, rawQuery: string, limit = 8): SearchResult {
-  const empty: SearchResult = { hits: [], total: 0, correctedQuery: null, species: null };
+export function searchProducts<T extends SearchableItem>(index: PreparedIndex<T>, rawQuery: string, limit = 8): SearchResult<T> {
+  const empty: SearchResult<T> = { hits: [], total: 0, correctedQuery: null, species: null };
   const originalTerms = tokenize(rawQuery).map(stem);
   if (!originalTerms.length) return empty;
 
@@ -181,7 +214,7 @@ export function searchProducts(index: PreparedIndex, rawQuery: string, limit = 8
   });
 
   const phrase = normalizeText(rawQuery);
-  const hits: SearchHit[] = [];
+  const hits: SearchHit<T>[] = [];
   for (const item of index.items) {
     let score = 0;
     let matchedAll = true;
@@ -210,8 +243,19 @@ export function searchProducts(index: PreparedIndex, rawQuery: string, limit = 8
 }
 
 /** Marcas con más productos, para las sugerencias rápidas. */
-export function topBrands(products: SearchIndexItem[], count = 4) {
+export function topBrands(products: Pick<SearchableItem, "brand">[], count = 4) {
   const totals = new Map<string, number>();
   for (const product of products) totals.set(product.brand, (totals.get(product.brand) ?? 0) + 1);
   return [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, count).map(([brand]) => brand);
+}
+
+/**
+ * Atajo para listados completos (por ejemplo /tienda): devuelve todos los ids que coinciden,
+ * ordenados por relevancia. Con una búsqueda vacía devuelve null (no hay que filtrar).
+ */
+export function searchIds<T extends SearchableItem>(items: T[] | PreparedIndex<T>, rawQuery: string) {
+  if (!normalizeText(rawQuery)) return null;
+  const index = Array.isArray(items) ? prepareIndex(items) : items;
+  const result = searchProducts(index, rawQuery, Number.POSITIVE_INFINITY);
+  return { ids: result.hits.map((hit) => hit.product.id), correctedQuery: result.correctedQuery, species: result.species };
 }
