@@ -112,7 +112,7 @@
 }
 .stock-label.in { color: #2f7a3e; }
 .stock-label.low { color: #b25e00; }
-.stock-label.out { color: #8a7d97; }
+.stock-label.out { color: #6c5a7d; }
 .stock-label:not(.in):not(.low):not(.out)::before { display: none; }
 
 .card-cart-control { margin-top: 0; gap: 8px; align-items: end; }
@@ -510,7 +510,7 @@
 .availability-row strong::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2f9e4f; box-shadow: 0 0 0 3px rgba(47, 158, 79, .16); }
 .availability-row.out strong::before { background: #b9abc8; box-shadow: 0 0 0 3px rgba(185, 171, 200, .2); }
 .availability-row > span { font-weight: 700; color: #2f7a3e; }
-.availability-row.out > span { font-weight: 600; color: #8a7d97; }
+.availability-row.out > span { font-weight: 600; color: #6c5a7d; }
 
 .detail-cart-button { width: 100%; min-height: 52px; font-size: 15px; box-shadow: 0 10px 22px rgba(91, 15, 115, .18); }
 .detail-cart-button:disabled { background: #ece4f5; color: #8a7a9c; opacity: 1; box-shadow: none; }

@@ -1,6 +1,6 @@
 // Fotos de producto: el panel las guarda como data URL en products.image_url. Para que no viajen dentro
-// del HTML, las páginas usan productImageSrc(), que apunta a /api/product-image/[id] con una versión
-// que cambia cuando cambia la foto (la ruta la cachea un año como inmutable).
+// del HTML ni se lean enteras de la base, los productos llegan con la ruta /api/product-image/[id] y una
+// versión que cambia cuando cambia la foto (la ruta la cachea un año como inmutable).
 
 // Hash FNV-1a de 32 bits: puro y sin dependencias, sirve igual en servidor y navegador.
 function fnv1a(text: string, hash = 0x811c9dc5) {
@@ -12,36 +12,28 @@ function fnv1a(text: string, hash = 0x811c9dc5) {
   return value >>> 0;
 }
 
-// Versión barata y estable del contenido: primeros y últimos 2 KB, 16 muestras del medio y el largo.
-function versionSample(imageUrl: string) {
-  if (imageUrl.length <= 12_288) return imageUrl;
-  const parts = [imageUrl.slice(0, 2048), imageUrl.slice(-2048)];
-  const step = Math.floor((imageUrl.length - 4096) / 17);
-  for (let index = 1; index <= 16; index++) parts.push(imageUrl.slice(2048 + step * index, 2048 + step * index + 256));
-  return parts.join("");
-}
-
-export function productImageVersion(imageUrl: string) {
-  const sample = versionSample(imageUrl);
-  const first = fnv1a(sample);
-  const second = fnv1a(String(imageUrl.length), first);
-  return `${first.toString(36)}${second.toString(36)}`;
-}
-
 export function isDataImageUrl(imageUrl: string) {
   return /^data:image\//i.test(imageUrl.trim());
+}
+
+// Muestra corta de la foto: "largo:primeros 96:últimos 96". Las consultas de productos la arman igual
+// en SQL (length/substr en SQLite, length/left/right en Postgres), así tienda y panel dan la misma URL.
+export function productImageSample(imageUrl: string) {
+  return `${imageUrl.length}:${imageUrl.slice(0, 96)}:${imageUrl.slice(-96)}`;
 }
 
 export function productImageSrc(product: { id: number; imageUrl?: string | null }) {
   const imageUrl = product.imageUrl?.trim() ?? "";
   if (!imageUrl) return "";
-  if (isDataImageUrl(imageUrl)) return `/api/product-image/${product.id}?v=${productImageVersion(imageUrl)}`;
+  // Los productos que vienen de la base ya traen la ruta armada.
+  if (imageUrl.startsWith("/api/product-image/")) return imageUrl;
+  if (isDataImageUrl(imageUrl)) return productImageSrcFromSample(product.id, productImageSample(imageUrl));
   if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
   return "";
 }
 
-// Para el panel: la base devuelve solo una muestra corta de la foto ("largo:inicio:final") en lugar del
-// data URL completo, y con eso se arma la misma ruta. La versión cambia si cambia la foto.
+// La base devuelve solo la muestra corta de la foto en lugar del data URL completo, y con eso se arma la
+// ruta. La versión cambia si cambia la foto.
 export function productImageSrcFromSample(id: number, sample: string) {
   if (!sample) return "";
   const first = fnv1a(sample);

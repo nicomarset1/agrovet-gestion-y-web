@@ -93,8 +93,9 @@ export default async function RootLayout({
         <ToastProvider>
           <CartProvider>
             <LiveSync initialVersion={syncVersion} />
+            <a className="skip-link" href="#contenido">Saltar al contenido</a>
             <Header />
-            <main>{children}</main>
+            <main id="contenido" tabIndex={-1}>{children}</main>
             <Footer />
             <WhatsappFloat />
           </CartProvider>
