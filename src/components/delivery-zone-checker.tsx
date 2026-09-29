@@ -21,7 +21,9 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function DeliveryZoneChecker({ variant = "default" }: { variant?: "default" | "compact" }) {
+// headingLevel: 2 cuando el verificador es una sección principal de la página (/envios); 3 dentro de otra sección (home).
+export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: { variant?: "default" | "compact"; headingLevel?: 2 | 3 }) {
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<Zone | null>(null);
   const [pending, setPending] = useState(false);
@@ -82,7 +84,7 @@ export function DeliveryZoneChecker({ variant = "default" }: { variant?: "defaul
       </div> : null}
       <div className="zone-content">
         <p className="eyebrow">Zona de envío</p>
-        <h3>Consultá si llegamos a tu dirección</h3>
+        <Heading className="zone-title">Consultá si llegamos a tu dirección</Heading>
         <p>Envíos gratis de lunes a sábados según zona, dentro de 3 km de Alberti 3213 y con compra mínima de $ 50.000.</p>
         <form className="zone-form" onSubmit={checkZone}>
           <input aria-label="Tu dirección en Mar del Plata" autoComplete="street-address" className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tu dirección en Mar del Plata" />
