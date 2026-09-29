@@ -76,10 +76,11 @@ export async function generateMetadata({ searchParams }: { searchParams: Search 
   const description = current
     ? `Compra ${current.name.toLowerCase()} para perros y gatos en Agrovet Mar del Plata. Stock por sucursal y compra online.`
     : "Compra alimentos, accesorios y farmacia para perros y gatos. Stock visible por sucursal en Mar del Plata.";
+  // Cada categoría tiene su propia URL canónica; búsquedas, orden y demás filtros apuntan a su categoría o a /tienda.
   return {
     title: current?.name ?? "Tienda online",
     description,
-    alternates: { canonical: "/tienda" },
+    alternates: { canonical: current ? `/tienda?category=${encodeURIComponent(current.slug)}` : "/tienda" },
   };
 }
 
@@ -140,6 +141,17 @@ export default async function StorePage({ searchParams }: { searchParams: Search
       .slice(0, 3)
     : [];
 
+  const names = (items: { name: string }[]) => items.map(({ name }) => ({ name }));
+  const drawerFacets = {
+    categories: facets.categories.map(({ slug, name }) => ({ slug, name })),
+    brands: names(facets.brands),
+    lifeStages: names(facets.lifeStages),
+    sizes: names(facets.sizes),
+    needs: names(facets.needs),
+    presentations: names(facets.presentations),
+    priceRange: facets.priceRange,
+  };
+
   const limit = Math.max(pageSize, Math.floor(Number(filters.ver) || pageSize));
   const visible = products.slice(0, limit);
   const remaining = products.length - visible.length;
@@ -171,7 +183,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
           </div>
           <div className="store-chips">
             {/* La key rearma el panel cuando cambian los filtros (por ejemplo desde un chip), así nunca queda desactualizado. */}
-            <StoreFilterDrawer facets={facets} filters={filters} key={storeHref(filters, () => undefined)} />
+            <StoreFilterDrawer facets={drawerFacets} filters={filters} key={storeHref(filters, () => undefined)} />
             <Link className={`chip ${noFilters ? "active" : ""}`} href="/tienda">Todas</Link>
             <Link className={`chip ${filters.pet === "perro" ? "active" : ""}`} href="/tienda?pet=perro">Perro</Link>
             <Link className={`chip ${filters.pet === "gato" ? "active" : ""}`} href="/tienda?pet=gato">Gato</Link>

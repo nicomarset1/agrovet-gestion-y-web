@@ -7,15 +7,14 @@ import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, Poi
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterLabel } from "./catalog-labels";
 
-type FacetItem = { name: string; count: number };
-type CategoryFacet = FacetItem & { slug: string; subcategories: { slug: string; name: string; count: number }[] };
-type Facets = {
-  categories: CategoryFacet[];
+// Solo lo que el panel muestra: así viaja menos información al navegador.
+type FacetItem = { name: string };
+export type DrawerFacets = {
+  categories: (FacetItem & { slug: string })[];
   brands: FacetItem[];
   lifeStages: FacetItem[];
   sizes: FacetItem[];
   needs: FacetItem[];
-  species: FacetItem[];
   presentations: FacetItem[];
   priceRange?: { min: number; max: number };
 };
@@ -109,7 +108,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters: Filters }) {
+export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; filters: Filters }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const [selectedCategories, setSelectedCategories] = useState<string[]>(() => selected(filters.category));

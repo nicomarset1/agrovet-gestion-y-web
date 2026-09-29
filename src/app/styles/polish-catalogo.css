@@ -184,8 +184,8 @@
   .price-cash { margin-top: 4px; font-size: 12.5px; gap: 2px 5px; }
   .price-cash-badge { height: 17px; padding: 0 5px; font-size: 9.5px; }
   .price-cash-note { flex-basis: 100%; font-size: 10.5px; }
-  .product-flags { flex-wrap: nowrap; overflow: hidden; mask-image: linear-gradient(90deg, #000 80%, transparent); }
-  .product-flags span { flex: 0 0 auto; min-height: 20px; padding: 0 7px; font-size: 10.5px; }
+  .product-flags { gap: 4px; }
+  .product-flags span { min-height: 20px; max-width: 100%; padding: 0 7px; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .product-card-foot { gap: 8px; }
   .product-card-status { padding-top: 8px; }
   /* El botón ya dice "Sin stock"; no repetirlo abajo. */
