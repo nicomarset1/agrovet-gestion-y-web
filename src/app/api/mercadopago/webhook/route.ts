@@ -1,6 +1,9 @@
-import { markOrderPaidByCode } from "@/lib/db";
+import { markOrderPaidByCode, markOrderPaymentFailedByCode } from "@/lib/db";
 import { getMercadoPagoPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
 import { hasMercadoPagoWebhookSecret, validateMercadoPagoWebhookSignature } from "@/lib/mercadopago-webhook";
+
+// Estados de un pago que ya no se va a acreditar. Si el cliente reintenta y paga, el pedido se reactiva.
+const failedPaymentStatuses = new Set(["cancelled", "rejected", "expired"]);
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
@@ -24,7 +27,16 @@ export async function POST(request: Request) {
     if (payment.status === "approved" && payment.external_reference) {
       const amountCents = paymentAmountCents(payment);
       if (amountCents === null) throw new Error("Mercado Pago no informó un importe válido.");
-      await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents);
+      const reconciliation = await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents);
+      if (reconciliation !== "paid") {
+        console.error("Mercado Pago webhook: pago aprobado que requiere revisión", {
+          paymentId,
+          order: payment.external_reference,
+          reconciliation,
+        });
+      }
+    } else if (payment.external_reference && failedPaymentStatuses.has(payment.status ?? "")) {
+      await markOrderPaymentFailedByCode(payment.external_reference);
     }
     return Response.json({ ok: true });
   } catch (error) {

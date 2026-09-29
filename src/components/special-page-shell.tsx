@@ -4,7 +4,7 @@ export function SpecialPageShell({ title, description }: { title: string; descri
   const paragraphs = description.split(/\n+/).map((line) => line.trim()).filter(Boolean);
 
   return (
-    <main className="special-page section">
+    <div className="special-page section">
       <div className="container">
         <section className="special-hero">
           <div>
@@ -20,6 +20,6 @@ export function SpecialPageShell({ title, description }: { title: string; descri
           </section>
         ) : null}
       </div>
-    </main>
+    </div>
   );
 }

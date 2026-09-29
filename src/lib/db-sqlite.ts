@@ -12,6 +12,7 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
+import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -1464,6 +1465,7 @@ export function createOrder(input: {
       totalCents += priceCents * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
     }
+    if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     const code = `AGV-${Date.now().toString().slice(-8)}`;
     const order = db.prepare(`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
@@ -1486,22 +1488,54 @@ export function createOrder(input: {
   })();
 }
 
-export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
-  return db.transaction(() => {
+export type PaymentReconciliation = "paid" | "review" | "missing";
+
+const paymentReviewStatus = "Pago recibido - revisar";
+const stockRaceError = "No hay stock suficiente para acreditar el pago.";
+
+// Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
+// "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
+function isAwaitingPaymentStatus(status: string) {
+  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(status.trim());
+}
+
+export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): PaymentReconciliation {
+  // IMMEDIATE toma el lock de escritura al empezar: si hay otro proceso acreditando el mismo pago, espera y después cae en el camino idempotente.
+  return db.transaction((): PaymentReconciliation => {
     const order = db.prepare(`
-      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents
+      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents, deleted_at AS deletedAt
       FROM orders
-      WHERE code = ? AND deleted_at = ''
-    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number } | undefined;
-    if (!order) return false;
-    if (!Number.isSafeInteger(amountCents) || amountCents !== order.totalCents) return false;
+      WHERE code = ?
+      ORDER BY (deleted_at = '') DESC, id DESC
+      LIMIT 1
+    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: string } | undefined;
+    if (!order) return "missing";
 
     const method = paymentMethod.trim() || "Mercado Pago";
-    const awaitingPayment = /^(Esperando pago|Pendiente de pago)$/i.test(order.status);
-    if (order.paidCents >= order.totalCents || !awaitingPayment) {
-      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ? WHERE id = ?").run(method, order.id);
+    const deleted = Boolean(order.deletedAt);
+    const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
+    const amountMatches = validAmount && amountCents === order.totalCents;
+    const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
+
+    // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
+    if (!deleted && !awaitingPayment && order.paidCents >= order.totalCents) {
+      return /revisar/i.test(order.status) ? "review" : "paid";
+    }
+
+    // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
+    // queda visible en el panel para revisar, con lo realmente cobrado y sin mover stock.
+    if (!awaitingPayment || !amountMatches) {
+      db.prepare("UPDATE orders SET paid_cents = ?, payment_method = ?, status = ?, deleted_at = '' WHERE id = ?")
+        .run(validAmount ? amountCents : 0, method, paymentReviewStatus, order.id);
       bumpSyncVersion();
-      return true;
+      console.error("Pago de Mercado Pago aprobado que requiere revisión", {
+        code,
+        amountCents,
+        totalCents: order.totalCents,
+        previousStatus: order.status,
+        deleted,
+      });
+      return "review";
     }
 
     const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(order.id) as Array<{ variantId: number; quantity: number }>;
@@ -1517,14 +1551,29 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       if ((stock?.quantity ?? 0) < allocation.quantity) {
         db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
         bumpSyncVersion();
-        return true;
+        return "review";
       }
     }
 
+    // Si otro pedido se llevó la última unidad en el medio, se deshace solo este descuento (transacción anidada
+    // = savepoint) y el pedido queda pagado para revisar stock, en vez de fallar el webhook.
     const reserve = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
-    for (const allocation of required) {
-      const result = reserve.run(allocation.quantity, allocation.variantId, allocation.branchId, allocation.quantity);
-      if (result.changes === 0) throw new Error("No hay stock suficiente para acreditar el pago.");
+    let deducted = true;
+    try {
+      db.transaction(() => {
+        for (const allocation of required) {
+          const result = reserve.run(allocation.quantity, allocation.variantId, allocation.branchId, allocation.quantity);
+          if (result.changes === 0) throw new Error(stockRaceError);
+        }
+      })();
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== stockRaceError) throw error;
+      deducted = false;
+    }
+    if (!deducted) {
+      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
+      bumpSyncVersion();
+      return "review";
     }
 
     db.prepare(`
@@ -1538,8 +1587,31 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       WHERE id = ?
     `).run(method, order.id);
     bumpSyncVersion();
-    return true;
-  })();
+    return "paid";
+  }).immediate();
+}
+
+// Pago de Mercado Pago rechazado, cancelado o vencido: el pedido que seguía esperando el cobro se marca cancelado.
+// No mueve stock (nunca lo tomó) y, si después llega un pago aprobado, markOrderPaidByCode lo reactiva.
+export function markOrderPaymentFailedByCode(code: string) {
+  const result = db.prepare(`
+    UPDATE orders
+    SET status = 'Cancelado (pago no completado)'
+    WHERE code = ? AND deleted_at = '' AND paid_cents = 0 AND status IN ('Esperando pago', 'Pendiente de pago')
+  `).run(code);
+  if (result.changes) bumpSyncVersion();
+  return result.changes > 0;
+}
+
+// Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia).
+// Solo aplica si sigue esperando el pago y sin cobro: esos pedidos nunca tomaron stock.
+export function discardUnpaidOrder(code: string) {
+  const result = db.prepare(`
+    UPDATE orders
+    SET deleted_at = CURRENT_TIMESTAMP
+    WHERE code = ? AND deleted_at = '' AND paid_cents = 0 AND status = 'Esperando pago'
+  `).run(code);
+  if (result.changes) bumpSyncVersion();
 }
 
 export function createWholesaleOrder(input: {
@@ -1644,6 +1716,12 @@ function isCanceledStatus(status: string) {
   return /cancelad/i.test(status);
 }
 
+// Un pedido tiene stock tomado salvo que esté cancelado, esperando el cobro de Mercado Pago
+// o pagado pendiente de revisión: esos nunca descontaron stock, así que tampoco hay que devolverlo.
+function holdsStock(status: string) {
+  return !isCanceledStatus(status) && !isAwaitingPaymentStatus(status) && !/^Pago recibido - revisar/i.test(status.trim());
+}
+
 function readCurrentAllocations(orderId: number, fallbackBranchId: number, currentItems: Array<{ variantId: number; quantity: number }>) {
   const grouped = getAllocationBuckets(orderId);
   return currentItems.map((item) => ({
@@ -1707,8 +1785,8 @@ export function updateOrder(input: {
       if (ranked.length) resolvedBranchId = ranked[0][0];
     }
 
-    const currentCanceled = isCanceledStatus(order.status);
-    const nextCanceled = isCanceledStatus(input.status);
+    const currentHoldsStock = holdsStock(order.status);
+    const nextHoldsStock = holdsStock(input.status);
     const currentAllocations = readCurrentAllocations(input.id, order.branchId, currentItems);
     const nextAllocationMap = new Map<number, { branchId: number; quantity: number }[]>();
     for (const entry of currentAllocations) nextAllocationMap.set(entry.variantId, entry.allocations);
@@ -1734,11 +1812,11 @@ export function updateOrder(input: {
         const currentAllocated = currentByBranch.get(branchId) ?? 0;
         const nextAllocated = nextByBranch.get(branchId) ?? 0;
         let delta = 0;
-        if (!currentCanceled && !nextCanceled) {
+        if (currentHoldsStock && nextHoldsStock) {
           delta = currentAllocated - nextAllocated;
-        } else if (currentCanceled && !nextCanceled) {
+        } else if (!currentHoldsStock && nextHoldsStock) {
           delta = -nextAllocated;
-        } else if (!currentCanceled && nextCanceled) {
+        } else if (currentHoldsStock && !nextHoldsStock) {
           delta = currentAllocated;
         }
         if (!delta) continue;
@@ -1755,11 +1833,17 @@ export function updateOrder(input: {
       if (delta.delta < 0) {
         const required = -delta.delta;
         const row = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(delta.variantId, delta.branchId) as { quantity?: number } | undefined;
-        if ((row?.quantity ?? 0) < required) throw new Error("No hay stock suficiente para ese cambio.");
+        if ((row?.quantity ?? 0) < required) throw new Error(`No hay stock suficiente para ese cambio: faltan ${required - Number(row?.quantity ?? 0)} unidades en la sucursal elegida.`);
       }
     }
     for (const delta of inventoryDeltas.values()) {
       if (!delta.delta) continue;
+      if (delta.delta < 0) {
+        const result = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?")
+          .run(delta.delta, delta.variantId, delta.branchId, -delta.delta);
+        if (result.changes === 0) throw new Error("No hay stock suficiente para ese cambio: el stock cambió mientras se guardaba el pedido.");
+        continue;
+      }
       db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?")
         .run(delta.delta, delta.variantId, delta.branchId);
     }
@@ -1818,7 +1902,7 @@ export function deleteOrder(input: number | { id: number; refundMethod?: string;
     const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }>;
     const allocations = getAllocationBuckets(id);
     const restore = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
-    if (!isCanceledStatus(order.status) && !/^Esperando pago$/i.test(order.status)) {
+    if (holdsStock(order.status)) {
       for (const item of items) {
         const buckets = allocations.get(item.variantId);
         if (!buckets?.length) {
