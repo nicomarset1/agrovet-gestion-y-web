@@ -45,18 +45,25 @@ export function VariantSelector({ product }: { product: Product }) {
           >
             <strong>{item.label}</strong>
             <span>{formatPrice(item.priceCents)}</span>
+            {item.totalStock === 0 && <small className="detail-variant-out">Sin stock</small>}
           </button>
         ))}
       </div>
-      <div className="variant-price">{formatPrice(variant.priceCents)}</div>
-      <div className="variant-cash-price">{formatPrice(cashPrice)}</div>
-      <div className="variant-cash-note">Con efectivo en sucursal: 10% de descuento</div>
+      <div className="variant-pricing" key={variant.id}>
+        <div className="variant-price">{formatPrice(variant.priceCents)}</div>
+        <div className="variant-cash">
+          <span className="price-cash-badge">-10%</span>
+          <span className="variant-cash-price">{formatPrice(cashPrice)}</span>
+          <span className="variant-cash-note">Con efectivo en sucursal: 10% de descuento</span>
+        </div>
+      </div>
       <div className="availability">
+        <span className="availability-title">Stock por sucursal</span>
         {variant.stocks.map((stock) => (
-          <span key={stock.branchId}><strong>{stock.branchName}:</strong> {stock.quantity > 0 ? `${stock.quantity} disponibles` : "sin stock"}</span>
+          <span className={`availability-row ${stock.quantity > 0 ? "in" : "out"}`} key={stock.branchId}><strong>{stock.branchName}</strong> <span>{stock.quantity > 0 ? `${stock.quantity} disponibles` : "sin stock"}</span></span>
         ))}
       </div>
-      <button className={`button button-primary detail-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem} style={{ width: "100%" }}>
+      <button className={`button button-primary detail-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem}>
         {added ? <Check size={18} /> : <ShoppingCart size={18} />} {added ? "Agregado" : variant.totalStock ? "Agregar al carrito" : "Sin stock"}
       </button>
     </div>
