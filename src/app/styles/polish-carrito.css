@@ -252,3 +252,8 @@
 @media (hover: none) {
   .promo-card:hover, .contact-channel:hover, .contact-branch-card:hover, .faq-card:hover, .envios-card:hover { transform: none; box-shadow: none; }
 }
+
+/* ===== Miniatura con foto en el carrito ===== */
+.cart-line-thumb { position: relative; overflow: hidden; }
+.cart-line-thumb.has-image { background: white; border: 1px solid var(--line); }
+.cart-line-thumb-image { object-fit: contain; padding: 4px; animation: ui-fade-in var(--dur-base) var(--ease-out) both; }
