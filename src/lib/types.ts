@@ -145,6 +145,8 @@ export type SearchIndexItem = {
   species: Product["species"];
   priceCents: number;
   totalStock: number;
+  /** Labels de las variantes ("15 kg", "500 g"): el buscador los usa para buscar por presentación. */
+  presentations: string[];
 };
 
 export type OrderItemRecord = {
