@@ -664,6 +664,12 @@ export function getProduct(slug: string) {
   return row ? hydrateProduct(row) : undefined;
 }
 
+// Solo lectura: la foto de un producto para servirla desde /api/product-image/[id].
+export function getProductImage(id: number): { imageUrl: string } | null {
+  const row = db.prepare("SELECT image_url AS imageUrl FROM products WHERE id = ? AND purged_at = ''").get(id) as { imageUrl?: string } | undefined;
+  return row?.imageUrl ? { imageUrl: row.imageUrl } : null;
+}
+
 export function getFeaturedProducts() {
   // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
   const rows = db.prepare(`${baseSelect} WHERE p.featured = 1 AND p.active = 1 AND p.archived_at = '' AND p.purged_at = '' ORDER BY p.name LIMIT 4`).all() as ProductRow[];
