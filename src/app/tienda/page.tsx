@@ -253,7 +253,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
           <div className="results-header">
             <span><strong>{products.length}</strong> {products.length === 1 ? "producto encontrado" : "productos encontrados"}</span>
             <div className="results-tools">
-              <Link aria-pressed={onlyStock} className={`stock-toggle ${onlyStock ? "active" : ""}`} href={stockToggleHref} scroll={false}>
+              <Link aria-current={onlyStock ? "true" : undefined} className={`stock-toggle ${onlyStock ? "active" : ""}`} href={stockToggleHref} scroll={false}>
                 <span aria-hidden="true" className="stock-toggle-dot" />
                 Solo con stock
               </Link>
@@ -265,6 +265,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
           </div>
           {products.length ? (
             <>
+              <h2 className="sr-only">Productos</h2>
               <div className="product-grid">{visible.map((product) => <ProductCard key={product.id} product={product} />)}</div>
               <div className="store-more">
                 <p>Mostrando {visible.length} de {products.length} productos</p>
