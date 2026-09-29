@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Lock, MessageCircle, Minus, PawPrint, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { applyCashDiscount, formatPrice } from "@/lib/format";
+import { applyCashDiscount, deliveryMinimumCents, formatPrice } from "@/lib/format";
 import type { Branch } from "@/lib/types";
 import { useCart } from "./cart-provider";
-
-const deliveryMinimumCents = 5000000;
 
 type CheckoutMessage = {
   text: string;

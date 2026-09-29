@@ -39,6 +39,10 @@ export async function POST(request: Request) {
   if (result.data.fulfillment === "envio" && result.data.paymentMethod !== "mercado_pago") {
     return Response.json({ error: "Los envíos solo se pueden pagar con Mercado Pago." }, { status: 400 });
   }
+  // La distancia la calcula /api/delivery-zone en el navegador; acá se exige que esté y que sea de la zona.
+  if (result.data.fulfillment === "envio" && (!result.data.address?.trim() || typeof result.data.distanceKm !== "number" || result.data.distanceKm > 3)) {
+    return Response.json({ error: "Para envío gratis necesitamos una dirección verificada dentro de 3 km de Alberti 3213." }, { status: 400 });
+  }
   try {
     const order = await createOrder({
       ...result.data,

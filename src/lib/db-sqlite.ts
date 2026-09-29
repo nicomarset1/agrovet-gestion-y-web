@@ -12,6 +12,7 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
+import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -1464,6 +1465,7 @@ export function createOrder(input: {
       totalCents += priceCents * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
     }
+    if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     const code = `AGV-${Date.now().toString().slice(-8)}`;
     const order = db.prepare(`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
