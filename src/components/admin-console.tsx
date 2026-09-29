@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -184,6 +184,16 @@ function DeleteOrderModal({
         </div>
       </form>
     </AdminModal>
+  );
+}
+
+// Cola de cada ítem del menú: chevron y, mientras la sección carga, un indicador.
+function AdminNavTail() {
+  const { pending } = useLinkStatus();
+  return (
+    <span aria-hidden="true" className={`admin-nav-tail${pending ? " is-pending" : ""}`}>
+      <ChevronRight size={16} />
+    </span>
   );
 }
 
@@ -3369,7 +3379,7 @@ export function AdminConsole({
               <Link className={section === id ? "active" : ""} href={href} key={id}>
                 <Icon size={18} />
                 <span>{label}</span>
-                <ChevronRight size={16} />
+                <AdminNavTail />
               </Link>
             ))}
           </nav>
