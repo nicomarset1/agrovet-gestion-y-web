@@ -1,9 +1,14 @@
 import Link from "next/link";
+import { infoPageMetadata } from "@/lib/page-metadata";
 import { AtSign, Clock, MapPin, MessageCircle, Phone, Share2, Store } from "lucide-react";
 import { getBranches } from "@/lib/db";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
 
-export const metadata = { title: "Contacto" };
+export const metadata = infoPageMetadata({
+  title: "Contacto",
+  path: "/contacto",
+  description: "Contactá a Agrovet Mar del Plata por WhatsApp o en nuestras sucursales para consultar stock, pedidos online, retiro o envíos.",
+});
 export const dynamic = "force-dynamic";
 
 export default async function ContactoPage() {
@@ -14,7 +19,7 @@ export default async function ContactoPage() {
   const intro = description.split(/\n+/).map((line) => line.trim()).filter(Boolean)[0] ?? "Comunicate con Agrovet Mar del Plata por pedidos, stock, retiro en sucursal o envíos.";
 
   return (
-    <main className="contact-page section">
+    <div className="contact-page section">
       <div className="container">
         <section className="contact-hero">
           <div>
@@ -95,6 +100,6 @@ export default async function ContactoPage() {
           </div>
         </section>
       </div>
-    </main>
+    </div>
   );
 }
