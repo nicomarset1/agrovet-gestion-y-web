@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, RotateCcw } from "lucide-react";
+import { ArrowUpDown, PackageX, RotateCcw } from "lucide-react";
 import type { Stock } from "@/lib/types";
 import { useToast } from "./toast-provider";
 
@@ -29,6 +29,11 @@ type CartContextValue = {
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
+
+// Tope de unidades de una variante: su stock total entre sucursales (el checkout valida la sucursal elegida).
+export function cartItemStockLimit(item: Pick<CartItem, "stocks">) {
+  return (item.stocks ?? []).reduce((total, entry) => total + Math.max(0, Number(entry.quantity) || 0), 0);
+}
 const key = "agrovet-cart";
 
 // Solo se guarda la URL corta de la foto: nunca un data URL (pesaría cientos de KB en localStorage).
@@ -99,6 +104,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     totalCents: items.reduce((total, item) => total + item.priceCents * item.quantity, 0),
     add: (rawIncoming) => {
       const incoming = withSafeImage(rawIncoming);
+      const inCart = items.find((item) => item.variantId === incoming.variantId)?.quantity ?? 0;
+      if (inCart + 1 > cartItemStockLimit(incoming)) {
+        push({ title: "No hay más stock", message: `${incoming.brand} ${incoming.name} · ${incoming.label}: ya tenés todas las unidades disponibles.`, type: "danger", icon: PackageX });
+        return;
+      }
       push({ title: "Producto agregado", message: `${incoming.brand} ${incoming.name} · ${incoming.label}`, type: "success" });
       setItems((current) => {
       const found = current.find((item) => item.variantId === incoming.variantId);
@@ -109,6 +119,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     change: (variantId, quantity) => {
       const nextQuantity = Math.max(1, quantity);
       const found = items.find((item) => item.variantId === variantId);
+      // Se puede bajar siempre; subir, solo hasta el stock total de la variante.
+      if (found && nextQuantity > found.quantity && nextQuantity > cartItemStockLimit(found)) {
+        push({ title: "No hay más stock", message: `${found.brand} ${found.name} · ${found.label}`, type: "danger", icon: PackageX });
+        return;
+      }
       if (found && found.quantity !== nextQuantity) {
         push({ title: "Cantidad actualizada", message: `${found.name}: ${nextQuantity}`, type: "info", icon: ArrowUpDown });
       }

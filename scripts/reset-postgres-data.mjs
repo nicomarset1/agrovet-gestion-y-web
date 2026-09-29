@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import postgres from "postgres";
 
 const root = process.cwd();
@@ -26,6 +27,41 @@ const sql = postgres(connectionUrl, {
     rejectUnauthorized: false,
   },
 });
+
+// Pide confirmación por consola. Si no hay nadie para responder (entrada cerrada), cuenta como "no".
+async function askConfirmation(question) {
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  const closed = new Promise((resolve) => prompt.once("close", () => resolve("")));
+  const answer = await Promise.race([prompt.question(question), closed]);
+  prompt.close();
+  return String(answer ?? "").trim();
+}
+
+// Este script BORRA todos los pedidos y clientes mayoristas y deja el stock en 0: antes de tocar nada
+// muestra qué va a borrar y pide escribir el nombre de la base para confirmar.
+async function count(query) {
+  try {
+    const [row] = await sql.unsafe(query);
+    return Number(row?.count ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+const [{ database }] = await sql`SELECT current_database() AS database`;
+const target = `${database} en ${new URL(connectionUrl).hostname}`;
+const orders = await count("SELECT COUNT(*)::int AS count FROM orders");
+const clients = await count("SELECT COUNT(*)::int AS count FROM wholesale_clients");
+const units = await count("SELECT COALESCE(SUM(quantity), 0)::int AS count FROM inventory");
+
+const answer = await askConfirmation(
+  `ATENCIÓN: esto BORRA ${orders} pedidos y ${clients} clientes mayoristas y pone en 0 el stock (${units} unidades) de ${target}.\n` +
+  `Escribí el nombre de la base (${database}) para confirmar: `,
+);
+if (answer !== database) {
+  await sql.end();
+  throw new Error("El nombre no coincide. No se tocó nada.");
+}
 
 await sql.begin(async (tx) => {
   await tx.unsafe(`

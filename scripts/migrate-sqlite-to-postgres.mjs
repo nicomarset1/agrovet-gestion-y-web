@@ -205,6 +205,15 @@ async function syncSequence(tx, table) {
 
 // admin_login_attempts no se copia a propósito: es un registro temporal de intentos de login.
 
+// Pide confirmación por consola. Si no hay nadie para responder (entrada cerrada), cuenta como "no".
+async function askConfirmation(question) {
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  const closed = new Promise((resolve) => prompt.once("close", () => resolve("")));
+  const answer = await Promise.race([prompt.question(question), closed]);
+  prompt.close();
+  return String(answer ?? "").trim();
+}
+
 async function tableCount(name) {
   const [exists] = await sql`SELECT to_regclass(${name}) AS table`;
   if (!exists?.table) return 0;
@@ -221,9 +230,7 @@ if (existingOrders || existingProducts) {
     await sql.end();
     throw new Error(`La base de destino (${target}) ya tiene ${existingProducts} productos y ${existingOrders} pedidos. No se migra encima de datos existentes: si de verdad querés reemplazarlos, corré con --reset.`);
   }
-  const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await prompt.question(`ATENCIÓN: --reset BORRA ${existingProducts} productos y ${existingOrders} pedidos de ${target}.\nEscribí el nombre de la base (${database}) para confirmar: `)).trim();
-  prompt.close();
+  const answer = await askConfirmation(`ATENCIÓN: --reset BORRA ${existingProducts} productos y ${existingOrders} pedidos de ${target}.\nEscribí el nombre de la base (${database}) para confirmar: `);
   if (answer !== database) {
     await sql.end();
     throw new Error("El nombre no coincide. No se tocó nada.");
