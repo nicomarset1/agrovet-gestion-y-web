@@ -225,6 +225,7 @@
 .store-hero-copy { min-width: 0; }
 .shop-title { margin: 8px 0 12px; line-height: 1.05; overflow-wrap: anywhere; }
 .store-intro { font-size: 15.5px; }
+.store-correction { margin: -4px 0 12px; color: var(--muted); font-size: 14px; }
 .store-offer {
   display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 7px 12px;
   border-radius: 999px; background: #fff3df; border: 1px solid #f3dfbb; color: #8a5200; font-size: 12.5px;

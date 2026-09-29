@@ -1,5 +1,6 @@
 import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Product } from "@/lib/types";
+import { cardPriceCents } from "./catalog-labels";
 import { ProductArt } from "./product-art";
 import { ProductCardCart } from "./product-card-cart";
 import { ProductLink } from "./product-link";
@@ -7,8 +8,7 @@ import { ProductLink } from "./product-link";
 export function ProductCard({ product }: { product: Product }) {
   const firstVariant = product.variants[0];
   if (!firstVariant) return null;
-  const available = product.variants.filter((variant) => variant.totalStock > 0);
-  const from = available.length ? Math.min(...available.map((variant) => variant.priceCents)) : firstVariant.priceCents;
+  const from = cardPriceCents(product);
   const cashPrice = applyCashDiscount(from);
   const total = product.variants.reduce((sum, variant) => sum + variant.totalStock, 0);
   const stockState = total === 0 ? "out" : total <= 3 ? "low" : "in";

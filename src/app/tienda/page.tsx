@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, SearchX, X } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
-import { filterLabel } from "@/components/catalog-labels";
+import { cardPriceCents, filterLabel } from "@/components/catalog-labels";
 import { ProductCard } from "@/components/product-card";
 import { StoreFilterDrawer } from "@/components/store-filter-drawer";
 import { StoreSortSelect } from "@/components/store-sort-select";
 import { getBranches, getCatalogFacets, getCategories, getProducts } from "@/lib/db";
 import { formatPrice } from "@/lib/format";
+import { productToSearchable, searchIds } from "@/lib/search";
+import type { Product } from "@/lib/types";
 
 type Filters = {
   q?: string;
@@ -69,6 +71,29 @@ function withoutValue(filters: Filters, key: string, value?: string) {
   });
 }
 
+// Catálogo con los filtros aplicados. La búsqueda de texto usa el mismo motor que el buscador del header,
+// sobre el catálogo completo (así corrige y encuentra igual), y después se cruza con el resto de los filtros.
+async function findProducts(filters: Filters): Promise<{ products: Product[]; correctedQuery: string | null }> {
+  const query = filters.q?.trim();
+  const fetched = await getProducts({ ...filters, q: undefined });
+  // El orden por precio sigue al precio que muestra la tarjeta (la consulta usa el mínimo de todas las presentaciones).
+  const direction = filters.sort === "price_asc" ? 1 : filters.sort === "price_desc" ? -1 : 0;
+  const filtered = direction ? [...fetched].sort((a, b) => direction * (cardPriceCents(a) - cardPriceCents(b))) : fetched;
+  if (!query) {
+    // Sin un orden elegido, primero lo que se puede comprar hoy (manteniendo destacados y nombre dentro de cada grupo).
+    const inStock = (product: Product) => Number(product.variants.some((variant) => variant.totalStock > 0));
+    return { products: filters.sort ? filtered : [...filtered].sort((a, b) => inStock(b) - inStock(a)), correctedQuery: null };
+  }
+  const found = searchIds((await getProducts()).map(productToSearchable), query);
+  if (!found) return { products: filtered, correctedQuery: null };
+  const byId = new Map(filtered.map((product) => [product.id, product]));
+  // Con un orden elegido (precio, stock) se respeta ese orden; si no, la relevancia de la búsqueda.
+  const products = filters.sort
+    ? filtered.filter((product) => found.ids.includes(product.id))
+    : found.ids.flatMap((id) => byId.get(id) ?? []);
+  return { products, correctedQuery: found.correctedQuery };
+}
+
 export async function generateMetadata({ searchParams }: { searchParams: Search }): Promise<Metadata> {
   const filters = await searchParams;
   const selected = Array.isArray(filters.category) ? filters.category[0] : filters.category;
@@ -86,11 +111,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Search 
 
 export default async function StorePage({ searchParams }: { searchParams: Search }) {
   const filters = await searchParams;
-  const [found, facets, branches] = await Promise.all([getProducts(filters), getCatalogFacets(), getBranches()]);
-  // Sin un orden elegido, primero lo que se puede comprar hoy (manteniendo destacados y nombre dentro de cada grupo).
-  const products = filters.sort
-    ? found
-    : [...found].sort((a, b) => Number(b.variants.some((variant) => variant.totalStock > 0)) - Number(a.variants.some((variant) => variant.totalStock > 0)));
+  const [{ products, correctedQuery }, facets, branches] = await Promise.all([findProducts(filters), getCatalogFacets(), getBranches()]);
   const selectedCategories = list(filters.category);
   const selectedCategory = selectedCategories[0];
   const currentCategory = facets.categories.find((item) => item.slug === selectedCategory);
@@ -101,7 +122,8 @@ export default async function StorePage({ searchParams }: { searchParams: Search
   const currentSubcategory = subcategoryParent?.subcategories.find((item) => item.slug === selectedSubcategory);
   const query = filters.q?.trim();
   const petTitle = filters.pet === "perro" ? "Productos para perros" : filters.pet === "gato" ? "Productos para gatos" : undefined;
-  const title = currentSubcategory?.name ?? currentCategory?.name ?? (query ? `Resultados para “${query}”` : petTitle ?? "Todos los productos");
+  const title = currentSubcategory?.name ?? currentCategory?.name ?? (query ? `Resultados para “${correctedQuery ?? query}”` : petTitle ?? "Todos los productos");
+  const showCorrection = Boolean(query && correctedQuery && !currentSubcategory && !currentCategory);
   const trailCategory = currentSubcategory ? subcategoryParent : undefined;
 
   // Filtros activos, cada uno con su link para quitarlo.
@@ -135,7 +157,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
 
   // Sin resultados y con varios filtros: probamos sacar cada uno para sugerir cuál conviene quitar.
   const suggestions = !products.length && activeFilters.length > 1
-    ? (await Promise.all(activeFilters.slice(0, 8).map(async (item) => ({ ...item, count: (await getProducts(filtersFromHref(item.href))).length }))))
+    ? (await Promise.all(activeFilters.slice(0, 8).map(async (item) => ({ ...item, count: (await findProducts(filtersFromHref(item.href))).products.length }))))
       .filter((item) => item.count > 0)
       .sort((a, b) => b.count - a.count)
       .slice(0, 3)
@@ -173,6 +195,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
                 )}
               </p>
               <h1 className="display shop-title">{title}</h1>
+              {showCorrection && <p className="store-correction">Buscaste “{query}”. Te mostramos resultados para “{correctedQuery}”.</p>}
               <p className="store-intro">Alimentos, accesorios y farmacia para perros y gatos, con el stock real de nuestras sucursales de Mar del Plata.</p>
               <p className="store-offer">Pagando en efectivo en sucursal tenés 10% de descuento en todos los productos.</p>
             </div>
@@ -211,7 +234,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
                 Solo con stock
               </Link>
               <StoreSortSelect
-                options={sortOptions.map((option) => ({ ...option, href: storeHref(filters, (params) => (option.value ? params.set("sort", option.value) : params.delete("sort"))) }))}
+                options={sortOptions.map((option) => ({ ...option, label: !option.value && query ? "Más relevantes" : option.label, href: storeHref(filters, (params) => (option.value ? params.set("sort", option.value) : params.delete("sort"))) }))}
                 value={filters.sort ?? ""}
               />
             </div>
