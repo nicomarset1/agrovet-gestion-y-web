@@ -177,6 +177,7 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
   const [openPath, setOpenPath] = useState<string[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
   const lockedScrollY = useRef(0);
+  const hoverOpenedAt = useRef(0);
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 821px)");
@@ -242,6 +243,7 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
       className={`catalog-menu ${open ? "open" : ""}`}
       onMouseEnter={() => {
         if (!desktop) return;
+        if (!open) hoverOpenedAt.current = Date.now();
         setOpen(true);
         setActiveHref((current) => current || items.find((item) => item.children?.length)?.href || "");
       }}
@@ -258,6 +260,11 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => {
+          // En escritorio el hover ya abre el menú: si el clic llega justo después, no lo cierra.
+          if (desktop && Date.now() - hoverOpenedAt.current < 450) {
+            setOpen(true);
+            return;
+          }
           setOpen((current) => {
             if (current) setOpenPath([]);
             return !current;
