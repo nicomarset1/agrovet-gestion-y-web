@@ -8,30 +8,30 @@ export const dynamic = "force-dynamic";
 export default async function PromocionesBancariasPage() {
   const description = await getSpecialPageDescription(
     "promociones-bancarias",
-    "Aprovecha cuotas sin interes y beneficios especiales con Favacard en Agrovet Mar del Plata.",
+    "Aprovechá cuotas sin interés y beneficios especiales con Favacard en Agrovet Mar del Plata.",
   );
-  const intro = description.split(/\n+/).map((line) => line.trim()).filter(Boolean)[0] ?? "Aprovecha cuotas sin interes y beneficios especiales con Favacard en Agrovet Mar del Plata.";
+  const intro = description.split(/\n+/).map((line) => line.trim()).filter(Boolean)[0] ?? "Aprovechá cuotas sin interés y beneficios especiales con Favacard en Agrovet Mar del Plata.";
   const promos = [
     {
       icon: CreditCard,
       eyebrow: "Todas las tarjetas",
-      title: "2 cuotas sin interes",
+      title: "2 cuotas sin interés",
       description: "Disponible con cualquier tarjeta para compras en Agrovet.",
-      highlight: "Todos los dias",
+      highlight: "Todos los días",
     },
     {
       icon: CalendarDays,
       eyebrow: "Favacard",
-      title: "3 cuotas sin interes",
-      description: "Beneficio exclusivo con Favacard para financiar tus compras sin interes.",
-      highlight: "Todos los dias",
+      title: "3 cuotas sin interés",
+      description: "Beneficio exclusivo con Favacard para financiar tus compras sin interés.",
+      highlight: "Todos los días",
     },
     {
       icon: RefreshCcw,
       eyebrow: "Favacard",
       title: "20% de reintegro",
-      description: "Los viernes y sabados tenes reintegro pagando con Favacard. El tope puede variar segun la promocion vigente.",
-      highlight: "Viernes y sabados",
+      description: "Los viernes y sábados tenés reintegro pagando con Favacard. El tope puede variar según la promoción vigente.",
+      highlight: "Viernes y sábados",
     },
   ];
 
@@ -68,7 +68,7 @@ export default async function PromocionesBancariasPage() {
           <Info size={21} />
           <div>
             <h2>Condiciones</h2>
-            <p>Las promociones pueden estar sujetas a condiciones de la tarjeta o entidad emisora. En el reintegro de Favacard, el tope varia segun la promocion vigente; consultanos antes de confirmar la compra si queres validar el beneficio exacto.</p>
+            <p>Las promociones pueden estar sujetas a condiciones de la tarjeta o entidad emisora. En el reintegro de Favacard, el tope varía según la promoción vigente; consultanos antes de confirmar la compra si querés validar el beneficio exacto.</p>
           </div>
         </section>
       </div>

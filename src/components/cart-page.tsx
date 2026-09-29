@@ -89,15 +89,15 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           finalStatus: "pending",
           title: "Pedido recibido",
           text: order
-            ? `Recibimos el pedido ${order}, pero Mercado Pago todavia esta procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
-            : "Recibimos tu pedido, pero Mercado Pago todavia esta procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
+            ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
+            : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
         });
       } else if (payment === "failure") {
         setMessage({
           error: true,
           outsideCheckout: true,
-          title: "No se completo el pago",
-          text: "Mercado Pago rechazo o cancelo el pago. Tu carrito sigue guardado para que puedas revisar los datos e intentar nuevamente.",
+          title: "No se completó el pago",
+          text: "Mercado Pago rechazó o canceló el pago. Tu carrito sigue guardado para que puedas revisar los datos e intentar nuevamente.",
         });
       }
       window.history.replaceState(null, "", window.location.pathname);
@@ -232,7 +232,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
         ) : items.length === 0 && message ? (
           <div className={`card empty cart-empty${message?.error ? " is-error" : " is-success"}`}>
             <span className="cart-empty-icon" aria-hidden="true">{message?.error ? <CircleAlert /> : <CheckCircle2 />}</span>
-            <h2>{message?.title ?? (message?.error ? "No se completo el pago" : "Pedido recibido")}</h2>
+            <h2>{message?.title ?? (message?.error ? "No se completó el pago" : "Pedido recibido")}</h2>
             <p>{message?.text}</p>
             <Link className="button button-primary" href="/tienda">Volver a la tienda <ArrowRight size={17} /></Link>
           </div>
@@ -302,7 +302,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             <div className="choice-grid two">
               <button className={`choice-card ${effectivePaymentMethod === "mercado_pago" ? "active" : ""}`} onClick={() => setPaymentMethod("mercado_pago")} type="button">
                 <strong>Mercado Pago</strong>
-                <span>Credito, debito, saldo MP y cuotas</span>
+                <span>Crédito, débito, saldo MP y cuotas</span>
               </button>
               <button
                 className={`choice-card ${effectivePaymentMethod === "efectivo" ? "active" : ""}`}
@@ -314,7 +314,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                 <span>En sucursal con 10% de descuento</span>
               </button>
             </div>
-            {fulfillment === "envio" && <p className="notice">Los pedidos con envio se abonan online con Mercado Pago antes de salir a reparto.</p>}
+            {fulfillment === "envio" && <p className="notice">Los pedidos con envío se abonan online con Mercado Pago antes de salir a reparto.</p>}
             {belowDeliveryMinimum && <p className="notice error">El envío se habilita desde {formatPrice(deliveryMinimumCents)}. Con este total, el pedido es solo retiro por sucursal.</p>}
             {fulfillment === "envio" && (
               <>
