@@ -641,6 +641,13 @@ export async function getProduct(slug: string) {
   return rows[0] ? hydrateProduct(rows[0]) : undefined;
 }
 
+// Solo lectura: la foto de un producto para servirla desde /api/product-image/[id].
+export async function getProductImage(id: number): Promise<{ imageUrl: string } | null> {
+  await ensureSchema();
+  const [row] = await sql`SELECT image_url AS "imageUrl" FROM products WHERE id = ${id} AND purged_at IS NULL` as unknown as { imageUrl?: string }[];
+  return row?.imageUrl ? { imageUrl: row.imageUrl } : null;
+}
+
 export async function getFeaturedProducts() {
   await ensureSchema();
   // Filtra y limita en la DB en vez de hidratar todo el catálogo para quedarse con 4.
