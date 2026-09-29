@@ -253,11 +253,6 @@
   #locales .zone-form .mini-button { min-height: 44px; }
 }
 #locales .zone-map { border-radius: var(--radius-sm); }
-#locales .zone-circle { animation: shell-zone-breathe 3.2s ease-in-out infinite; }
-@keyframes shell-zone-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(213, 54, 54, .12); }
-  50% { box-shadow: 0 0 0 14px rgba(213, 54, 54, 0); }
-}
 @media (min-width: 1001px) {
   #locales .branch-grid { align-items: stretch; }
 }
@@ -325,8 +320,7 @@
   main > .section .section-heading,
   main > .section .visual-categories,
   main > .section .product-grid,
-  #locales .branch-layout > *,
-  #locales .zone-circle { animation: none; }
+  #locales .branch-layout > * { animation: none; }
   .visual-category:hover, .visual-category:hover .visual-category-image, .trust-item:hover svg { transform: none; }
 }
 
@@ -533,3 +527,10 @@
 @media (max-width: 640px) {
   .whatsapp-float.is-checkout { display: none; }
 }
+
+/* ===== Zona de envío en la paleta (home, /envios y checkout) =====
+   El círculo era rojo; ahora es violeta. La animación es la de polish-carrito.css para todos. */
+.zone-circle { border-color: rgba(124, 58, 237, .62); background: rgba(124, 58, 237, .07); box-shadow: 0 0 0 10px rgba(124, 58, 237, .05); }
+.zone-address.inside { background: var(--forest-light); }
+/* Fuera de zona sigue en rojo de error. --danger lo agrega nicol-a6 en :root; mientras tanto, #b42318. */
+.zone-address.outside { background: var(--danger, #b42318); }
