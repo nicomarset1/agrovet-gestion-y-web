@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 
 :root {
   --forest: #5b0f73;
@@ -12,6 +12,22 @@
   --muted: #6c5a7d;
   --line: #e3d5f3;
   --white: #ffffff;
+
+  /* Sistema compartido de movimiento y profundidad (pulido 2026-09).
+     Usar estas variables en animaciones y sombras nuevas. */
+  --ease-out: cubic-bezier(.22, .78, .22, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --dur-fast: .14s;
+  --dur-base: .22s;
+  --dur-slow: .38s;
+  --shadow-sm: 0 2px 8px rgba(91, 15, 115, .07);
+  --shadow-md: 0 10px 26px rgba(91, 15, 115, .11);
+  --shadow-lg: 0 22px 48px rgba(91, 15, 115, .16);
+  --focus-ring: 0 0 0 3px rgba(124, 58, 237, .32);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
 }
 
 @theme inline {
@@ -3845,4 +3861,23 @@ a.catalog-mega-root { grid-template-columns: 25px minmax(0, 1fr); }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-promo-track { animation: none; }
+}
+
+/* ===== Base compartida de accesibilidad y movimiento (pulido 2026-09) ===== */
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.field:focus-visible { box-shadow: var(--focus-ring); }
+
+@keyframes ui-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes ui-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-scale-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes ui-shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+
+/* Respeta la preferencia del sistema de reducir animaciones. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
 }

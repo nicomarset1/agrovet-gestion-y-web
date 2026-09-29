@@ -9,6 +9,10 @@ import { WhatsappFloat } from "@/components/whatsapp-float";
 import { getSyncVersion } from "@/lib/db";
 import { absoluteUrl, siteName, siteUrl } from "@/lib/site";
 import "./globals.css";
+import "./styles/polish-shell.css";
+import "./styles/polish-catalogo.css";
+import "./styles/polish-carrito.css";
+import "./styles/polish-admin.css";
 
 const manrope = Manrope({
   variable: "--font-body",
