@@ -8,7 +8,7 @@ import { isSameOriginMutation } from "@/lib/request-security";
 export async function POST(request: Request) {
   await requireAdmin();
   if (!isSameOriginMutation(request)) {
-    return NextResponse.json({ error: "Solicitud invÃ¡lida." }, { status: 403 });
+    return NextResponse.json({ error: "Solicitud inválida." }, { status: 403 });
   }
   const formData = await request.formData();
   const parsed = z.object({
