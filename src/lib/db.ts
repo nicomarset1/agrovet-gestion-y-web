@@ -186,6 +186,10 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
   return (await getDriver()).markOrderPaidByCode(code, paymentMethod, amountCents);
 }
 
+export async function discardUnpaidOrder(code: string) {
+  return (await getDriver()).discardUnpaidOrder(code);
+}
+
 export async function updateOrder(input: Parameters<SqliteDriver["updateOrder"]>[0]) {
   return (await getDriver()).updateOrder(input);
 }

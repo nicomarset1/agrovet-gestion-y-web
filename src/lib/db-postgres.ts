@@ -1553,6 +1553,20 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
   });
 }
 
+// Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia).
+// Solo aplica si sigue esperando el pago y sin cobro: esos pedidos nunca tomaron stock.
+export async function discardUnpaidOrder(code: string) {
+  await ensureSchema();
+  await sql.begin(async (tx) => {
+    const result = await tx`
+      UPDATE orders
+      SET deleted_at = CURRENT_TIMESTAMP
+      WHERE code = ${code} AND deleted_at IS NULL AND paid_cents = 0 AND status = 'Esperando pago'
+    `;
+    if (result.count) await bumpSyncVersion(tx);
+  });
+}
+
 export async function createWholesaleOrder(input: {
   clientId: number;
   branchId: number;
