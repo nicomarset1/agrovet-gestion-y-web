@@ -278,3 +278,10 @@
   background: radial-gradient(circle at 88% 24%, rgba(233, 213, 255, .7), transparent 34%), white;
 }
 .faq-contact p { color: #eadfff; }
+
+/* ===== Aviso de stock en una línea del carrito ===== */
+.cart-line-stock-warning {
+  grid-column: 1 / -1; margin: 10px 0 0; padding: 9px 12px; border-radius: var(--radius-sm);
+  border: 1px solid rgba(180, 35, 24, .2); background: var(--danger-bg); color: var(--danger);
+  font-size: 13px; font-weight: 600; line-height: 1.45; animation: ui-fade-in var(--dur-base) var(--ease-out) both;
+}

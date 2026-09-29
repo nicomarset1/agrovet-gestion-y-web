@@ -6,7 +6,7 @@ import { ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Lock, MessageCirc
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyCashDiscount, deliveryMinimumCents, formatPrice } from "@/lib/format";
 import type { Branch } from "@/lib/types";
-import { useCart } from "./cart-provider";
+import { cartItemStockLimit, useCart } from "./cart-provider";
 
 type CheckoutMessage = {
   text: string;
@@ -292,10 +292,17 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                   <div className="qty-stepper" role="group" aria-label={`Cantidad de ${item.name}`}>
                     <button aria-label="Restar una unidad" className="qty-button" disabled={item.quantity <= 1} onClick={() => change(item.variantId, item.quantity - 1)} type="button"><Minus size={15} /></button>
                     <strong aria-live="polite">{item.quantity}</strong>
-                    <button aria-label="Sumar una unidad" className="qty-button" onClick={() => change(item.variantId, item.quantity + 1)} type="button"><Plus size={15} /></button>
+                    <button aria-label="Sumar una unidad" className="qty-button" disabled={item.quantity >= cartItemStockLimit(item)} onClick={() => change(item.variantId, item.quantity + 1)} title={item.quantity >= cartItemStockLimit(item) ? "No hay más stock" : undefined} type="button"><Plus size={15} /></button>
                   </div>
                   <button className="remove" onClick={() => remove(item.variantId)} type="button"><Trash2 size={14} /> Eliminar</button>
                 </div>
+                {item.quantity > cartItemStockLimit(item) ? (
+                  <p className="cart-line-stock-warning" role="status">
+                    {cartItemStockLimit(item) > 0
+                      ? `Solo hay ${cartItemStockLimit(item)} ${cartItemStockLimit(item) === 1 ? "unidad disponible" : "unidades disponibles"}. Bajá la cantidad para poder finalizar el pedido.`
+                      : "Este producto se quedó sin stock. Quitalo para poder finalizar el pedido."}
+                  </p>
+                ) : null}
               </article>
             ))}
           </div>

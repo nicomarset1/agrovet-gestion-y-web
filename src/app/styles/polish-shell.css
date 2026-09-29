@@ -548,8 +548,9 @@
 /* Enlace para saltar el header con teclado: aparece solo al recibir foco. */
 .skip-link {
   position: fixed; top: 10px; left: 10px; z-index: 400; padding: 10px 16px; border-radius: 999px;
-  background: var(--forest); color: white; font-weight: 800; box-shadow: var(--shadow-md);
-  transform: translateY(-160%); transition: transform var(--dur-base) var(--ease-out);
+  background: var(--forest); color: white; font-weight: 800;
+  /* Fuera de pantalla y sin sombra hasta recibir foco: la sombra asomaba arriba a la izquierda. */
+  transform: translateY(calc(-100% - 20px)); transition: transform var(--dur-base) var(--ease-out);
 }
 .skip-link:focus, .skip-link:focus-visible { transform: none; box-shadow: var(--focus-ring), var(--shadow-md); }
 main:focus { outline: none; }
