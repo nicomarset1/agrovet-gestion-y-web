@@ -1440,20 +1440,23 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[];
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string };
 }) {
   return db.transaction(() => {
     const deliveryPlan = input.fulfillment === "envio" ? resolveDeliveryAllocationPlan(input.items) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
     const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(resolvedBranchId);
     if (!branch) throw new Error("Sucursal inválida.");
-    const source = "Tienda online";
-    const isMercadoPago = input.paymentMethod === "mercado_pago";
-    const status = isMercadoPago
-      ? "Esperando pago"
-      : input.fulfillment === "envio"
-        ? "Pendiente de envío"
-        : "Pendiente de retiro";
+    // Solo la venta de Caja (server action con sesión de admin) manda cashSale; la tienda nunca.
+    const source = input.cashSale ? input.cashSale.source : "Tienda online";
+    const isMercadoPago = !input.cashSale && input.paymentMethod === "mercado_pago";
+    const status = input.cashSale
+      ? "Cerrado"
+      : isMercadoPago
+        ? "Esperando pago"
+        : input.fulfillment === "envio"
+          ? "Pendiente de envío"
+          : "Pendiente de retiro";
     const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];

@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { endAdminSession, getLoginRateLimit, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
+import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import {
   createCategory,
+  createOrder,
   createWholesaleClient,
   createWholesaleOrder,
   createSubcategory,
@@ -172,6 +173,49 @@ export async function createWholesaleOrderAction(formData: FormData) {
   revalidatePath("/tienda");
   revalidatePath("/admin");
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
+}
+
+// Venta de mostrador (Caja). Camino propio con sesión de admin: /api/orders es solo para la tienda
+// y registra todo como "Tienda online".
+const posSaleSchema = z.object({
+  branchId: z.number().int().positive(),
+  paymentMethod: z.enum(["Efectivo", "Tarjeta", "Transferencia", "QR"]),
+  installments: z.enum(["1", "2", "3", "6", "12"]).optional(),
+  items: z.array(z.object({
+    variantId: z.number().int().positive(),
+    quantity: z.number().int().min(1).max(999),
+  })).min(1).max(100),
+});
+
+export type PosSaleResult = { ok: true; code: string; totalCents: number } | { ok: false; error: string };
+
+export async function closePosSaleAction(input: unknown): Promise<PosSaleResult> {
+  if (!(await isAdmin())) return { ok: false, error: "Tu sesión del panel venció. Volvé a ingresar para cerrar la venta." };
+  const parsed = posSaleSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Revisá los productos y el medio de pago de la venta." };
+  const { branchId, paymentMethod, installments, items } = parsed.data;
+  if (paymentMethod === "Tarjeta" && !installments) return { ok: false, error: "Elegí la cantidad de cuotas." };
+  // Mismo formato que usan isCashOrder, el cierre del día y el reporte: "Caja / Tarjeta (3 cuotas)".
+  const source = `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installments} cuotas)` : ""}`;
+  try {
+    const order = await createOrder({
+      name: "Venta mostrador",
+      phone: "0000000000",
+      email: "mostrador@agrovet.local",
+      fulfillment: "retiro",
+      branchId,
+      source,
+      items,
+      cashSale: { source },
+    });
+    revalidatePath("/");
+    revalidatePath("/tienda");
+    revalidatePath("/admin");
+    return { ok: true, code: order.code, totalCents: order.totalCents };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo cerrar la venta.";
+    return { ok: false, error: `${message} No se registró la venta ni se descontó stock.` };
+  }
 }
 
 const orderPaymentSchema = z.object({

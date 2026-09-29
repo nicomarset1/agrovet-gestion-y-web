@@ -26,6 +26,7 @@ import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import {
+  closePosSaleAction,
   createCategoryAction,
   createProductAction,
   createSubcategoryAction,
@@ -3115,25 +3116,17 @@ function PointOfSalePanel({
     setSubmitting(true);
     setNotice("");
     try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "Venta mostrador",
-            phone: "0000000000",
-            email: "mostrador@agrovet.local",
-            fulfillment: "retiro",
-            branchId: branch.id,
-            source: `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installments} cuotas)` : ""}`,
-          items: cart.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
-        }),
+      const result = await closePosSaleAction({
+        branchId: branch.id,
+        paymentMethod,
+        installments: paymentMethod === "Tarjeta" ? installments : undefined,
+        items: cart.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? "No se pudo cerrar la venta.");
+      if (!result.ok) throw new Error(result.error);
       setCart([]);
       setScanValue("");
-      setNotice(`Venta cerrada: ${String(data.code ?? "")}`);
-      push({ title: "Venta cerrada", message: String(data.code ?? ""), type: "success" });
+      setNotice(`Venta cerrada: ${result.code}`);
+      push({ title: "Venta cerrada", message: result.code, type: "success" });
       setShowDaySales(true);
       router.refresh();
     } catch (error) {
