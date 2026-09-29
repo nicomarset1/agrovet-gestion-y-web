@@ -11,6 +11,7 @@ import {
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
+import { productImageSrcFromSample } from "./product-image";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -534,6 +535,18 @@ function toProduct(row: ProductRow, variants: Variant[]): Product {
   return { ...row, featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), active: Boolean(row.active), variants };
 }
 
+// Panel: en vez del data URL completo (cientos de KB por foto) se trae una muestra corta para versionar la ruta.
+function withAdminImageSrc(rows: Array<ProductRow & { imageSample?: string }>, products: Product[]) {
+  const samples = new Map(rows.map((row) => [row.id, row.imageSample ?? ""]));
+  return products.map((product) => {
+    const sample = samples.get(product.id) ?? "";
+    // La muestra no viaja al panel: solo sirve para armar la versión de la ruta.
+    const next: Product & { imageSample?: string } = { ...product };
+    delete next.imageSample;
+    return sample ? { ...next, imageUrl: productImageSrcFromSample(product.id, sample) } : next;
+  });
+}
+
 async function hydrateProducts(rows: ProductRow[], db: Db = sql): Promise<Product[]> {
   const byProduct = await buildVariantsByProduct(rows.map((row) => row.id), db);
   return rows.map((row) => toProduct(row, byProduct.get(row.id) ?? []));
@@ -574,7 +587,13 @@ function addInClause(clauses: string[], params: unknown[], expression: string, i
   clauses.push(`${expression} IN (${selected.map((item) => pushParam(params, item)).join(", ")})`);
 }
 
-export async function getProducts(filters: CatalogFilters = {}) {
+const adminImageColumns = `CASE WHEN p.image_url LIKE 'data:image/%' THEN '' ELSE p.image_url END AS "imageUrl",
+    CASE WHEN p.image_url LIKE 'data:image/%'
+      THEN length(p.image_url) || ':' || left(p.image_url, 96) || ':' || right(p.image_url, 96)
+      ELSE '' END AS "imageSample"`;
+const adminBaseSelect = baseSelect.replace('p.image_url AS "imageUrl"', adminImageColumns);
+
+export async function getProducts(filters: CatalogFilters = {}, options: { adminImages?: boolean } = {}) {
   await ensureSchema();
   const clauses: string[] = ["p.archived_at IS NULL", "p.purged_at IS NULL"];
   const params: unknown[] = [];
@@ -629,6 +648,10 @@ export async function getProducts(filters: CatalogFilters = {}) {
     orderBy = "ORDER BY p.active DESC, (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) DESC, p.name";
   } else if (filters.sort === "stock_desc") {
     orderBy = "ORDER BY p.active DESC, (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
+  }
+  if (options.adminImages) {
+    const rows = await sql.unsafe(`${adminBaseSelect} WHERE ${clauses.join(" AND ")} ${orderBy}`, params as never[]) as unknown as Array<ProductRow & { imageSample?: string }>;
+    return withAdminImageSrc(rows, await hydrateProducts(rows));
   }
   const rows = await sql.unsafe(`${baseSelect} WHERE ${clauses.join(" AND ")} ${orderBy}`, params as never[]) as unknown as ProductRow[];
   return hydrateProducts(rows);
@@ -890,7 +913,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
 
 export async function getAdminSnapshot() {
   await ensureSchema();
-  const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts({ status: "all" }), getBranches(), mapAdminOrders(), getWholesaleClients()]);
+  const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts({ status: "all" }, { adminImages: true }), getBranches(), mapAdminOrders(), getWholesaleClients()]);
   return { products, branches, orders, wholesaleClients };
 }
 
@@ -1276,7 +1299,7 @@ export async function updateProduct(input: {
         name = ${input.name.trim()}, brand = ${input.brand.trim()}, category_id = ${placement.categoryId}, species = ${input.species},
         subcategory_slug = ${placement.subcategorySlug}, subcategory_name = ${placement.subcategoryName}, life_stage = ${input.lifeStage ?? ""},
         size = ${input.size ?? ""}, need = ${input.need ?? ""}, description = ${input.description.trim()}, featured = ${input.featured},
-        requires_advice = ${input.requiresAdvice}, active = ${input.active}, color = ${input.color}, image_url = ${input.imageUrl ?? ""}
+        requires_advice = ${input.requiresAdvice}, active = ${input.active}, color = ${input.color}, image_url = COALESCE(${input.imageUrl ?? null}, image_url)
       WHERE id = ${input.id}
     `;
     const takenSkus = new Set<string>();

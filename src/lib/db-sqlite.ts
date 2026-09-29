@@ -13,6 +13,7 @@ import {
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
+import { productImageSrcFromSample } from "./product-image";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -522,6 +523,18 @@ function toProduct(row: ProductRow, variants: Variant[]): Product {
   };
 }
 
+// Panel: en vez del data URL completo (cientos de KB por foto) se trae una muestra corta para versionar la ruta.
+function withAdminImageSrc(rows: Array<ProductRow & { imageSample?: string }>, products: Product[]) {
+  const samples = new Map(rows.map((row) => [row.id, row.imageSample ?? ""]));
+  return products.map((product) => {
+    const sample = samples.get(product.id) ?? "";
+    // La muestra no viaja al panel: solo sirve para armar la versión de la ruta.
+    const next: Product & { imageSample?: string } = { ...product };
+    delete next.imageSample;
+    return sample ? { ...next, imageUrl: productImageSrcFromSample(product.id, sample) } : next;
+  });
+}
+
 function hydrateProducts(rows: ProductRow[]): Product[] {
   const byProduct = buildVariantsByProduct(rows.map((row) => row.id));
   return rows.map((row) => toProduct(row, byProduct.get(row.id) ?? []));
@@ -589,7 +602,13 @@ const baseSelect = `
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at = ''
 `;
 
-export function getProducts(filters: CatalogFilters = {}) {
+const adminImageColumns = `CASE WHEN p.image_url LIKE 'data:image/%' THEN '' ELSE p.image_url END AS imageUrl,
+    CASE WHEN p.image_url LIKE 'data:image/%'
+      THEN length(p.image_url) || ':' || substr(p.image_url, 1, 96) || ':' || substr(p.image_url, -96)
+      ELSE '' END AS imageSample`;
+const adminBaseSelect = baseSelect.replace("p.image_url AS imageUrl", adminImageColumns);
+
+export function getProducts(filters: CatalogFilters = {}, options: { adminImages?: boolean } = {}) {
   const clauses: string[] = ["p.archived_at = ''", "p.purged_at = ''"];
   const params: string[] = [];
   if (filters.status === "inactive") {
@@ -655,6 +674,10 @@ export function getProducts(filters: CatalogFilters = {}) {
     orderBy = "ORDER BY p.active DESC, (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
   }
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  if (options.adminImages) {
+    const rows = db.prepare(`${adminBaseSelect}${where} ${orderBy}`).all(...params) as Array<ProductRow & { imageSample?: string }>;
+    return withAdminImageSrc(rows, hydrateProducts(rows));
+  }
   const rows = db.prepare(`${baseSelect}${where} ${orderBy}`).all(...params) as ProductRow[];
   return hydrateProducts(rows);
 }
@@ -872,7 +895,7 @@ function mapAdminOrders(): OrderRecord[] {
 }
 
 export function getAdminSnapshot() {
-  return { products: getProducts({ status: "all" }), branches: getBranches(), orders: mapAdminOrders(), wholesaleClients: getWholesaleClients() };
+  return { products: getProducts({ status: "all" }, { adminImages: true }), branches: getBranches(), orders: mapAdminOrders(), wholesaleClients: getWholesaleClients() };
 }
 
 export function getCatalogFacets() {
@@ -1277,7 +1300,7 @@ export function updateProduct(input: {
     db.prepare(`
       UPDATE products SET
         name = ?, brand = ?, category_id = ?, species = ?, subcategory_slug = ?, subcategory_name = ?,
-        life_stage = ?, size = ?, need = ?, description = ?, featured = ?, requires_advice = ?, active = ?, color = ?, image_url = ?
+        life_stage = ?, size = ?, need = ?, description = ?, featured = ?, requires_advice = ?, active = ?, color = ?, image_url = COALESCE(?, image_url)
       WHERE id = ?
     `).run(
       input.name.trim(),
@@ -1294,7 +1317,8 @@ export function updateProduct(input: {
       input.requiresAdvice ? 1 : 0,
       input.active ? 1 : 0,
       input.color,
-      input.imageUrl ?? "",
+      // Sin imageUrl (el panel no tocó la foto) se conserva la guardada.
+      input.imageUrl ?? null,
       input.id,
     );
     const insertVariant = db.prepare("INSERT INTO variants (product_id, label, sku, barcode, price_cents) VALUES (?, ?, ?, ?, ?)");

@@ -969,3 +969,25 @@
     display: none;
   }
 }
+
+/* ===== Miniaturas de productos (desde /api/product-image, nunca el data URL) ===== */
+.admin-shell .admin-product-cell {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.admin-shell .admin-product-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: #faf7fc;
+  object-fit: cover;
+}
+
+.admin-shell .admin-product-thumb.is-empty {
+  display: block;
+  opacity: .22;
+}
