@@ -127,7 +127,14 @@ export function LiveSearch({ products }: { products: SearchIndexItem[] }) {
   const activeHit = activeIndex >= 0 ? result.hits[activeIndex] : undefined;
 
   return (
-    <div className="live-search" ref={rootRef}>
+    <div
+      className="live-search"
+      onBlur={(event) => {
+        // Salir del buscador con Tab cierra el panel.
+        if (!rootRef.current?.contains(event.relatedTarget as Node | null)) closePanel();
+      }}
+      ref={rootRef}
+    >
       <form
         action="/tienda"
         className="search"

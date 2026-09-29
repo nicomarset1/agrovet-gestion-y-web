@@ -178,6 +178,9 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const lockedScrollY = useRef(0);
   const hoverOpenedAt = useRef(0);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const focusOnOpen = useRef(false);
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 821px)");
@@ -220,10 +223,11 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
       }
     }
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        setOpenPath([]);
-      }
+      if (event.key !== "Escape" || !menuRef.current?.classList.contains("open")) return;
+      setOpen(false);
+      setOpenPath([]);
+      // Al cerrar con Escape el foco vuelve al botón, no se pierde en el body.
+      triggerRef.current?.focus();
     }
     document.addEventListener("mousedown", closeOnOutside);
     document.addEventListener("keydown", closeOnEscape);
@@ -236,6 +240,38 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
   function closeMenu() {
     setOpen(false);
     setOpenPath([]);
+  }
+
+  // Teclado: al abrir (o al cambiar de nivel en el celular) el foco entra al menú.
+  useEffect(() => {
+    if (!open) return;
+    const root = desktop ? menuRef.current?.querySelector<HTMLElement>(".catalog-mega") : drawerRef.current;
+    if (!root) return;
+    const inside = root.contains(document.activeElement);
+    if (!focusOnOpen.current && !(inside && !desktop)) return;
+    focusOnOpen.current = false;
+    const target = desktop
+      ? root.querySelector<HTMLElement>(".catalog-mega-rail a")
+      : root.querySelector<HTMLElement>(".catalog-mobile-stage a, .catalog-mobile-stage button");
+    // Se espera un momento a que el panel deje de estar oculto (visibility) para poder enfocarlo.
+    const timer = window.setTimeout(() => target?.focus({ preventScroll: true }), 60);
+    return () => window.clearTimeout(timer);
+  }, [open, desktop, openPath]);
+
+  // En el celular el drawer es modal: Tab y Shift+Tab quedan dentro mientras está abierto.
+  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab" || !drawerRef.current) return;
+    const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled])")].filter((element) => element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   return (
@@ -252,6 +288,10 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
         setOpen(false);
         setActiveHref("");
       }}
+      onBlur={(event) => {
+        // En escritorio, salir del menú con Tab lo cierra.
+        if (desktop && open && !menuRef.current?.contains(event.relatedTarget as Node | null)) closeMenu();
+      }}
       ref={menuRef}
     >
       <button
@@ -259,7 +299,10 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
-        onClick={() => {
+        ref={triggerRef}
+        onClick={(event) => {
+          // detail 0 = activado con teclado (Enter o espacio): el foco pasa al menú.
+          if (event.detail === 0 || !desktop) focusOnOpen.current = true;
           // En escritorio el hover ya abre el menú: si el clic llega justo después, no lo cierra.
           if (desktop && Date.now() - hoverOpenedAt.current < 450) {
             setOpen(true);
@@ -283,8 +326,16 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
         />
       ) : (
         <>
-          <button className="catalog-mobile-overlay" aria-label="Cerrar categorías" onClick={closeMenu} type="button" />
-          <aside className="catalog-mobile-drawer" aria-hidden={!open}>
+          <button className="catalog-mobile-overlay" aria-hidden="true" onClick={closeMenu} tabIndex={-1} type="button" />
+          <div
+            aria-hidden={!open}
+            aria-label="Categorías"
+            aria-modal={open ? true : undefined}
+            className="catalog-mobile-drawer"
+            onKeyDown={trapFocus}
+            ref={drawerRef}
+            role={open ? "dialog" : undefined}
+          >
             <MobileDrilldown
               items={items}
               openPath={openPath}
@@ -292,7 +343,7 @@ export function CatalogMenu({ items }: { items: CatalogMenuNode[] }) {
               onEnter={(label) => setOpenPath((current) => [...current, label])}
               onNavigate={closeMenu}
             />
-          </aside>
+          </div>
         </>
       )}
     </div>

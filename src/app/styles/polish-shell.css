@@ -253,11 +253,6 @@
   #locales .zone-form .mini-button { min-height: 44px; }
 }
 #locales .zone-map { border-radius: var(--radius-sm); }
-#locales .zone-circle { animation: shell-zone-breathe 3.2s ease-in-out infinite; }
-@keyframes shell-zone-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(213, 54, 54, .12); }
-  50% { box-shadow: 0 0 0 14px rgba(213, 54, 54, 0); }
-}
 @media (min-width: 1001px) {
   #locales .branch-grid { align-items: stretch; }
 }
@@ -279,14 +274,16 @@
 .footer { padding-top: 48px; }
 .footer .brand-subtitle, .footer p { color: #d9c6ec; }
 .footer strong { color: white; }
-.footer h3 { color: #e9d5ff; font-size: 13px; letter-spacing: .12em; }
+/* Los títulos del footer son h2 (antes h3 sin h2 previo, y el orden de títulos quedaba roto). */
+.footer .footer-title { margin: 0 0 12px; color: #e9d5ff; font-family: inherit; font-size: 13px; font-weight: 750; line-height: 1.3; letter-spacing: .12em; text-transform: uppercase; }
 .footer-links { color: #efe4fb; }
 .footer-links a { transition: transform var(--dur-base) var(--ease-out), color var(--dur-fast) ease; }
 .footer-links a::after { transition: right var(--dur-base) var(--ease-out); }
 .footer p a { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .3); text-underline-offset: 3px; transition: color var(--dur-fast) ease, text-decoration-color var(--dur-fast) ease; }
 .footer p a:hover { color: white; text-decoration-color: currentColor; }
 /* El link deshabilitado se ve como los demás, pero apagado. */
-.footer-link-disabled { color: #efe4fb; font-weight: inherit; opacity: .55; }
+/* Deshabilitado pero legible: #c9b3dc sobre el violeta da 6,2:1 (con opacidad .55 daba 3,2:1). */
+.footer-link-disabled { color: #c9b3dc; font-weight: inherit; opacity: 1; text-decoration: line-through; text-decoration-color: rgba(201, 179, 220, .5); }
 .footer .brand-mark { box-shadow: 0 8px 18px rgba(0, 0, 0, .18); }
 .footer-bottom { color: #cdb7e2; border-top-color: rgba(255, 255, 255, .16); }
 @media (min-width: 641px) {
@@ -298,7 +295,7 @@
   .footer-links a, .footer-link-disabled { min-height: 38px; }
   .footer-links a { transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease; }
   .footer-links a:hover, .footer-links a:active { transform: none; background: rgba(255, 255, 255, .14); }
-  .footer-link-disabled { opacity: .5; }
+  .footer-link-disabled { opacity: 1; }
 }
 
 /* ===== Flotante de WhatsApp ===== */
@@ -325,8 +322,7 @@
   main > .section .section-heading,
   main > .section .visual-categories,
   main > .section .product-grid,
-  #locales .branch-layout > *,
-  #locales .zone-circle { animation: none; }
+  #locales .branch-layout > * { animation: none; }
   .visual-category:hover, .visual-category:hover .visual-category-image, .trust-item:hover svg { transform: none; }
 }
 
@@ -533,3 +529,18 @@
 @media (max-width: 640px) {
   .whatsapp-float.is-checkout { display: none; }
 }
+
+/* ===== Zona de envío en la paleta (home, /envios y checkout) =====
+   El círculo era rojo; ahora es violeta. La animación es la de polish-carrito.css para todos. */
+.zone-circle { border-color: rgba(124, 58, 237, .62); background: rgba(124, 58, 237, .07); box-shadow: 0 0 0 10px rgba(124, 58, 237, .05); }
+.zone-address.inside { background: var(--forest-light); }
+/* Fuera de zona sigue en rojo de error. --danger lo agrega nicol-a6 en :root; mientras tanto, #b42318. */
+.zone-address.outside { background: var(--danger, #b42318); }
+
+/* ===== Accesibilidad (auditoría axe 2026-09) ===== */
+/* WhatsApp: el verde #25d366 con texto blanco da 1,98:1. #0f8043 da 5:1 y sigue siendo el verde de la marca. */
+.whatsapp-float { background: #0f8043; box-shadow: 0 16px 36px rgba(15, 128, 67, .32); }
+.whatsapp-float:hover { background: #0c6d39; box-shadow: 0 22px 46px rgba(15, 128, 67, .36); }
+.whatsapp-float::before { border-color: rgba(15, 128, 67, .45); }
+/* Contadores del mega menú: #8b7d91 daba 3,9:1 sobre blanco. */
+.catalog-mega-links small, .catalog-mega-root > small { color: #6c5a7d; }
