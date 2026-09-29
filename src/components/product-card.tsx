@@ -11,30 +11,38 @@ export function ProductCard({ product }: { product: Product }) {
   const from = available.length ? Math.min(...available.map((variant) => variant.priceCents)) : firstVariant.priceCents;
   const cashPrice = applyCashDiscount(from);
   const total = product.variants.reduce((sum, variant) => sum + variant.totalStock, 0);
+  const stockState = total === 0 ? "out" : total <= 3 ? "low" : "in";
   return (
-    <article className="card product-card">
-      <ProductLink slug={product.slug}>
+    <article className={`card product-card ${stockState === "out" ? "is-out" : ""}`}>
+      <ProductLink className="product-card-media" slug={product.slug}>
         <ProductArt product={product} />
       </ProductLink>
       <div className="product-body">
-        <div className="product-meta">{product.category} / {product.subcategory}</div>
-        <h3><ProductLink slug={product.slug}>{product.name}</ProductLink></h3>
+        <div className="product-meta" title={`${product.category} / ${product.subcategory}`}>{product.category} / {product.subcategory}</div>
+        <h3 title={product.name}><ProductLink slug={product.slug}>{product.name}</ProductLink></h3>
         <div className="price">
-          {formatPrice(from)}
+          <span className="price-main">{formatPrice(from)}</span>
           <small>{product.variants.length > 1 ? "Según presentación" : firstVariant.label}</small>
-          <span className="price-cash">{formatPrice(cashPrice)}</span>
-          <span className="price-cash-note">Con efectivo en sucursal: 10% de descuento</span>
+          <span className="price-cash">
+            <span className="price-cash-badge">-10%</span>
+            {formatPrice(cashPrice)}
+            <span className="price-cash-note">en efectivo en sucursal</span>
+          </span>
         </div>
         <div className="product-flags">
           <span>{product.brand}</span>
           {product.lifeStage && <span>{product.lifeStage}</span>}
           {product.size && product.size !== "todos" && <span>{product.size}</span>}
         </div>
-        <span className={`stock-label ${total === 0 ? "out" : ""}`}>
-          {total === 0 ? "Sin stock" : total <= 3 ? "Últimas unidades" : "Disponible"}
-        </span>
-        <ProductCardCart product={product} />
-        <ProductLink className="product-link" slug={product.slug}>Ver producto &rarr;</ProductLink>
+        <div className="product-card-foot">
+          <ProductCardCart product={product} />
+          <div className="product-card-status">
+            <span className={`stock-label ${stockState}`}>
+              {total === 0 ? "Sin stock" : total <= 3 ? "Últimas unidades" : "Disponible"}
+            </span>
+            <ProductLink className="product-link" slug={product.slug}>Ver producto &rarr;</ProductLink>
+          </div>
+        </div>
       </div>
     </article>
   );
