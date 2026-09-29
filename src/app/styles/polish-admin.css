@@ -1002,3 +1002,27 @@
 .admin-shell .admin-section-head h1 {
   font-weight: 750;
 }
+
+/* ===== Layout propio del panel (sin header ni footer de la tienda) ===== */
+/* Antes se descontaban los 125 px del header de la tienda. */
+.admin-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (min-width: 1121px) {
+  .admin-shell .admin-sidebar {
+    top: 24px;
+  }
+}
+
+/* Login centrado en la pantalla. */
+.admin-shell:has(> .login) {
+  display: grid;
+  align-content: center;
+  padding-block: 32px;
+}
+
+.admin-shell > .login {
+  margin-block: 0;
+}
