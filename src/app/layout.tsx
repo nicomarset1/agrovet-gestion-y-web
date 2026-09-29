@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope, Fraunces } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
+import { StoreChrome } from "@/components/store-chrome";
 import { CartProvider } from "@/components/cart-provider";
 import { LiveSync } from "@/components/live-sync";
 import { ToastProvider } from "@/components/toast-provider";
@@ -94,9 +95,9 @@ export default async function RootLayout({
           <CartProvider>
             <LiveSync initialVersion={syncVersion} />
             <a className="skip-link" href="#contenido">Saltar al contenido</a>
-            <Header />
+            <StoreChrome><Header /></StoreChrome>
             <main id="contenido" tabIndex={-1}>{children}</main>
-            <Footer />
+            <StoreChrome><Footer /></StoreChrome>
             <WhatsappFloat />
           </CartProvider>
         </ToastProvider>
