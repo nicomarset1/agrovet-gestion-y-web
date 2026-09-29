@@ -4,7 +4,8 @@ import { ArrowLeft, ChevronRight, Stethoscope } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { VariantSelector } from "@/components/variant-selector";
-import { getProduct } from "@/lib/db";
+import { ProductCard } from "@/components/product-card";
+import { getProduct, getProducts } from "@/lib/db";
 import { productImageSrc } from "@/lib/product-image";
 import { absoluteUrl, siteName } from "@/lib/site";
 
@@ -20,6 +21,20 @@ function priceFrom(product: Product) {
   const available = product.variants.filter((variant) => variant.totalStock > 0);
   const pool = available.length ? available : product.variants;
   return pool.length ? Math.min(...pool.map((variant) => variant.priceCents)) : 0;
+}
+
+// "También te puede interesar": primero lo que tiene stock; dentro de cada grupo, la misma subcategoría
+// y especie antes que el resto de la categoría. Usa getProducts con filtros existentes (solo trae esas filas).
+async function relatedProducts(product: Product, count = 4) {
+  const pet = product.species === "perro" || product.species === "gato" ? product.species : undefined;
+  const [sameSubcategory, sameCategory] = await Promise.all([
+    getProducts({ subcategory: product.subcategorySlug, pet }),
+    product.categorySlug ? getProducts({ category: product.categorySlug, pet }) : Promise.resolve([]),
+  ]);
+  const seen = new Set([product.id]);
+  const candidates = [...sameSubcategory, ...sameCategory].filter((item) => !seen.has(item.id) && seen.add(item.id));
+  const hasStock = (item: Product) => Number(item.variants.some((variant) => variant.totalStock > 0));
+  return candidates.sort((a, b) => hasStock(b) - hasStock(a)).slice(0, count);
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -48,6 +63,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   const product = await getProduct(slug);
   const backHref = back?.startsWith("/tienda") ? back : "/tienda";
   if (!product) notFound();
+  const related = await relatedProducts(product);
 
   const totalStock = product.variants.reduce((sum, variant) => sum + variant.totalStock, 0);
   const productPrice = priceFrom(product);
@@ -108,6 +124,12 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
           <VariantSelector imageSrc={productImageSrc(product)} product={{ ...product, imageUrl: "", description: "" }} />
         </section>
       </div>
+      {related.length > 0 && (
+        <section aria-labelledby="related-title" className="related-products">
+          <h2 className="display" id="related-title">También te puede interesar</h2>
+          <div className="product-grid">{related.map((item) => <ProductCard key={item.id} product={item} />)}</div>
+        </section>
+      )}
     </div>
   );
 }
