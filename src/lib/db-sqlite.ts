@@ -621,7 +621,7 @@ export function getProducts(filters: CatalogFilters = {}) {
   }
   const needs = values(filters.need);
   if (needs.length) {
-    clauses.push(`(p.need IN (${needs.map(() => "?").join(", ")}) OR p.need = '')`);
+    clauses.push(`p.need IN (${needs.map(() => "?").join(", ")})`);
     params.push(...needs);
   }
   const presentations = values(filters.presentation);
