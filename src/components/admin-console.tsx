@@ -920,6 +920,101 @@ function SubcategoryModal({
   );
 }
 
+const PHOTO_MAX_SIDE = 800;
+const PHOTO_TARGET_BYTES = 400 * 1024;
+
+type ProductPhotoResult = { dataUrl: string; originalBytes: number; finalBytes: number };
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toLocaleString("es-AR", { maximumFractionDigits: 1 })} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function readBlobAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el archivo."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function decodeProductPhoto(file: File): Promise<{ source: CanvasImageSource; width: number; height: number; release: () => void }> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      // Respeta la orientación EXIF de las fotos de celular.
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, release: () => bitmap.close() };
+    } catch {
+      // Si el navegador no puede, se intenta con <img>, que también aplica la orientación.
+    }
+  }
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new window.Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+    await image.decode();
+    return { source: image, width: image.naturalWidth, height: image.naturalHeight, release: () => URL.revokeObjectURL(objectUrl) };
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
+}
+
+// Achica la foto antes de guardarla: lado mayor de 800 px como máximo, WebP (o JPEG si el
+// navegador no lo soporta) y alrededor de 400 KB. Se guarda igual que antes, como data URL.
+async function shrinkProductPhoto(file: File): Promise<ProductPhotoResult> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("El archivo elegido no es una imagen. Elegí una foto en JPG, PNG o WebP.");
+  }
+  let decoded: Awaited<ReturnType<typeof decodeProductPhoto>>;
+  try {
+    decoded = await decodeProductPhoto(file);
+  } catch {
+    throw new Error("No se pudo leer la imagen. Probá con una foto en JPG, PNG o WebP.");
+  }
+  try {
+    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(decoded.width, decoded.height));
+    const width = Math.max(1, Math.round(decoded.width * scale));
+    const height = Math.max(1, Math.round(decoded.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("No se pudo procesar la imagen en este navegador.");
+    const probe = document.createElement("canvas");
+    probe.width = 1;
+    probe.height = 1;
+    const supportsWebp = probe.toDataURL("image/webp").startsWith("data:image/webp");
+    const type = supportsWebp ? "image/webp" : "image/jpeg";
+    if (!supportsWebp) {
+      // JPEG no tiene transparencia: el fondo transparente queda blanco.
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, width, height);
+    }
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(decoded.source, 0, 0, width, height);
+    const qualities = supportsWebp ? [0.8, 0.7, 0.6, 0.5, 0.4] : [0.82, 0.72, 0.62, 0.52, 0.42];
+    let blob: Blob | null = null;
+    for (const quality of qualities) {
+      blob = await canvasToBlob(canvas, type, quality);
+      if (!blob || blob.size <= PHOTO_TARGET_BYTES) break;
+    }
+    if (!blob) throw new Error("No se pudo procesar la imagen en este navegador.");
+    // Si achicarla no la hizo más liviana (por ejemplo, un PNG chico), se guarda la original.
+    const finalBlob = file.size <= blob.size ? file : blob;
+    return { dataUrl: await readBlobAsDataUrl(finalBlob), originalBytes: file.size, finalBytes: finalBlob.size };
+  } finally {
+    decoded.release();
+  }
+}
+
 function ProductModal({
   categories,
   returnTo,
@@ -946,6 +1041,14 @@ function ProductModal({
   const [saveBrandAsFrequent, setSaveBrandAsFrequent] = useState(false);
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [photoStatus, setPhotoStatus] = useState<
+    | { state: "idle" }
+    | { state: "processing" }
+    | { state: "done"; originalBytes: number; finalBytes: number }
+    | { state: "error"; message: string }
+  >({ state: "idle" });
+  const photoRequest = useRef(0);
+  const photoProcessing = photoStatus.state === "processing";
   const [frequentBrands, setFrequentBrands] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -1185,18 +1288,40 @@ function ProductModal({
           <input
             accept="image/*"
             className="field"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+            onChange={async (event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              const request = ++photoRequest.current;
               if (!file) {
                 setImageUrl(product?.imageUrl ?? "");
+                setPhotoStatus({ state: "idle" });
                 return;
               }
-              const reader = new FileReader();
-              reader.onload = () => setImageUrl(String(reader.result ?? ""));
-              reader.readAsDataURL(file);
+              setPhotoStatus({ state: "processing" });
+              try {
+                const result = await shrinkProductPhoto(file);
+                if (request !== photoRequest.current) return;
+                setImageUrl(result.dataUrl);
+                setPhotoStatus({ state: "done", originalBytes: result.originalBytes, finalBytes: result.finalBytes });
+              } catch (error) {
+                if (request !== photoRequest.current) return;
+                input.value = "";
+                setPhotoStatus({ state: "error", message: error instanceof Error ? error.message : "No se pudo procesar la imagen." });
+              }
             }}
             type="file"
           />
+          {photoStatus.state === "processing" ? (
+            <p className="notice loading-notice" role="status"><span aria-hidden="true" className="loader-dot" /> Procesando foto…</p>
+          ) : null}
+          {photoStatus.state === "error" ? <p className="notice error" role="alert">{photoStatus.message}</p> : null}
+          {photoStatus.state === "done" ? (
+            <small className="description">
+              {photoStatus.finalBytes < photoStatus.originalBytes
+                ? `Foto optimizada: ${formatFileSize(photoStatus.originalBytes)} → ${formatFileSize(photoStatus.finalBytes)}.`
+                : `Foto lista: ${formatFileSize(photoStatus.finalBytes)}.`}
+            </small>
+          ) : null}
           <input name="imageUrl" type="hidden" value={imageUrl} />
           <div className="admin-image-preview">
             {imageUrl ? (
@@ -1214,7 +1339,7 @@ function ProductModal({
               <div className="admin-image-preview-empty">Subí una imagen para verla aquí</div>
             )}
             {imageUrl ? (
-              <button className="button button-light" onClick={() => setImageUrl("")} type="button">Quitar imagen</button>
+              <button className="button button-light" onClick={() => { setImageUrl(""); setPhotoStatus({ state: "idle" }); }} type="button">Quitar imagen</button>
             ) : null}
           </div>
         </label>
@@ -1350,7 +1475,7 @@ function ProductModal({
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
-          <button className="button button-primary" type="submit">{mode === "create" ? "Crear producto" : "Guardar cambios"}</button>
+          <button className="button button-primary" disabled={photoProcessing} type="submit">{photoProcessing ? "Procesando foto…" : mode === "create" ? "Crear producto" : "Guardar cambios"}</button>
         </div>
       </form>
     </AdminModal>
