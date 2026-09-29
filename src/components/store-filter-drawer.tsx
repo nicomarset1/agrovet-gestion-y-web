@@ -42,7 +42,7 @@ function Section({ active = false, children, title }: { active?: boolean; childr
         <span>{title}{active && <span aria-label="con filtros activos" className="drawer-section-dot" />}</span>
         <ChevronRight size={16} />
       </button>
-      <div className="drawer-section-body">{children}</div>
+      <div className="drawer-section-body" inert={!open}>{children}</div>
     </section>
   );
 }
@@ -122,6 +122,13 @@ function clamp(value: number, min: number, max: number) {
 export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; filters: Filters }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  // Cerrar devuelve el foco al botón "Filtrar" (Escape, la X o tocar afuera).
+  const closeDrawer = useCallback(() => {
+    setOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
+  }, []);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(() => selected(filters.category));
   const selectedBrands = selected(filters.brand);
   const selectedStages = selected(filters.stage);
@@ -250,7 +257,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") closeDrawer();
     };
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -259,7 +266,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [closeDrawer, open]);
 
   // Arma la URL solo con lo elegido: sin campos vacíos ni el rango de precio completo.
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
@@ -278,22 +285,58 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
     router.push(query ? `/tienda?${query}` : "/tienda");
   };
 
+  // Al abrir, el foco entra al panel (se espera a que deje de estar oculto para poder enfocarlo).
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => {
+      drawerRef.current?.querySelector<HTMLElement>(".drawer-section-toggle, input, button")?.focus({ preventScroll: true });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  // El panel es modal: Tab y Shift+Tab quedan dentro mientras está abierto.
+  function trapFocus(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key !== "Tab" || !drawerRef.current) return;
+    const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), [tabindex='0']")]
+      // Fuera: lo que está dentro de una sección cerrada (inert).
+      .filter((element) => !element.closest("[inert]"));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   const usableWidth = Math.max(1, rangeWidth - (rangePad * 2));
   const handleALeft = rangePad + (usableWidth * handleAPercent / 100);
   const handleBLeft = rangePad + (usableWidth * handleBPercent / 100);
 
   return (
     <>
-      <button aria-expanded={open} className="filter-open-button" onClick={() => setOpen(true)} type="button">
+      <button aria-expanded={open} aria-haspopup="dialog" className="filter-open-button" onClick={() => setOpen(true)} ref={triggerRef} type="button">
         <SlidersHorizontal size={18} />
         Filtrar
         {activeCount > 0 && <span aria-label={`${activeCount} filtros activos`} className="filter-count">{activeCount}</span>}
       </button>
-      <div className={`filter-overlay ${open ? "open" : ""}`} onClick={() => setOpen(false)} />
-      <aside className={`filter-drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Filtros" inert={!open}>
+      <div aria-hidden="true" className={`filter-overlay ${open ? "open" : ""}`} onClick={closeDrawer} />
+      <div
+        aria-hidden={!open}
+        aria-label="Filtros"
+        aria-modal={open ? true : undefined}
+        className={`filter-drawer ${open ? "open" : ""}`}
+        inert={!open}
+        onKeyDown={trapFocus}
+        ref={drawerRef}
+        role={open ? "dialog" : undefined}
+      >
         <div className="filter-drawer-head">
           <strong>Filtros{activeCount > 0 && <span className="filter-count">{activeCount}</span>}</strong>
-          <button onClick={() => setOpen(false)} type="button" aria-label="Cerrar filtros"><X size={18} /></button>
+          <button onClick={closeDrawer} type="button" aria-label="Cerrar filtros"><X size={18} /></button>
         </div>
         <form action="/tienda" className="drawer-form" onSubmit={applyFilters}>
           {/* Lo que no se elige en el panel se conserva al aplicar. */}
@@ -432,7 +475,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
             <Link className="button button-light" href={filters.sort ? `/tienda?sort=${encodeURIComponent(filters.sort)}` : "/tienda"} onClick={() => setOpen(false)}>Limpiar</Link>
           </div>
         </form>
-      </aside>
+      </div>
     </>
   );
 }
