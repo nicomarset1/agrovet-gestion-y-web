@@ -1,3 +1,971 @@
 /* Pulido 2026-09 · Panel /admin y login (nicol-a1).
    Estilos NUEVOS de esta área van acá. Se cargan después de globals.css,
-   así que pueden sobrescribir reglas existentes con la misma especificidad. */
+   así que pueden sobrescribir reglas existentes con la misma especificidad.
+   Todo va prefijado con .admin-shell para no depender del orden de los chunks
+   de CSS en el build, y cada cambio de grilla va dentro de su propio rango de
+   ancho para no pisar las reglas responsive de globals.css. */
+
+/* ===== Base: superficies, radios y números ===== */
+.admin-shell .card {
+  border-radius: var(--radius-md);
+}
+
+.admin-shell .admin-panel,
+.admin-shell .admin-stat,
+.admin-shell .admin-category-card,
+.admin-shell .admin-current-branch-banner {
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-shell .admin-current-branch-banner,
+.admin-shell .admin-subcategory-card,
+.admin-shell .admin-branch-stock-card,
+.admin-shell .admin-empty-state,
+.admin-shell .admin-order-items {
+  border-radius: var(--radius-sm);
+}
+
+.admin-shell .admin-stat strong,
+.admin-shell .admin-summary-line strong,
+.admin-shell .admin-stock-pill,
+.admin-shell .admin-donut-row,
+.admin-shell .admin-donut-actions strong,
+.admin-shell .admin-detail-summary strong,
+.admin-shell .admin-table-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .field {
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+
+.admin-shell .field:hover:not(:disabled):not(:focus) {
+  border-color: #cfb8ea;
+}
+
+.admin-shell .field:disabled {
+  background: #faf7fc;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.admin-shell .button:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Barras de scroll finas en las listas internas del panel. */
+.admin-shell .admin-sale-list,
+.admin-shell .admin-scroll-list,
+.admin-shell .admin-trash-list,
+.admin-shell .admin-pending-grid,
+.admin-shell .admin-web-branch-body,
+.admin-shell .admin-web-history-list,
+.admin-shell .admin-mini-list,
+.admin-shell .admin-modal {
+  scrollbar-width: thin;
+  scrollbar-color: #d9c6ee transparent;
+}
+
+/* ===== Entrada de secciones ===== */
+.admin-shell .admin-main > :not([id^="admin-section-"]),
+.admin-shell .admin-main > [id^="admin-section-"] > * {
+  animation: ui-fade-up var(--dur-slow) var(--ease-out) both;
+}
+
+.admin-shell .admin-main > :nth-child(2),
+.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(2) { animation-delay: 40ms; }
+.admin-shell .admin-main > :nth-child(3),
+.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(3) { animation-delay: 80ms; }
+.admin-shell .admin-main > :nth-child(n + 4),
+.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(n + 4) { animation-delay: 120ms; }
+
+/* Los contenedores de cada sección no tenían separación interna:
+   el título quedaba pegado a filtros y tarjetas. */
+.admin-shell .admin-main > [id^="admin-section-"] {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ===== Barra lateral ===== */
+/* Logo liviano (6 KB) en vez de agrovet-logo.png (563 KB). */
+.admin-shell .admin-brand-mark,
+.admin-shell .login::before {
+  background-image: url("/brand/agrovet-mark-144.png");
+  background-image: image-set(url("/brand/agrovet-mark-144.webp") type("image/webp"), url("/brand/agrovet-mark-144.png") type("image/png"));
+}
+
+.admin-shell .admin-brand-mark {
+  transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-brand-mark:hover {
+  transform: scale(1.05) rotate(-3deg);
+  box-shadow: var(--shadow-md);
+}
+
+.admin-shell .admin-nav a,
+.admin-shell .admin-nav button {
+  border-radius: var(--radius-sm);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    background var(--dur-base) ease,
+    border-color var(--dur-base) ease,
+    box-shadow var(--dur-base) ease,
+    color var(--dur-base) ease;
+}
+
+.admin-shell .admin-nav a > svg:first-child {
+  color: var(--muted);
+  transition: color var(--dur-base) ease;
+}
+
+.admin-shell .admin-nav-tail {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: #b9a7cc;
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-base) ease;
+}
+
+.admin-shell .admin-nav-tail svg {
+  transition: opacity var(--dur-fast) ease;
+}
+
+/* Indicador de carga al cambiar de sección: aparece solo si tarda más de 120 ms. */
+.admin-shell .admin-nav-tail::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 2px solid rgba(91, 15, 115, .18);
+  border-top-color: var(--forest);
+  border-radius: 50%;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.admin-shell .admin-nav-tail.is-pending svg {
+  opacity: 0;
+}
+
+.admin-shell .admin-nav-tail.is-pending::after {
+  visibility: visible;
+  animation: ui-fade-in var(--dur-fast) ease 120ms forwards, spin .7s linear infinite;
+}
+
+.admin-shell .admin-nav a:hover > svg:first-child,
+.admin-shell .admin-nav a.active > svg:first-child {
+  color: var(--forest);
+}
+
+.admin-shell .admin-nav a:hover .admin-nav-tail {
+  transform: translateX(3px);
+  color: var(--forest);
+}
+
+.admin-shell .admin-nav a.active {
+  color: var(--forest);
+  border-color: #e6d6fa;
+  box-shadow: inset 3px 0 0 var(--forest), 0 10px 18px rgba(53, 12, 86, .06);
+}
+
+.admin-shell .admin-nav a.active .admin-nav-tail {
+  color: var(--forest);
+}
+
+.admin-shell .admin-logout .button {
+  width: 100%;
+}
+
+/* En celular el chevron se oculta, pero el indicador de carga sigue visible. */
+@media (max-width: 820px) {
+  .admin-shell .admin-nav a {
+    grid-template-columns: 18px 1fr auto;
+  }
+}
+
+/* ===== Sucursal activa ===== */
+.admin-shell .admin-current-branch-banner > span:not(.admin-skeleton-line)::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 9px;
+  border-radius: 50%;
+  background: #2f9e5b;
+  box-shadow: 0 0 0 0 rgba(47, 158, 91, .45);
+  animation: admin-live-dot 2.4s ease-out infinite;
+}
+
+.admin-shell .admin-current-branch {
+  position: relative;
+  transition: color var(--dur-base) ease;
+}
+
+.admin-shell .admin-current-branch::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.admin-shell .admin-current-branch:hover {
+  color: var(--forest-light);
+}
+
+.admin-shell .admin-current-branch:hover::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+@keyframes admin-live-dot {
+  0% { box-shadow: 0 0 0 0 rgba(47, 158, 91, .45); }
+  70%, 100% { box-shadow: 0 0 0 7px rgba(47, 158, 91, 0); }
+}
+
+/* ===== Encabezado de sección ===== */
+.admin-shell .admin-section-head > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.admin-shell .admin-section-head p:not(.eyebrow) {
+  max-width: 62ch;
+}
+
+@media (min-width: 821px) {
+  .admin-shell .admin-section-action {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+}
+
+/* ===== Tarjetas de métricas ===== */
+@media (min-width: 1121px) {
+  .admin-shell .admin-stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1120px) {
+  .admin-shell .admin-stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+}
+
+.admin-shell .admin-stat {
+  min-height: 0;
+  gap: 8px;
+}
+
+.admin-shell .admin-stat-grid > :nth-child(2) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 50ms both; }
+.admin-shell .admin-stat-grid > :nth-child(3) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 100ms both; }
+.admin-shell .admin-stat-grid > :nth-child(4) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 150ms both; }
+
+.admin-shell .admin-stat-button {
+  position: relative;
+  color: inherit;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) ease,
+    border-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-stat-button::after {
+  content: "›";
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  color: #b9a7cc;
+  font-size: 22px;
+  line-height: 1;
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-base) ease;
+}
+
+.admin-shell .admin-stat-button small {
+  padding-right: 22px;
+}
+
+.admin-shell .admin-stat-button:hover {
+  transform: translateY(-3px);
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-md);
+}
+
+.admin-shell .admin-stat-button:hover::after {
+  transform: translateX(3px);
+  color: var(--forest);
+}
+
+/* ===== Filtros y buscadores ===== */
+.admin-shell .admin-toolbar .admin-point-field {
+  gap: 8px;
+}
+
+.admin-shell .admin-toolbar .admin-point-field > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.admin-shell .admin-search svg {
+  pointer-events: none;
+  transition: color var(--dur-fast) ease;
+}
+
+.admin-shell .admin-search:focus-within svg {
+  color: var(--forest);
+}
+
+@media (min-width: 1001px) {
+  .admin-shell .admin-toolbar .field {
+    min-height: 48px;
+  }
+
+  .admin-shell .admin-search .field {
+    min-height: 48px;
+  }
+
+  /* Productos: buscador a todo el ancho y los tres filtros alineados abajo.
+     Antes eran 4 campos en una grilla de 3 y "Estado tienda" quedaba solo. */
+  .admin-shell #admin-section-productos .admin-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-shell #admin-section-productos .admin-toolbar .admin-search {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell #admin-section-papelera .admin-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
+  }
+}
+
+.admin-shell #admin-section-papelera .admin-toolbar {
+  margin-bottom: 16px;
+}
+
+/* Grupos de filtros (fecha + resumen, reporte de ventas). */
+.admin-shell .admin-toolbar-stack {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.admin-shell .admin-toolbar-stack .admin-detail-summary.compact {
+  align-content: center;
+  min-height: 48px;
+  padding: 12px 16px;
+  gap: 2px;
+}
+
+.admin-shell .admin-toolbar-stack .admin-detail-summary.compact strong {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.admin-shell .admin-toolbar-stack .admin-detail-summary.compact span {
+  font-size: 13px;
+}
+
+/* Paneles con más de un bloque (ej. Clientes): aire antes del segundo título. */
+.admin-shell .admin-panel > :not(:first-child) + h2 {
+  margin-top: 26px;
+}
+
+/* Los avisos de error se veían violetas como los informativos. */
+.admin-shell .notice.error {
+  border-color: #f3cfc7;
+  background: #fff4f2;
+  color: #98402d;
+}
+
+/* ===== Estados vacíos ===== */
+.admin-shell .admin-sale-list > p.description,
+.admin-shell .admin-web-branch-body > p.description,
+.admin-shell .admin-web-history-list > p.description,
+.admin-shell .admin-trash-list > p.description,
+.admin-shell .admin-product-list > p.description,
+.admin-shell .admin-history-list > p.description,
+.admin-shell .admin-donut-list > p.description {
+  margin: 0;
+  padding: 22px 18px;
+  border: 1px dashed #dccbef;
+  border-radius: var(--radius-sm);
+  background: #fcf9ff;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  animation: ui-fade-in var(--dur-slow) ease both;
+}
+
+.admin-shell .admin-web-branch-body > p.description {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+}
+
+.admin-shell .admin-empty-state {
+  border-style: dashed;
+  border-color: #dccbef;
+  padding: 28px 20px;
+}
+
+.admin-shell .admin-empty-state svg {
+  color: var(--forest);
+  opacity: .35;
+}
+
+.admin-shell .admin-empty-state span {
+  font-size: 14px;
+}
+
+/* ===== Tabla de productos ===== */
+.admin-shell .admin-table-row {
+  transition: background var(--dur-base) ease;
+}
+
+.admin-shell .admin-toggle span {
+  transition: background var(--dur-base) ease, border-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-toggle span::after {
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+
+.admin-shell .admin-toggle:hover span {
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, .1);
+}
+
+.admin-shell .admin-toggle input:focus-visible + span {
+  box-shadow: var(--focus-ring);
+}
+
+.admin-shell .icon-button.danger:hover {
+  border-color: #f0c9c7;
+  background: #fff6f5;
+}
+
+@media (min-width: 821px) {
+  .admin-shell #admin-section-productos .admin-table-head,
+  .admin-shell #admin-section-productos .admin-table-row {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr) minmax(0, .85fr) minmax(72px, .5fr) minmax(158px, .9fr) auto;
+    margin-inline: -10px;
+    padding-inline: 10px;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-head > span:nth-child(5) {
+    text-align: center;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-head > span:last-child {
+    text-align: right;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-row:hover {
+    background: #fcf9ff;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-row > span:not(.admin-stock-pill) {
+    color: #4a3c57;
+    font-size: 15px;
+  }
+
+  .admin-shell #admin-section-productos .admin-row-actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .admin-shell #admin-section-productos .admin-stock-pill-wide {
+    align-items: center;
+    min-width: 0;
+  }
+
+  .admin-shell #admin-section-productos .admin-stock-pill-wide small {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 820px) {
+  .admin-shell #admin-section-productos .admin-table-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 16px 0;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-row > div:first-child,
+  .admin-shell #admin-section-productos .admin-row-actions {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-row > span:nth-child(2),
+  .admin-shell #admin-section-productos .admin-table-row > span:nth-child(3) {
+    justify-self: start;
+    max-width: 100%;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: #f7f1fd;
+    color: #4a3c57;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .admin-shell #admin-section-productos .admin-table-row > strong {
+    align-self: center;
+    font-size: 18px;
+  }
+
+  .admin-shell #admin-section-productos .admin-stock-pill-wide {
+    align-items: center;
+    min-width: 0;
+  }
+
+  .admin-shell #admin-section-productos .admin-row-actions {
+    gap: 8px;
+  }
+
+  /* El interruptor queda a la izquierda y editar/eliminar a la derecha. */
+  .admin-shell #admin-section-productos .admin-row-actions > form + .icon-button {
+    margin-left: auto;
+  }
+}
+
+/* ===== Gráficos del dashboard ===== */
+.admin-shell .admin-bar-fill {
+  transform-origin: left center;
+  animation: admin-bar-grow .7s var(--ease-out) both;
+}
+
+.admin-shell .admin-bar-row:nth-child(2) .admin-bar-fill { animation-delay: 40ms; }
+.admin-shell .admin-bar-row:nth-child(3) .admin-bar-fill { animation-delay: 80ms; }
+.admin-shell .admin-bar-row:nth-child(4) .admin-bar-fill { animation-delay: 120ms; }
+.admin-shell .admin-bar-row:nth-child(5) .admin-bar-fill { animation-delay: 160ms; }
+.admin-shell .admin-bar-row:nth-child(6) .admin-bar-fill { animation-delay: 200ms; }
+.admin-shell .admin-bar-row:nth-child(7) .admin-bar-fill { animation-delay: 240ms; }
+
+/* Días sin ventas: la barra mínima queda tenue para no parecer un monto. */
+.admin-shell .admin-bar-fill.is-empty {
+  opacity: .28;
+}
+
+.admin-shell .admin-bar-track {
+  transition: box-shadow var(--dur-fast) ease;
+}
+
+.admin-shell .admin-bar-row:hover .admin-bar-track {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, .1);
+}
+
+@keyframes admin-bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+
+.admin-shell .admin-donut-chart {
+  position: relative;
+  animation: ui-scale-in var(--dur-slow) var(--ease-out) 80ms both;
+}
+
+/* Agujero central: el gráfico pasa de torta a dona. */
+.admin-shell .admin-donut-chart::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 2px 8px rgba(91, 15, 115, .08);
+}
+
+.admin-shell .admin-donut-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-shell .admin-donut-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+}
+
+.admin-shell .admin-mini-list span {
+  border-radius: var(--radius-sm);
+}
+
+.admin-shell .admin-title-button {
+  border-radius: var(--radius-sm);
+}
+
+.admin-shell .admin-title-button > svg {
+  flex: 0 0 auto;
+  color: #b9a7cc;
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-base) ease;
+}
+
+.admin-shell .admin-title-button:hover > svg {
+  transform: translateX(3px);
+  color: var(--forest);
+}
+
+.admin-shell .admin-menu-popover {
+  transform-origin: top right;
+  animation: ui-scale-in var(--dur-base) var(--ease-out) both;
+}
+
+/* ===== Categorías ===== */
+.admin-shell .admin-subcategory-card,
+.admin-shell .admin-branch-stock-card {
+  transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease, transform var(--dur-base) var(--ease-out);
+}
+
+.admin-shell .admin-subcategory-card:hover {
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+}
+
+.admin-shell .admin-subcategory-card small {
+  font-weight: 700;
+}
+
+.admin-shell .admin-chevron {
+  transition: transform var(--dur-base) var(--ease-out), background var(--dur-base) ease, border-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-chevron:hover {
+  transform: translateX(2px);
+  background: var(--sage);
+  border-color: #e0cdf6;
+}
+
+/* ===== Caja ===== */
+.admin-shell .admin-pos-line {
+  align-items: center;
+  animation: ui-fade-up var(--dur-base) var(--ease-out) both;
+}
+
+.admin-shell .admin-summary-line + .admin-summary-line strong {
+  color: var(--forest);
+  font-size: 22px;
+}
+
+/* ===== Pedidos web y listas ===== */
+.admin-shell .admin-pending-card {
+  transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-pending-card:hover {
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-shell .admin-web-branch-head {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-shell .admin-web-branch-head span {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.admin-shell .admin-history-row:hover {
+  border-color: #d9c4f2;
+  background: #fcf9ff;
+}
+
+.admin-shell .admin-period-toggle .button:not(.active):hover {
+  box-shadow: none;
+}
+
+/* ===== Modales ===== */
+.admin-shell .admin-modal-backdrop {
+  animation: ui-fade-in var(--dur-base) ease both;
+}
+
+.admin-shell .admin-modal {
+  border-radius: var(--radius-lg);
+  animation: ui-scale-in var(--dur-base) var(--ease-out) both;
+}
+
+/* El encabezado queda fijo al scrollear formularios largos. */
+.admin-shell .admin-modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(8px);
+}
+
+.admin-shell .admin-modal-close {
+  flex: 0 0 auto;
+  transition: transform var(--dur-base) var(--ease-out), background var(--dur-base) ease, color var(--dur-base) ease, border-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-modal-close:hover {
+  transform: rotate(90deg);
+  background: var(--sage);
+  border-color: #e0cdf6;
+  color: var(--forest);
+}
+
+/* Los detalles del dashboard quedaban pegados a los bordes del modal:
+   .admin-detail-stack pisaba el padding horizontal. */
+.admin-shell .admin-modal > .admin-detail-stack {
+  padding: 20px 24px 24px;
+}
+
+.admin-shell .admin-modal > .admin-detail-stack.admin-branch-picker-grid {
+  padding: 6px 32px 32px;
+}
+
+@media (max-width: 820px) {
+  .admin-shell .admin-modal > .admin-detail-stack {
+    padding: 16px 18px 20px;
+  }
+
+  .admin-shell .admin-modal > .admin-detail-stack.admin-branch-picker-grid {
+    padding: 4px 24px 24px;
+  }
+}
+
+.admin-shell .admin-branch-picker-modal .admin-modal-head {
+  position: static;
+  border-bottom: 0;
+}
+
+.admin-shell .admin-branch-picker-grid .button {
+  justify-content: center;
+  border-radius: var(--radius-md);
+  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) ease, background var(--dur-base) ease, border-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-branch-picker-grid .button:hover {
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-md);
+}
+
+.admin-shell .admin-variant-preview-row {
+  transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-variant-preview-row:hover {
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ===== Login ===== */
+.admin-shell .login {
+  position: relative;
+  max-width: 420px;
+  padding: 36px 34px 32px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  animation: ui-scale-in var(--dur-slow) var(--ease-out) both;
+}
+
+.admin-shell .login::before {
+  content: "";
+  display: block;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 18px;
+  border-radius: 18px;
+  background-color: var(--forest);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  box-shadow: 0 12px 26px rgba(91, 15, 115, .22);
+}
+
+.admin-shell .login h1 {
+  margin: 6px 0 10px;
+}
+
+.admin-shell .login .description {
+  margin: 0 auto;
+  max-width: 32ch;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.admin-shell .login form {
+  margin-top: 26px;
+}
+
+.admin-shell .login .field {
+  min-height: 52px;
+  font-size: 20px;
+  letter-spacing: .32em;
+  text-align: center;
+}
+
+.admin-shell .login .field::placeholder {
+  font-size: 15px;
+  letter-spacing: normal;
+}
+
+.admin-shell .login .button {
+  width: 100%;
+  min-height: 52px;
+}
+
+/* .notice es grilla centrada y partía el texto con <strong> en tres renglones. */
+.admin-shell .login .notice {
+  display: block;
+  min-height: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.admin-shell .login .notice.error {
+  border-color: #f3cfc7;
+  animation: admin-shake .36s var(--ease-out) both;
+}
+
+@keyframes admin-shake {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+
+@media (max-width: 640px) {
+  .admin-shell .login {
+    width: calc(100% - 32px);
+    margin: 32px auto;
+    padding: 28px 22px 24px;
+  }
+}
+
+/* ===== Ajustes de celular ===== */
+@media (max-width: 820px) {
+  .admin-shell .admin-section-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Métricas de a dos: antes cada una ocupaba una pantalla entera de alto. */
+  .admin-shell .admin-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-shell .admin-stat {
+    padding: 16px;
+  }
+
+  .admin-shell .admin-stat small {
+    font-size: 11px;
+  }
+
+  .admin-shell .admin-stat strong {
+    font-size: clamp(20px, 6.4vw, 26px);
+    overflow-wrap: anywhere;
+  }
+
+  .admin-shell .admin-stat span {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .admin-shell .admin-stat-button::after {
+    top: 12px;
+    right: 12px;
+  }
+
+  .admin-shell .admin-point-banner {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-shell .admin-section-action > .button {
+    flex: 1 1 100%;
+  }
+
+  /* Los botones de escanear/buscar son solo ícono: quedan al costado del
+     campo en vez de ocupar una fila entera. */
+  .admin-shell .admin-scan-row {
+    grid-template-columns: minmax(0, 1fr) 52px;
+  }
+
+  .admin-shell .admin-scan-row .button {
+    width: 52px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0;
+  }
+}
+
+/* ===== Esqueleto de carga del panel (src/app/admin/loading.tsx) ===== */
+.admin-skeleton-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.admin-shell .admin-skeleton-stack {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.admin-shell .admin-skeleton-nav {
+  display: grid;
+  gap: 14px;
+  padding: 4px 0 8px;
+}
+
+.admin-shell .admin-skeleton-line {
+  display: block;
+  height: 14px;
+  max-width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f1e9f8 0%, #faf6fd 45%, #f1e9f8 90%);
+  background-size: 200% 100%;
+  animation: ui-shimmer 1.4s linear infinite;
+}
+
+.admin-shell .admin-skeleton-line.short { height: 10px; }
+.admin-shell .admin-skeleton-line.nav { height: 34px; border-radius: var(--radius-sm); }
+.admin-shell .admin-skeleton-line.title { width: min(280px, 70%); height: 40px; border-radius: var(--radius-sm); }
+.admin-shell .admin-skeleton-line.value { width: 40%; height: 30px; border-radius: var(--radius-sm); }
+.admin-shell .admin-skeleton-line.row { height: 46px; border-radius: var(--radius-sm); }
+
+.admin-shell.admin-skeleton .admin-brand-mark {
+  cursor: default;
+}
+
+.admin-shell.admin-skeleton .admin-current-branch-banner {
+  align-items: center;
+}
+
+@media (max-width: 1120px) {
+  /* En pantallas chicas el menú real arranca cerrado. */
+  .admin-shell .admin-skeleton-nav {
+    display: none;
+  }
+}

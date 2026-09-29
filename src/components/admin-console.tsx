@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -26,6 +26,7 @@ import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import {
+  closePosSaleAction,
   createCategoryAction,
   createProductAction,
   createSubcategoryAction,
@@ -184,6 +185,16 @@ function DeleteOrderModal({
         </div>
       </form>
     </AdminModal>
+  );
+}
+
+// Cola de cada ítem del menú: chevron y, mientras la sección carga, un indicador.
+function AdminNavTail() {
+  const { pending } = useLinkStatus();
+  return (
+    <span aria-hidden="true" className={`admin-nav-tail${pending ? " is-pending" : ""}`}>
+      <ChevronRight size={16} />
+    </span>
   );
 }
 
@@ -910,6 +921,101 @@ function SubcategoryModal({
   );
 }
 
+const PHOTO_MAX_SIDE = 800;
+const PHOTO_TARGET_BYTES = 400 * 1024;
+
+type ProductPhotoResult = { dataUrl: string; originalBytes: number; finalBytes: number };
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toLocaleString("es-AR", { maximumFractionDigits: 1 })} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function readBlobAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el archivo."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function decodeProductPhoto(file: File): Promise<{ source: CanvasImageSource; width: number; height: number; release: () => void }> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      // Respeta la orientación EXIF de las fotos de celular.
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, release: () => bitmap.close() };
+    } catch {
+      // Si el navegador no puede, se intenta con <img>, que también aplica la orientación.
+    }
+  }
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new window.Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+    await image.decode();
+    return { source: image, width: image.naturalWidth, height: image.naturalHeight, release: () => URL.revokeObjectURL(objectUrl) };
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
+}
+
+// Achica la foto antes de guardarla: lado mayor de 800 px como máximo, WebP (o JPEG si el
+// navegador no lo soporta) y alrededor de 400 KB. Se guarda igual que antes, como data URL.
+async function shrinkProductPhoto(file: File): Promise<ProductPhotoResult> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("El archivo elegido no es una imagen. Elegí una foto en JPG, PNG o WebP.");
+  }
+  let decoded: Awaited<ReturnType<typeof decodeProductPhoto>>;
+  try {
+    decoded = await decodeProductPhoto(file);
+  } catch {
+    throw new Error("No se pudo leer la imagen. Probá con una foto en JPG, PNG o WebP.");
+  }
+  try {
+    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(decoded.width, decoded.height));
+    const width = Math.max(1, Math.round(decoded.width * scale));
+    const height = Math.max(1, Math.round(decoded.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("No se pudo procesar la imagen en este navegador.");
+    const probe = document.createElement("canvas");
+    probe.width = 1;
+    probe.height = 1;
+    const supportsWebp = probe.toDataURL("image/webp").startsWith("data:image/webp");
+    const type = supportsWebp ? "image/webp" : "image/jpeg";
+    if (!supportsWebp) {
+      // JPEG no tiene transparencia: el fondo transparente queda blanco.
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, width, height);
+    }
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(decoded.source, 0, 0, width, height);
+    const qualities = supportsWebp ? [0.8, 0.7, 0.6, 0.5, 0.4] : [0.82, 0.72, 0.62, 0.52, 0.42];
+    let blob: Blob | null = null;
+    for (const quality of qualities) {
+      blob = await canvasToBlob(canvas, type, quality);
+      if (!blob || blob.size <= PHOTO_TARGET_BYTES) break;
+    }
+    if (!blob) throw new Error("No se pudo procesar la imagen en este navegador.");
+    // Si achicarla no la hizo más liviana (por ejemplo, un PNG chico), se guarda la original.
+    const finalBlob = file.size <= blob.size ? file : blob;
+    return { dataUrl: await readBlobAsDataUrl(finalBlob), originalBytes: file.size, finalBytes: finalBlob.size };
+  } finally {
+    decoded.release();
+  }
+}
+
 function ProductModal({
   categories,
   returnTo,
@@ -936,6 +1042,14 @@ function ProductModal({
   const [saveBrandAsFrequent, setSaveBrandAsFrequent] = useState(false);
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [photoStatus, setPhotoStatus] = useState<
+    | { state: "idle" }
+    | { state: "processing" }
+    | { state: "done"; originalBytes: number; finalBytes: number }
+    | { state: "error"; message: string }
+  >({ state: "idle" });
+  const photoRequest = useRef(0);
+  const photoProcessing = photoStatus.state === "processing";
   const [frequentBrands, setFrequentBrands] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -1175,18 +1289,40 @@ function ProductModal({
           <input
             accept="image/*"
             className="field"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+            onChange={async (event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              const request = ++photoRequest.current;
               if (!file) {
                 setImageUrl(product?.imageUrl ?? "");
+                setPhotoStatus({ state: "idle" });
                 return;
               }
-              const reader = new FileReader();
-              reader.onload = () => setImageUrl(String(reader.result ?? ""));
-              reader.readAsDataURL(file);
+              setPhotoStatus({ state: "processing" });
+              try {
+                const result = await shrinkProductPhoto(file);
+                if (request !== photoRequest.current) return;
+                setImageUrl(result.dataUrl);
+                setPhotoStatus({ state: "done", originalBytes: result.originalBytes, finalBytes: result.finalBytes });
+              } catch (error) {
+                if (request !== photoRequest.current) return;
+                input.value = "";
+                setPhotoStatus({ state: "error", message: error instanceof Error ? error.message : "No se pudo procesar la imagen." });
+              }
             }}
             type="file"
           />
+          {photoStatus.state === "processing" ? (
+            <p className="notice loading-notice" role="status"><span aria-hidden="true" className="loader-dot" /> Procesando foto…</p>
+          ) : null}
+          {photoStatus.state === "error" ? <p className="notice error" role="alert">{photoStatus.message}</p> : null}
+          {photoStatus.state === "done" ? (
+            <small className="description">
+              {photoStatus.finalBytes < photoStatus.originalBytes
+                ? `Foto optimizada: ${formatFileSize(photoStatus.originalBytes)} → ${formatFileSize(photoStatus.finalBytes)}.`
+                : `Foto lista: ${formatFileSize(photoStatus.finalBytes)}.`}
+            </small>
+          ) : null}
           <input name="imageUrl" type="hidden" value={imageUrl} />
           <div className="admin-image-preview">
             {imageUrl ? (
@@ -1204,7 +1340,7 @@ function ProductModal({
               <div className="admin-image-preview-empty">Subí una imagen para verla aquí</div>
             )}
             {imageUrl ? (
-              <button className="button button-light" onClick={() => setImageUrl("")} type="button">Quitar imagen</button>
+              <button className="button button-light" onClick={() => { setImageUrl(""); setPhotoStatus({ state: "idle" }); }} type="button">Quitar imagen</button>
             ) : null}
           </div>
         </label>
@@ -1340,7 +1476,7 @@ function ProductModal({
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
-          <button className="button button-primary" type="submit">{mode === "create" ? "Crear producto" : "Guardar cambios"}</button>
+          <button className="button button-primary" disabled={photoProcessing} type="submit">{photoProcessing ? "Procesando foto…" : mode === "create" ? "Crear producto" : "Guardar cambios"}</button>
         </div>
       </form>
     </AdminModal>
@@ -2324,8 +2460,8 @@ function DashboardCharts({
         const end = channelStats.slice(0, index + 1).reduce((sum, prev) => sum + prev.percent, 0);
         return `${item.color} ${start}% ${end}%`;
       }).join(", ")})`
-      : "conic-gradient(#f2e1e0 0% 100%)")
-    : "conic-gradient(#f2e1e0 0% 100%)";
+      : "conic-gradient(#ece4f5 0% 100%)")
+    : "conic-gradient(#ece4f5 0% 100%)";
   return (
     <div className="admin-chart-grid">
       <section className="card admin-panel">
@@ -2342,7 +2478,7 @@ function DashboardCharts({
               <div className="admin-bar-row" key={day.key}>
                 <span>{day.label}</span>
                 <div className="admin-bar-track" title={`${formatPrice(day.totalCents)}`} aria-label={`${day.label} ${formatPrice(day.totalCents)}`}>
-                  <div className="admin-bar-fill" style={{ width: `${day.percent}%` }} />
+                  <div className={`admin-bar-fill${day.totalCents === 0 ? " is-empty" : ""}`} style={{ width: `${day.percent}%` }} />
                 </div>
               </div>
             );
@@ -2376,11 +2512,11 @@ function DashboardCharts({
           <div className="admin-donut-list">
             {channelStats.length ? channelStats.map((item) => (
               <div className="admin-donut-row" key={item.name} title={formatPrice(item.value)}>
-                <strong>{item.name}</strong>
+                <strong><i aria-hidden="true" className="admin-donut-dot" style={{ background: item.color }} />{item.name}</strong>
                 <span>{item.percent}%</span>
                 <small>{formatPrice(item.value)}</small>
               </div>
-            )) : <p className="description">Todavia no hay ventas registradas.</p>}
+            )) : <p className="description">Todavía no hay ventas registradas.</p>}
           </div>
         </div>
       </section>
@@ -2664,7 +2800,7 @@ function WholesaleClientsPanel({
                   placeholder="Buscar por nombre, teléfono, mail, dirección o CUIT..."
                   value={clientQuery}
                 />
-                <button className="button button-light" onClick={() => setView("clients")} type="button">
+                <button aria-label="Ver clientes guardados" className="button button-light" onClick={() => setView("clients")} type="button">
                   <Users size={18} />
                 </button>
               </div>
@@ -2713,7 +2849,7 @@ function WholesaleClientsPanel({
                   placeholder="Escaneá o escribí para buscar..."
                   value={query}
                 />
-                <button className="button button-primary" onClick={submitSearch} type="button"><Search size={18} /></button>
+                <button aria-label="Buscar producto" className="button button-primary" onClick={submitSearch} type="button"><Search size={18} /></button>
               </div>
               {results.length ? (
                 <div className="admin-product-list">
@@ -2980,25 +3116,17 @@ function PointOfSalePanel({
     setSubmitting(true);
     setNotice("");
     try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "Venta mostrador",
-            phone: "0000000000",
-            email: "mostrador@agrovet.local",
-            fulfillment: "retiro",
-            branchId: branch.id,
-            source: `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installments} cuotas)` : ""}`,
-          items: cart.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
-        }),
+      const result = await closePosSaleAction({
+        branchId: branch.id,
+        paymentMethod,
+        installments: paymentMethod === "Tarjeta" ? installments : undefined,
+        items: cart.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? "No se pudo cerrar la venta.");
+      if (!result.ok) throw new Error(result.error);
       setCart([]);
       setScanValue("");
-      setNotice(`Venta cerrada: ${String(data.code ?? "")}`);
-      push({ title: "Venta cerrada", message: String(data.code ?? ""), type: "success" });
+      setNotice(`Venta cerrada: ${result.code}`);
+      push({ title: "Venta cerrada", message: result.code, type: "success" });
       setShowDaySales(true);
       router.refresh();
     } catch (error) {
@@ -3034,7 +3162,7 @@ function PointOfSalePanel({
               placeholder="Escaneá o escribí el código..."
               value={scanValue}
             />
-            <button className="button button-primary" onClick={() => { pushVariant(scanValue); setScanValue(""); }} type="button"><PackagePlus size={18} /></button>
+            <button aria-label="Agregar producto" className="button button-primary" onClick={() => { pushVariant(scanValue); setScanValue(""); }} type="button"><PackagePlus size={18} /></button>
           </div>
         </div>
         <div className="admin-point-inline">
@@ -3369,7 +3497,7 @@ export function AdminConsole({
               <Link className={section === id ? "active" : ""} href={href} key={id}>
                 <Icon size={18} />
                 <span>{label}</span>
-                <ChevronRight size={16} />
+                <AdminNavTail />
               </Link>
             ))}
           </nav>
@@ -3482,7 +3610,7 @@ export function AdminConsole({
                             <span />
                           </label>
                         </form>
-                        <button className="icon-button" onClick={() => setModal({ type: "product-edit", product })} type="button"><Pencil size={16} /></button>
+                        <button aria-label="Editar producto" className="icon-button" onClick={() => setModal({ type: "product-edit", product })} type="button"><Pencil size={16} /></button>
                         <button className="icon-button danger" onClick={() => setModal({ type: "product-delete", product })} type="button" aria-label="Eliminar producto"><Trash2 size={16} /></button>
                       </div>
                     </div>
