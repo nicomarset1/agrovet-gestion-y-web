@@ -1553,6 +1553,21 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
   });
 }
 
+// Pago de Mercado Pago rechazado, cancelado o vencido: el pedido que seguía esperando el cobro se marca cancelado.
+// No mueve stock (nunca lo tomó) y, si después llega un pago aprobado, markOrderPaidByCode lo reactiva.
+export async function markOrderPaymentFailedByCode(code: string) {
+  await ensureSchema();
+  return sql.begin(async (tx) => {
+    const result = await tx`
+      UPDATE orders
+      SET status = 'Cancelado (pago no completado)'
+      WHERE code = ${code} AND deleted_at IS NULL AND paid_cents = 0 AND status IN ('Esperando pago', 'Pendiente de pago')
+    `;
+    if (result.count) await bumpSyncVersion(tx);
+    return result.count > 0;
+  });
+}
+
 // Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia).
 // Solo aplica si sigue esperando el pago y sin cobro: esos pedidos nunca tomaron stock.
 export async function discardUnpaidOrder(code: string) {
