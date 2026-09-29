@@ -11,7 +11,7 @@ export function ProductArt({ product, detailed = false }: { product: Product; de
           alt={`${product.brand} ${product.name}`}
           className="product-art-image"
           fill
-          sizes={detailed ? "(max-width: 640px) 100vw, 720px" : "(max-width: 640px) 100vw, 360px"}
+          sizes={detailed ? "(max-width: 640px) 100vw, 720px" : "(max-width: 640px) 50vw, 360px"}
           src={product.imageUrl}
           unoptimized
         />

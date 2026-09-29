@@ -33,12 +33,12 @@ type Filters = {
   sort?: string;
 };
 
-function Section({ children, title }: { children: ReactNode; title: string }) {
-  const [open, setOpen] = useState(false);
+function Section({ active = false, children, title }: { active?: boolean; children: ReactNode; title: string }) {
+  const [open, setOpen] = useState(active);
   return (
     <section className={`drawer-section ${open ? "open" : ""}`}>
-      <button className="drawer-section-toggle" onClick={() => setOpen((current) => !current)} type="button">
-        <span>{title}</span>
+      <button aria-expanded={open} className="drawer-section-toggle" onClick={() => setOpen((current) => !current)} type="button">
+        <span>{title}{active && <span aria-label="con filtros activos" className="drawer-section-dot" />}</span>
         <ChevronRight size={16} />
       </button>
       <div className="drawer-section-body">{children}</div>
@@ -133,6 +133,21 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
   const handleAPercent = ((handleA - prices.min) / rangeSpan) * 100;
   const handleBPercent = ((handleB - prices.min) / rangeSpan) * 100;
   const rangePad = 14;
+  const priceActive = Boolean(filters.minPrice && Number(filters.minPrice) > prices.min) || Boolean(filters.maxPrice && Number(filters.maxPrice) < prices.max);
+  const activeCount = [
+    filters.q?.trim(),
+    filters.pet,
+    filters.stock,
+    filters.sort,
+    priceActive,
+  ].filter(Boolean).length
+    + selected(filters.category).length
+    + selected(filters.subcategory).length
+    + selectedBrands.length
+    + selectedStages.length
+    + selectedSizes.length
+    + selectedNeeds.length
+    + selectedPresentations.length;
   const toggleCategory = (slug: string) => {
     setSelectedCategories((current) => (
       current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug]
@@ -220,36 +235,51 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
     };
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   const usableWidth = Math.max(1, rangeWidth - (rangePad * 2));
   const handleALeft = rangePad + (usableWidth * handleAPercent / 100);
   const handleBLeft = rangePad + (usableWidth * handleBPercent / 100);
 
   return (
     <>
-      <button className="filter-open-button" onClick={() => setOpen(true)} type="button">
+      <button aria-expanded={open} className="filter-open-button" onClick={() => setOpen(true)} type="button">
         <SlidersHorizontal size={18} />
         Filtrar
+        {activeCount > 0 && <span aria-label={`${activeCount} filtros activos`} className="filter-count">{activeCount}</span>}
       </button>
       <div className={`filter-overlay ${open ? "open" : ""}`} onClick={() => setOpen(false)} />
-      <aside className={`filter-drawer ${open ? "open" : ""}`} aria-hidden={!open}>
+      <aside className={`filter-drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Filtros" inert={!open}>
         <div className="filter-drawer-head">
-          <strong>Filtros</strong>
+          <strong>Filtros{activeCount > 0 && <span className="filter-count">{activeCount}</span>}</strong>
           <button onClick={() => setOpen(false)} type="button" aria-label="Cerrar filtros"><X size={18} /></button>
         </div>
         <form action="/tienda" className="drawer-form" onSubmit={() => setOpen(false)}>
-          <Section title="Producto">
+          <Section active={Boolean(filters.q?.trim())} title="Producto">
             <div className="filter-search">
               <Search size={18} />
               <input className="field" defaultValue={filters.q} name="q" placeholder="Buscar producto o marca" />
             </div>
           </Section>
-          <Section title="Animal">
+          <Section active={Boolean(filters.pet)} title="Animal">
             <div className="filter-choice-grid">
               <ChoiceRadio checked={filters.pet === "perro"} label="Perro" name="pet" value="perro" />
               <ChoiceRadio checked={filters.pet === "gato"} label="Gato" name="pet" value="gato" />
             </div>
           </Section>
-          <Section title="Categoría">
+          <Section active={selected(filters.category).length > 0} title="Categoría">
             <div className="filter-choice-grid">
               {facets.categories.map((category) => (
                 <ChoiceCheck
@@ -263,7 +293,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
               ))}
             </div>
           </Section>
-          <Section title="Precio">
+          <Section active={priceActive} title="Precio">
             <input name="minPrice" type="hidden" value={minPrice} />
             <input name="maxPrice" type="hidden" value={maxPrice} />
             <div className="price-input-grid">
@@ -333,12 +363,12 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
               </div>
             </div>
           </Section>
-          <Section title="Marca">
+          <Section active={selectedBrands.length > 0} title="Marca">
             <div className="filter-choice-grid">
               {facets.brands.map((brand) => <ChoiceCheck checked={selectedBrands.includes(brand.name)} key={brand.name} label={brand.name} name="brand" value={brand.name} />)}
             </div>
           </Section>
-          <Section title="Edad y tamaño">
+          <Section active={selectedStages.length + selectedSizes.length > 0} title="Edad y tamaño">
             <span className="filter-choice-title">Edad</span>
             <div className="filter-choice-grid">
               {facets.lifeStages.map((stage) => <ChoiceCheck checked={selectedStages.includes(stage.name)} key={stage.name} label={stage.name} name="stage" value={stage.name} />)}
@@ -348,17 +378,17 @@ export function StoreFilterDrawer({ facets, filters }: { facets: Facets; filters
               {facets.sizes.map((size) => <ChoiceCheck checked={selectedSizes.includes(size.name)} key={size.name} label={size.name} name="size" value={size.name} />)}
             </div>
           </Section>
-          <Section title="Necesidad">
+          <Section active={selectedNeeds.length > 0} title="Necesidad">
             <div className="filter-choice-grid">
               {facets.needs.map((need) => <ChoiceCheck checked={selectedNeeds.includes(need.name)} key={need.name} label={need.name} name="need" value={need.name} />)}
             </div>
           </Section>
-          <Section title="Presentación">
+          <Section active={selectedPresentations.length > 0} title="Presentación">
             <div className="filter-choice-grid">
               {facets.presentations.map((presentation) => <ChoiceCheck checked={selectedPresentations.includes(presentation.name)} key={presentation.name} label={presentation.name} name="presentation" value={presentation.name} />)}
             </div>
           </Section>
-          <Section title="Stock y orden">
+          <Section active={Boolean(filters.stock || filters.sort)} title="Stock y orden">
             <div className="filter-choice-grid">
               <ChoiceRadio checked={!filters.sort} label="Destacados" name="sort" value="" />
               <ChoiceRadio checked={filters.sort === "price_asc"} label="Precio menor" name="sort" value="price_asc" />
