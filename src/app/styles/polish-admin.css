@@ -89,6 +89,13 @@
 }
 
 /* ===== Barra lateral ===== */
+/* Logo liviano (6 KB) en vez de agrovet-logo.png (563 KB). */
+.admin-shell .admin-brand-mark,
+.admin-shell .login::before {
+  background-image: url("/brand/agrovet-mark-144.png");
+  background-image: image-set(url("/brand/agrovet-mark-144.webp") type("image/webp"), url("/brand/agrovet-mark-144.png") type("image/png"));
+}
+
 .admin-shell .admin-brand-mark {
   transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) ease;
 }
@@ -375,6 +382,13 @@
 /* Paneles con más de un bloque (ej. Clientes): aire antes del segundo título. */
 .admin-shell .admin-panel > :not(:first-child) + h2 {
   margin-top: 26px;
+}
+
+/* Los avisos de error se veían violetas como los informativos. */
+.admin-shell .notice.error {
+  border-color: #f3cfc7;
+  background: #fff4f2;
+  color: #98402d;
 }
 
 /* ===== Estados vacíos ===== */
@@ -774,7 +788,10 @@
   height: 60px;
   margin: 0 auto 18px;
   border-radius: 18px;
-  background: var(--forest) url("/agrovet-logo.png") center / cover no-repeat;
+  background-color: var(--forest);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   box-shadow: 0 12px 26px rgba(91, 15, 115, .22);
 }
 
@@ -883,7 +900,7 @@
   }
 
   .admin-shell .admin-section-action > .button {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
   }
 
   /* Los botones de escanear/buscar son solo ícono: quedan al costado del
