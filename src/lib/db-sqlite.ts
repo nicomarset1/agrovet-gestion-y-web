@@ -812,7 +812,7 @@ function mapAdminOrders(): OrderRecord[] {
     WHERE o.deleted_at = ''
     ORDER BY o.created_at DESC, o.id DESC
   `).all() as Omit<OrderRecord, "itemCount" | "items">[];
-  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago)$/i.test(order.status)));
+  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(order.status)));
   if (!visibleOrders.length) return [];
   const items = db.prepare(`
     SELECT oi.order_id AS orderId, oi.variant_id AS variantId, p.name AS productName, p.brand,
