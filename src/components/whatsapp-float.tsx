@@ -9,7 +9,7 @@ export function WhatsappFloat() {
 
   return (
     <a
-      className="whatsapp-float"
+      className={`whatsapp-float${pathname?.startsWith("/carrito") ? " is-checkout" : ""}`}
       href="https://wa.me/5492234251324"
       rel="noreferrer"
       target="_blank"

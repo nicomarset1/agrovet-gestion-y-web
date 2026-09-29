@@ -487,3 +487,49 @@
   .search-chip { min-height: 40px; }
   .search-result { min-height: 58px; }
 }
+
+/* ===== Base de coherencia de la tienda pública (QA 2026-09) =====
+   Todo con :where() o con la misma especificidad que la regla original, así las áreas
+   (catálogo, carrito, informativas) siguen pudiendo pisarlo. El panel admin queda afuera. */
+:root {
+  /* Escala de títulos compartida: usarla en los h1 de página y en los títulos de sección. */
+  --title-page: clamp(34px, 4vw, 48px);
+  --title-section: clamp(28px, 3vw, 40px);
+  --page-top: clamp(24px, 4vw, 44px);
+}
+
+/* Tailwind resetea el peso de h1-h6 a "inherit" y los títulos sin clase quedaban en 400:
+   se veían finos al lado de los de otras páginas. */
+:where(body:not(:has(.admin-shell))) :where(h1, h2, h3, h4) { font-weight: 750; letter-spacing: -.01em; text-wrap: balance; }
+/* Los h1 de página van con la tipografía de marca (Fraunces), como tienda, ficha, carrito y 404. */
+:where(body:not(:has(.admin-shell))) :where(main h1),
+:where(body:not(:has(.admin-shell))) :where(h1, h2, h3).display { font-family: var(--font-display), Georgia, serif; font-weight: 400; letter-spacing: -.005em; }
+
+/* Tarjetas: el 8px viejo de .card pasa al radio medio del sistema. */
+:where(body:not(:has(.admin-shell))) .card { border-radius: var(--radius-md); }
+
+/* Botones: mismas transiciones, foco y deshabilitado para todos. */
+.button { transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-base) var(--ease-out), color var(--dur-fast) ease; }
+.button:hover { box-shadow: var(--shadow-md); }
+.button:focus-visible { box-shadow: var(--focus-ring); }
+.button-light:hover { border-color: #d8c3f0; }
+.button-accent:hover { background: #dfc4ff; }
+.button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .5; transform: none; box-shadow: none; }
+/* El botón chico de formularios ("Verificar") era cuadrado mientras el resto es píldora. */
+:where(body:not(:has(.admin-shell))) .mini-button { border-radius: 999px; padding: 0 16px; }
+:where(body:not(:has(.admin-shell))) .mini-button:hover:not(:disabled) { background: var(--forest-light); }
+:where(body:not(:has(.admin-shell))) .mini-button:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Eyebrow y cuerpo: mismo color y aire en todas las páginas. */
+.eyebrow { line-height: 1.5; }
+:where(body:not(:has(.admin-shell))) :where(main p) { text-wrap: pretty; }
+
+/* 404 y error usan la escala compartida. */
+.state-card h1 { font-size: var(--title-page); }
+.state-page { padding-top: var(--page-top); }
+
+/* WhatsApp en el carrito del celular tapaba los campos del checkout: ahí se oculta
+   (el checkout ya explica que el contacto sigue por WhatsApp). */
+@media (max-width: 640px) {
+  .whatsapp-float.is-checkout { display: none; }
+}
