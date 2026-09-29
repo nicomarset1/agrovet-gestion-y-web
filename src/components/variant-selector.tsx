@@ -62,7 +62,7 @@ export function VariantSelector({ imageSrc = "", product }: { imageSrc?: string;
       <div className="availability">
         <span className="availability-title">Stock por sucursal</span>
         {variant.stocks.map((stock) => (
-          <span className={`availability-row ${stock.quantity > 0 ? "in" : "out"}`} key={stock.branchId}><strong>{stock.branchName}</strong> <span>{stock.quantity > 0 ? `${stock.quantity} disponibles` : "sin stock"}</span></span>
+          <span className={`availability-row ${stock.quantity > 0 ? "in" : "out"}`} key={stock.branchId}><strong>{stock.branchName}</strong> <span>{stock.quantity > 0 ? `${stock.quantity} ${stock.quantity === 1 ? "disponible" : "disponibles"}` : "sin stock"}</span></span>
         ))}
       </div>
       <button className={`button button-primary detail-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem}>
