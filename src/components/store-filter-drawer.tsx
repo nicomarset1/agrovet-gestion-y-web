@@ -5,16 +5,16 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { filterLabel } from "./catalog-labels";
+import { countSelectedGroups, groupSeparator, type FacetGroup } from "./catalog-labels";
 
 // Solo lo que el panel muestra: así viaja menos información al navegador.
 type FacetItem = { name: string };
 export type DrawerFacets = {
   categories: (FacetItem & { slug: string })[];
-  brands: FacetItem[];
-  lifeStages: FacetItem[];
-  sizes: FacetItem[];
-  needs: FacetItem[];
+  brands: FacetGroup[];
+  lifeStages: FacetGroup[];
+  sizes: FacetGroup[];
+  needs: FacetGroup[];
   presentations: FacetItem[];
   priceRange?: { min: number; max: number };
 };
@@ -95,6 +95,17 @@ function ChoiceCheck({
   );
 }
 
+function GroupCheck({ group, name, selectedValues }: { group: FacetGroup; name: string; selectedValues: string[] }) {
+  return (
+    <ChoiceCheck
+      checked={group.values.some((value) => selectedValues.includes(value))}
+      label={group.label}
+      name={name}
+      value={group.values.join(groupSeparator)}
+    />
+  );
+}
+
 function formatMoney(value: number) {
   return `$ ${new Intl.NumberFormat("es-AR").format(value)}`;
 }
@@ -144,10 +155,10 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
   ].filter(Boolean).length
     + selected(filters.category).length
     + selected(filters.subcategory).length
-    + selectedBrands.length
-    + selectedStages.length
-    + selectedSizes.length
-    + selectedNeeds.length
+    + countSelectedGroups(facets.brands, selectedBrands)
+    + countSelectedGroups(facets.lifeStages, selectedStages)
+    + countSelectedGroups(facets.sizes, selectedSizes)
+    + countSelectedGroups(facets.needs, selectedNeeds)
     + selectedPresentations.length;
   const toggleCategory = (slug: string) => {
     setSelectedCategories((current) => (
@@ -259,7 +270,8 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
       if (!text) continue;
       if (key === "minPrice" && Number(text) <= prices.min) continue;
       if (key === "maxPrice" && Number(text) >= prices.max) continue;
-      params.append(key, text);
+      // Una opción agrupada ("Pequeño") manda todos sus valores reales.
+      for (const part of text.split(groupSeparator)) params.append(key, part);
     }
     setOpen(false);
     const query = params.toString();
@@ -316,7 +328,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
           </Section>
           <Section active={selectedBrands.length > 0} title="Marca">
             <div className="filter-choice-grid">
-              {facets.brands.map((brand) => <ChoiceCheck checked={selectedBrands.includes(brand.name)} key={brand.name} label={brand.name} name="brand" value={brand.name} />)}
+              {facets.brands.map((group) => <GroupCheck group={group} key={group.label} name="brand" selectedValues={selectedBrands} />)}
             </div>
           </Section>
           <Section active={priceActive} title="Precio">
@@ -392,16 +404,16 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
           <Section active={selectedStages.length + selectedSizes.length > 0} title="Edad y tamaño">
             <span className="filter-choice-title">Edad</span>
             <div className="filter-choice-grid">
-              {facets.lifeStages.map((stage) => <ChoiceCheck checked={selectedStages.includes(stage.name)} key={stage.name} label={filterLabel(stage.name)} name="stage" value={stage.name} />)}
+              {facets.lifeStages.map((group) => <GroupCheck group={group} key={group.label} name="stage" selectedValues={selectedStages} />)}
             </div>
             <span className="filter-choice-title">Tamaño</span>
             <div className="filter-choice-grid">
-              {facets.sizes.map((size) => <ChoiceCheck checked={selectedSizes.includes(size.name)} key={size.name} label={filterLabel(size.name)} name="size" value={size.name} />)}
+              {facets.sizes.map((group) => <GroupCheck group={group} key={group.label} name="size" selectedValues={selectedSizes} />)}
             </div>
           </Section>
           <Section active={selectedNeeds.length > 0} title="Necesidad">
             <div className="filter-choice-grid">
-              {facets.needs.map((need) => <ChoiceCheck checked={selectedNeeds.includes(need.name)} key={need.name} label={filterLabel(need.name)} name="need" value={need.name} />)}
+              {facets.needs.map((group) => <GroupCheck group={group} key={group.label} name="need" selectedValues={selectedNeeds} />)}
             </div>
           </Section>
           <Section active={selectedPresentations.length > 0} title="Presentación">

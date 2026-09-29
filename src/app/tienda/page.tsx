@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, SearchX, X } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
-import { cardPriceCents, filterLabel } from "@/components/catalog-labels";
+import { cardPriceCents, filterLabel, groupFacetValues, type FacetGroup } from "@/components/catalog-labels";
 import { ProductCard } from "@/components/product-card";
 import { StoreFilterDrawer } from "@/components/store-filter-drawer";
 import { StoreSortSelect } from "@/components/store-sort-select";
@@ -61,6 +61,26 @@ function filtersFromHref(href: string): Filters {
     result[key] = values.length > 1 ? values : values[0];
   }
   return result as Filters;
+}
+
+function withoutValues(filters: Filters, key: string, values: string[]) {
+  return storeHref(filters, (params) => {
+    const rest = params.getAll(key).filter((item) => !values.includes(item));
+    params.delete(key);
+    for (const item of rest) params.append(key, item);
+  });
+}
+
+// Un filtro activo por opción agrupada ("Pequeño" cubre "pequeno" y "pequeño").
+function groupedPills(filters: Filters, key: keyof Filters, groups: FacetGroup[]) {
+  const chosen = list(filters[key]);
+  const pills = groups
+    .filter((group) => group.values.some((value) => chosen.includes(value)))
+    .map((group) => ({ label: group.label, href: withoutValues(filters, key, group.values) }));
+  const loose = chosen
+    .filter((value) => !groups.some((group) => group.values.includes(value)))
+    .map((value) => ({ label: filterLabel(value), href: withoutValues(filters, key, [value]) }));
+  return [...pills, ...loose];
 }
 
 function withoutValue(filters: Filters, key: string, value?: string) {
@@ -127,6 +147,10 @@ export default async function StorePage({ searchParams }: { searchParams: Search
   const trailCategory = currentSubcategory ? subcategoryParent : undefined;
 
   // Filtros activos, cada uno con su link para quitarlo.
+  const brandGroups = groupFacetValues(facets.brands);
+  const stageGroups = groupFacetValues(facets.lifeStages, filterLabel);
+  const sizeGroups = groupFacetValues(facets.sizes, filterLabel);
+  const needGroups = groupFacetValues(facets.needs, filterLabel);
   const categoryName = (slug: string) => facets.categories.find((item) => item.slug === slug)?.name ?? filterLabel(slug);
   const subcategoryName = (slug: string) => facets.categories.flatMap((item) => item.subcategories).find((item) => item.slug === slug)?.name ?? filterLabel(slug);
   const prices = facets.priceRange ?? { min: 0, max: 0 };
@@ -139,10 +163,10 @@ export default async function StorePage({ searchParams }: { searchParams: Search
     ...(filters.pet ? [{ label: filters.pet === "gato" ? "Gato" : "Perro", href: withoutValue(filters, "pet") }] : []),
     ...selectedCategories.map((slug) => ({ label: categoryName(slug), href: withoutValue(filters, "category", slug) })),
     ...list(filters.subcategory).map((slug) => ({ label: subcategoryName(slug), href: withoutValue(filters, "subcategory", slug) })),
-    ...list(filters.brand).map((value) => ({ label: value, href: withoutValue(filters, "brand", value) })),
-    ...list(filters.stage).map((value) => ({ label: filterLabel(value), href: withoutValue(filters, "stage", value) })),
-    ...list(filters.size).map((value) => ({ label: filterLabel(value), href: withoutValue(filters, "size", value) })),
-    ...list(filters.need).map((value) => ({ label: filterLabel(value), href: withoutValue(filters, "need", value) })),
+    ...groupedPills(filters, "brand", brandGroups),
+    ...groupedPills(filters, "stage", stageGroups),
+    ...groupedPills(filters, "size", sizeGroups),
+    ...groupedPills(filters, "need", needGroups),
     ...list(filters.presentation).map((value) => ({ label: value, href: withoutValue(filters, "presentation", value) })),
     ...(hasMin || hasMax ? [{
       label: hasMin && hasMax ? `${formatPrice(minPrice * 100)} a ${formatPrice(maxPrice * 100)}` : hasMin ? `Desde ${formatPrice(minPrice * 100)}` : `Hasta ${formatPrice(maxPrice * 100)}`,
@@ -166,10 +190,10 @@ export default async function StorePage({ searchParams }: { searchParams: Search
   const names = (items: { name: string }[]) => items.map(({ name }) => ({ name }));
   const drawerFacets = {
     categories: facets.categories.map(({ slug, name }) => ({ slug, name })),
-    brands: names(facets.brands),
-    lifeStages: names(facets.lifeStages),
-    sizes: names(facets.sizes),
-    needs: names(facets.needs),
+    brands: brandGroups,
+    lifeStages: stageGroups,
+    sizes: sizeGroups,
+    needs: needGroups,
     presentations: names(facets.presentations),
     priceRange: facets.priceRange,
   };

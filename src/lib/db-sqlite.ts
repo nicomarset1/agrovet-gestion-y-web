@@ -621,7 +621,7 @@ export function getProducts(filters: CatalogFilters = {}) {
   }
   const needs = values(filters.need);
   if (needs.length) {
-    clauses.push(`(p.need IN (${needs.map(() => "?").join(", ")}) OR p.need = '')`);
+    clauses.push(`p.need IN (${needs.map(() => "?").join(", ")})`);
     params.push(...needs);
   }
   const presentations = values(filters.presentation);
@@ -629,19 +629,20 @@ export function getProducts(filters: CatalogFilters = {}) {
     clauses.push(`EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND (${presentations.map(() => "LOWER(vx.label) LIKE LOWER(?)").join(" OR ")}))`);
     params.push(...presentations.map((presentation) => `%${presentation}%`));
   }
-  if (filters.minPrice) {
-    const cents = Math.round(Number(filters.minPrice) * 100);
-    if (Number.isFinite(cents)) {
-      clauses.push("EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND vx.price_cents >= ?)");
-      params.push(String(cents));
-    }
+  // Mínimo y máximo se evalúan sobre la misma presentación: el producto entra si alguna presentación cae en el rango.
+  const priceConditions: string[] = [];
+  const minCents = filters.minPrice ? Math.round(Number(filters.minPrice) * 100) : Number.NaN;
+  if (Number.isFinite(minCents)) {
+    priceConditions.push("vx.price_cents >= ?");
+    params.push(String(minCents));
   }
-  if (filters.maxPrice) {
-    const cents = Math.round(Number(filters.maxPrice) * 100);
-    if (Number.isFinite(cents)) {
-      clauses.push("EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND vx.price_cents <= ?)");
-      params.push(String(cents));
-    }
+  const maxCents = filters.maxPrice ? Math.round(Number(filters.maxPrice) * 100) : Number.NaN;
+  if (Number.isFinite(maxCents)) {
+    priceConditions.push("vx.price_cents <= ?");
+    params.push(String(maxCents));
+  }
+  if (priceConditions.length) {
+    clauses.push(`EXISTS (SELECT 1 FROM variants vx WHERE vx.product_id = p.id AND ${priceConditions.join(" AND ")})`);
   }
   if (filters.stock === "disponible") {
     clauses.push("EXISTS (SELECT 1 FROM variants vx JOIN inventory ix ON ix.variant_id = vx.id WHERE vx.product_id = p.id AND ix.quantity > 0)");
