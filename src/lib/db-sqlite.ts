@@ -953,6 +953,7 @@ export function getSearchIndex(): SearchIndexItem[] {
       species: product.species,
       priceCents,
       totalStock: product.variants.reduce((sum, variant) => sum + variant.totalStock, 0),
+      presentations: product.variants.map((variant) => variant.label),
     };
   });
 }
