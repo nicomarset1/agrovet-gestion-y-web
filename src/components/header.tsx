@@ -4,6 +4,7 @@ import { MapPin } from "lucide-react";
 import { getCatalogMenu, getSearchIndex } from "@/lib/db";
 import { CatalogMenu } from "./catalog-menu";
 import { CartButton } from "./cart-button";
+import { HeaderCompact } from "./header-compact";
 import { LiveSearch } from "./live-search";
 import { SmoothAnchor } from "./smooth-anchor";
 import { StoreNavLink } from "./store-nav-link";
@@ -26,6 +27,7 @@ export async function Header() {
         </div>
       </div>
       <header className="header">
+        <HeaderCompact />
         <div className="container header-main">
           <Link className="brand" href="/">
             <span className="brand-mark" aria-hidden="true" />
