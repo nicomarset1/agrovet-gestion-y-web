@@ -2664,7 +2664,7 @@ function WholesaleClientsPanel({
                   placeholder="Buscar por nombre, teléfono, mail, dirección o CUIT..."
                   value={clientQuery}
                 />
-                <button className="button button-light" onClick={() => setView("clients")} type="button">
+                <button aria-label="Ver clientes guardados" className="button button-light" onClick={() => setView("clients")} type="button">
                   <Users size={18} />
                 </button>
               </div>
@@ -2713,7 +2713,7 @@ function WholesaleClientsPanel({
                   placeholder="Escaneá o escribí para buscar..."
                   value={query}
                 />
-                <button className="button button-primary" onClick={submitSearch} type="button"><Search size={18} /></button>
+                <button aria-label="Buscar producto" className="button button-primary" onClick={submitSearch} type="button"><Search size={18} /></button>
               </div>
               {results.length ? (
                 <div className="admin-product-list">
@@ -3034,7 +3034,7 @@ function PointOfSalePanel({
               placeholder="Escaneá o escribí el código..."
               value={scanValue}
             />
-            <button className="button button-primary" onClick={() => { pushVariant(scanValue); setScanValue(""); }} type="button"><PackagePlus size={18} /></button>
+            <button aria-label="Agregar producto" className="button button-primary" onClick={() => { pushVariant(scanValue); setScanValue(""); }} type="button"><PackagePlus size={18} /></button>
           </div>
         </div>
         <div className="admin-point-inline">
@@ -3482,7 +3482,7 @@ export function AdminConsole({
                             <span />
                           </label>
                         </form>
-                        <button className="icon-button" onClick={() => setModal({ type: "product-edit", product })} type="button"><Pencil size={16} /></button>
+                        <button aria-label="Editar producto" className="icon-button" onClick={() => setModal({ type: "product-edit", product })} type="button"><Pencil size={16} /></button>
                         <button className="icon-button danger" onClick={() => setModal({ type: "product-delete", product })} type="button" aria-label="Eliminar producto"><Trash2 size={16} /></button>
                       </div>
                     </div>

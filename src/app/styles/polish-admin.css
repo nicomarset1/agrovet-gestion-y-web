@@ -802,3 +802,63 @@
     padding: 28px 22px 24px;
   }
 }
+
+/* ===== Ajustes de celular ===== */
+@media (max-width: 820px) {
+  .admin-shell .admin-section-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Métricas de a dos: antes cada una ocupaba una pantalla entera de alto. */
+  .admin-shell .admin-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-shell .admin-stat {
+    padding: 16px;
+  }
+
+  .admin-shell .admin-stat small {
+    font-size: 11px;
+  }
+
+  .admin-shell .admin-stat strong {
+    font-size: clamp(20px, 6.4vw, 26px);
+    overflow-wrap: anywhere;
+  }
+
+  .admin-shell .admin-stat span {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .admin-shell .admin-stat-button::after {
+    top: 12px;
+    right: 12px;
+  }
+
+  .admin-shell .admin-point-banner {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-shell .admin-section-action > .button {
+    flex: 1 1 auto;
+  }
+
+  /* Los botones de escanear/buscar son solo ícono: quedan al costado del
+     campo en vez de ocupar una fila entera. */
+  .admin-shell .admin-scan-row {
+    grid-template-columns: minmax(0, 1fr) 52px;
+  }
+
+  .admin-shell .admin-scan-row .button {
+    width: 52px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0;
+  }
+}
