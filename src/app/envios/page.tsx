@@ -1,8 +1,13 @@
 import { Clock, CreditCard, Store, Truck } from "lucide-react";
+import { infoPageMetadata } from "@/lib/page-metadata";
 import { DeliveryZoneChecker } from "@/components/delivery-zone-checker";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
 
-export const metadata = { title: "Envíos" };
+export const metadata = infoPageMetadata({
+  title: "Envíos",
+  path: "/envios",
+  description: "Envíos gratis en Mar del Plata dentro de 3 km de Alberti 3213, con compra mínima de $ 50.000. Verificá tu dirección y conocé cómo coordinamos la entrega.",
+});
 export const dynamic = "force-dynamic";
 
 const fallbackDescription = "Hacemos envíos gratis dentro de la zona de reparto para compras desde $ 50.000. Verificá tu dirección antes de finalizar el pedido.";
@@ -12,7 +17,7 @@ export default async function EnviosPage() {
   const intro = description.split(/\n+/).map((line) => line.trim()).filter(Boolean)[0] ?? fallbackDescription;
 
   return (
-    <main className="envios-page section">
+    <div className="envios-page section">
       <div className="container">
         <section className="envios-hero">
           <div>
@@ -63,6 +68,6 @@ export default async function EnviosPage() {
           </div>
         </section>
       </div>
-    </main>
+    </div>
   );
 }

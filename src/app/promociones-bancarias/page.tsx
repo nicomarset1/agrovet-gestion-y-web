@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { infoPageMetadata } from "@/lib/page-metadata";
 import { CalendarDays, CreditCard, Info, RefreshCcw } from "lucide-react";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
 
-export const metadata = { title: "Promociones bancarias" };
+export const metadata = infoPageMetadata({
+  title: "Promociones bancarias",
+  path: "/promociones-bancarias",
+  description: "Cuotas sin interés y reintegro con Favacard en Agrovet Mar del Plata. Conocé las promociones bancarias vigentes para tus compras.",
+});
 export const dynamic = "force-dynamic";
 
 export default async function PromocionesBancariasPage() {
@@ -36,7 +41,7 @@ export default async function PromocionesBancariasPage() {
   ];
 
   return (
-    <main className="promo-page section">
+    <div className="promo-page section">
       <div className="container">
         <section className="promo-hero">
           <div>
@@ -72,6 +77,6 @@ export default async function PromocionesBancariasPage() {
           </div>
         </section>
       </div>
-    </main>
+    </div>
   );
 }
