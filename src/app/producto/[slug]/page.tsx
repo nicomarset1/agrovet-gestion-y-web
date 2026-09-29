@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowLeft, ChevronRight, Stethoscope } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { VariantSelector } from "@/components/variant-selector";
@@ -72,13 +73,20 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     <div className="container product-page">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
-      <div className="crumbs"><Link className="back-link" href={backHref}>&larr; Volver a productos</Link> / <Link href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link> / {product.name}</div>
+      <nav aria-label="Ruta de navegación" className="crumbs">
+        <Link className="back-link" href={backHref}><ArrowLeft size={15} /> Volver a productos</Link>
+        <span className="crumbs-trail">
+          <Link href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link>
+          <ChevronRight aria-hidden="true" size={14} />
+          <span aria-current="page">{product.name}</span>
+        </span>
+      </nav>
       <div className="product-detail">
         <ProductArt detailed product={product} />
         <section className="detail">
           <p className="eyebrow">{product.category} | {product.brand}</p>
           <h1 className="display">{product.name}</h1>
-          <div className="store-chips" style={{ marginBottom: "14px" }}>
+          <div className="store-chips detail-tags">
             <Link className="chip active" href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link>
             <Link className="chip" href={`/tienda?subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
             {product.lifeStage && <span className="chip">{product.lifeStage}</span>}
@@ -86,7 +94,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
             {product.need && <span className="chip">{product.need}</span>}
           </div>
           <p className="description">{product.description}</p>
-          {product.requiresAdvice && <div className="advice"><strong>Producto veterinario.</strong> Consultá indicaciones, dosificación y contraindicaciones con un profesional antes de administrarlo.</div>}
+          {product.requiresAdvice && <div className="advice"><Stethoscope aria-hidden="true" size={18} /><p><strong>Producto veterinario.</strong> Consultá indicaciones, dosificación y contraindicaciones con un profesional antes de administrarlo.</p></div>}
           <VariantSelector product={product} />
         </section>
       </div>
