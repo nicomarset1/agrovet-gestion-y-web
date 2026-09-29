@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Cat, Dog, MessageCircle, Search, X } from "lucide-react";
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatPrice } from "@/lib/format";
@@ -36,8 +36,10 @@ function buildShopHref(query: string, correctedQuery: string | null, brands: str
 
 export function LiveSearch({ products }: { products: SearchIndexItem[] }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const listboxId = useId();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => (pathname === "/tienda" ? searchParams.get("q") ?? "" : ""));
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -76,9 +78,20 @@ export function LiveSearch({ products }: { products: SearchIndexItem[] }) {
   }, [showPanel]);
 
   function go(href: string) {
-    resetSearch();
+    // Si va a /tienda, el texto queda en el campo para que se vea qué se está buscando.
+    if (href.startsWith("/tienda")) closePanel();
+    else resetSearch();
     inputRef.current?.blur();
     router.push(href);
+  }
+
+  // El campo refleja la búsqueda de /tienda (?q=) al entrar por link, recarga o atrás,
+  // y se limpia al ir a otra página o a /tienda sin búsqueda.
+  const urlQuery = pathname === "/tienda" ? searchParams.get("q") ?? "" : "";
+  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
+  if (urlQuery !== seenUrlQuery) {
+    setSeenUrlQuery(urlQuery);
+    setQuery(urlQuery);
   }
 
   function applySuggestion(value: string) {
