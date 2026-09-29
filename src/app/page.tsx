@@ -1,34 +1,48 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
+import { getImageProps } from "next/image";
 import { Award, BadgePercent, CreditCard, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
 import { CategoryCards } from "@/components/category-cards";
 import { ProductCard } from "@/components/product-card";
 import { getBranches, getFeaturedProducts } from "@/lib/db";
 
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+const {
+  props: { srcSet: heroMobile },
+} = getImageProps({
+  alt: "",
+  src: "/home-assets/hero-mobile-no-logo.png",
+  width: 1254,
+  height: 1254,
+  sizes: "calc(100vw - 28px)",
+});
+const { props: heroDesktop } = getImageProps({
+  alt: "",
+  src: "/home-assets/hero-pets-clean.png",
+  width: 1536,
+  height: 560,
+  sizes: "(max-width: 1280px) calc(100vw - 40px), 1240px",
+  loading: "eager",
+  fetchPriority: "high",
+});
+
 export default async function Home() {
   const [featured, branches] = await Promise.all([getFeaturedProducts(), getBranches()]);
   return (
     <>
       <section className="hero">
+        <h1 className="sr-only">Agrovet Mar del Plata: alimentos, accesorios y farmacia para perros y gatos</h1>
         <div className="container">
           <div className="hero-box hero-image-box">
-            <Image
-              alt="Todo para tu mascota en un solo lugar: alimentos, accesorios y medicamentos"
-              className="hero-main-image"
-              fill
-              priority
-              sizes="(max-width: 640px) calc(100vw - 28px), 1240px"
-              src="/home-assets/hero-pets-clean.png"
-            />
-            <Image
-              alt=""
-              className="hero-mobile-image"
-              fill
-              priority
-              sizes="calc(100vw - 28px)"
-              src="/home-assets/hero-mobile-no-logo.png"
-            />
+            {/* Un solo <img> con art direction: cada dispositivo descarga solo su versión del hero. */}
+            <picture className="hero-picture">
+              <source media="(max-width: 640px)" srcSet={heroMobile} sizes="calc(100vw - 28px)" />
+              <img {...heroDesktop} alt="Todo para tu mascota en un solo lugar: alimentos, accesorios y medicamentos" className="hero-picture-image" />
+            </picture>
             <Link className="hero-buy-button" href="/tienda">
               <ShoppingCart size={22} />
               Comprar ahora
