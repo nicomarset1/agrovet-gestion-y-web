@@ -1539,7 +1539,7 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
     `).run(method, order.id);
     bumpSyncVersion();
     return true;
-  })();
+  }).immediate();
 }
 
 export function createWholesaleOrder(input: {

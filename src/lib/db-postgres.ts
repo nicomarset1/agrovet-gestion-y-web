@@ -1466,6 +1466,7 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       SELECT id, branch_id AS "branchId", fulfillment, status, total_cents AS "totalCents", paid_cents AS "paidCents"
       FROM orders
       WHERE code = ${code} AND deleted_at IS NULL
+      FOR UPDATE
     ` as unknown as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number }[];
     if (!order) return false;
     if (!Number.isSafeInteger(amountCents) || amountCents !== Number(order.totalCents)) return false;
