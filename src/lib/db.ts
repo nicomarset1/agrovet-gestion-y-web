@@ -33,6 +33,10 @@ export async function getProduct(slug: string) {
   return (await getDriver()).getProduct(slug);
 }
 
+export async function getProductImage(id: number) {
+  return (await getDriver()).getProductImage(id);
+}
+
 export async function getFeaturedProducts() {
   return (await getDriver()).getFeaturedProducts();
 }
