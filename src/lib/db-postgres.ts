@@ -1464,6 +1464,7 @@ export async function createOrder(input: {
 export type PaymentReconciliation = "paid" | "review" | "missing";
 
 const paymentReviewStatus = "Pago recibido - revisar";
+const stockRaceError = "No hay stock suficiente para acreditar el pago.";
 
 // Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
 // "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
@@ -1531,13 +1532,26 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       }
     }
 
-    for (const allocation of required) {
-      const result = await tx`
-        UPDATE inventory
-        SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP
-        WHERE variant_id = ${allocation.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}
-      `;
-      if (!result.count) throw new Error("No hay stock suficiente para acreditar el pago.");
+    // Otro pedido pudo llevarse la última unidad entre la verificación y el descuento: se deshace solo este
+    // descuento (savepoint) y el pedido queda pagado para revisar stock, en vez de fallar el webhook.
+    const deducted = await tx.savepoint(async (sp) => {
+      for (const allocation of required) {
+        const result = await sp`
+          UPDATE inventory
+          SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP
+          WHERE variant_id = ${allocation.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}
+        `;
+        if (!result.count) throw new Error(stockRaceError);
+      }
+      return true;
+    }).catch((error: unknown) => {
+      if (error instanceof Error && error.message === stockRaceError) return false;
+      throw error;
+    });
+    if (!deducted) {
+      await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method}, status = 'Pago recibido - revisar stock' WHERE id = ${order.id}`;
+      await bumpSyncVersion(tx);
+      return "review";
     }
 
     await tx`

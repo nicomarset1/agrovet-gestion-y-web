@@ -1491,6 +1491,7 @@ export function createOrder(input: {
 export type PaymentReconciliation = "paid" | "review" | "missing";
 
 const paymentReviewStatus = "Pago recibido - revisar";
+const stockRaceError = "No hay stock suficiente para acreditar el pago.";
 
 // Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
 // "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
@@ -1554,10 +1555,25 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       }
     }
 
+    // Si otro pedido se llevó la última unidad en el medio, se deshace solo este descuento (transacción anidada
+    // = savepoint) y el pedido queda pagado para revisar stock, en vez de fallar el webhook.
     const reserve = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
-    for (const allocation of required) {
-      const result = reserve.run(allocation.quantity, allocation.variantId, allocation.branchId, allocation.quantity);
-      if (result.changes === 0) throw new Error("No hay stock suficiente para acreditar el pago.");
+    let deducted = true;
+    try {
+      db.transaction(() => {
+        for (const allocation of required) {
+          const result = reserve.run(allocation.quantity, allocation.variantId, allocation.branchId, allocation.quantity);
+          if (result.changes === 0) throw new Error(stockRaceError);
+        }
+      })();
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== stockRaceError) throw error;
+      deducted = false;
+    }
+    if (!deducted) {
+      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
+      bumpSyncVersion();
+      return "review";
     }
 
     db.prepare(`
