@@ -3864,6 +3864,12 @@ a.catalog-mega-root { grid-template-columns: 25px minmax(0, 1fr); }
 }
 
 /* ===== Base compartida de accesibilidad y movimiento (pulido 2026-09) ===== */
+/* Colores de estado compartidos (QA 2026-09): errores, rechazos y acciones de borrar. */
+:root {
+  --danger: #b42318;
+  --danger-bg: #fef3f2;
+}
+
 :focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .field:focus-visible { box-shadow: var(--focus-ring); }
 

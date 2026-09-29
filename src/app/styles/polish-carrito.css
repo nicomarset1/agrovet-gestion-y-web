@@ -252,3 +252,29 @@
 @media (hover: none) {
   .promo-card:hover, .contact-channel:hover, .contact-branch-card:hover, .faq-card:hover, .envios-card:hover { transform: none; box-shadow: none; }
 }
+
+/* ===== Miniatura con foto en el carrito ===== */
+.cart-line-thumb { position: relative; overflow: hidden; }
+.cart-line-thumb.has-image { background: white; border: 1px solid var(--line); }
+.cart-line-thumb-image { object-fit: contain; padding: 4px; animation: ui-fade-in var(--dur-base) var(--ease-out) both; }
+
+/* ===== QA de coherencia (2026-09): títulos, colores de estado, radios y aire superior ===== */
+.envios-hero h1, .contact-hero h1, .promo-hero h1, .special-hero h1, .faq-heading h1 { font-size: var(--title-page); }
+
+.cart-page, .cart-page-confirmed,
+.envios-page, .contact-page, .faq-page, .promo-page, .special-page { padding-top: var(--page-top); }
+
+.cart-page .card { border-radius: var(--radius-md); }
+
+.checkout .notice.error, .delivery-zone-card .notice.error, .cart-alert.is-error {
+  border-color: rgba(180, 35, 24, .2); background: var(--danger-bg); color: var(--danger);
+}
+.cart-alert.is-error p { color: var(--ink); }
+.cart-empty.is-error .cart-empty-icon { color: var(--danger); background: var(--danger-bg); box-shadow: 0 0 0 10px #fffafa; }
+.cart-line .remove { color: var(--danger); }
+.cart-line .remove:hover { border-color: rgba(180, 35, 24, .2); background: var(--danger-bg); }
+
+.promo-hero, .contact-hero, .envios-hero, .special-hero {
+  background: radial-gradient(circle at 88% 24%, rgba(233, 213, 255, .7), transparent 34%), white;
+}
+.faq-contact p { color: #eadfff; }

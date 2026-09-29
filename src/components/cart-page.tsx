@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Lock, MessageCircle, Minus, PawPrint, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,19 @@ function getMercadoPagoReturn(params: URLSearchParams) {
   if (explicitPayment === "pending" || status === "pending" || status === "in_process") return "pending";
   if (explicitPayment === "failure" || status === "rejected" || status === "cancelled") return "failure";
   return "";
+}
+
+// Miniatura del producto en el carrito; si no hay foto o no carga, queda la patita.
+function CartLineThumb({ src }: { src?: string }) {
+  const [failedSrc, setFailedSrc] = useState("");
+  const showImage = Boolean(src) && failedSrc !== src;
+  return (
+    <span className={`cart-line-thumb${showImage ? " has-image" : ""}`} aria-hidden="true">
+      {showImage && src ? (
+        <Image alt="" className="cart-line-thumb-image" fill onError={() => setFailedSrc(src)} sizes="56px" src={src} unoptimized />
+      ) : <PawPrint size={22} />}
+    </span>
+  );
 }
 
 export function CartPage({ branches }: { branches: Branch[] }) {
@@ -264,7 +278,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           <div className="cart-lines">
             {items.map((item, index) => (
               <article className="card cart-line" key={item.variantId} style={{ ["--i" as string]: Math.min(index, 8) }}>
-                <span className="cart-line-thumb" aria-hidden="true"><PawPrint size={22} /></span>
+                <CartLineThumb src={item.imageSrc} />
                 <div className="cart-line-info">
                   <p className="cart-line-brand">{item.brand}</p>
                   <h3><Link href={`/producto/${item.productSlug}`}>{item.name}</Link></h3>
