@@ -991,3 +991,14 @@
   display: block;
   opacity: .22;
 }
+
+/* ===== Accesibilidad (auditoría de nicol-57) ===== */
+/* Contraste del aviso "Desactivado en tienda": #6b7280 sobre gris daba 4,28:1. */
+.admin-shell .admin-status-badge.muted {
+  color: var(--muted);
+}
+
+/* Títulos del panel con el mismo peso que la tienda. */
+.admin-shell .admin-section-head h1 {
+  font-weight: 750;
+}

@@ -2482,7 +2482,7 @@ function DashboardCharts({
             return (
               <div className="admin-bar-row" key={day.key}>
                 <span>{day.label}</span>
-                <div className="admin-bar-track" title={`${formatPrice(day.totalCents)}`} aria-label={`${day.label} ${formatPrice(day.totalCents)}`}>
+                <div className="admin-bar-track" role="img" title={`${formatPrice(day.totalCents)}`} aria-label={`${day.label} ${formatPrice(day.totalCents)}`}>
                   <div className={`admin-bar-fill${day.totalCents === 0 ? " is-empty" : ""}`} style={{ width: `${day.percent}%` }} />
                 </div>
               </div>
@@ -3243,8 +3243,8 @@ function PointOfSalePanel({
                   <small>{formatPrice(order.totalCents)} | {formatAdminDateTime(order.createdAt, { timeStyle: "short" })} | {order.status}</small>
                 </div>
                 <div className="admin-row-actions">
-                  <button className="icon-button" onClick={() => onEditOrder(order)} type="button"><Pencil size={16} /></button>
-                  <button className="icon-button danger" onClick={() => onDeleteOrder(order)} type="button">
+                  <button aria-label={`Editar venta ${order.code}`} className="icon-button" onClick={() => onEditOrder(order)} type="button"><Pencil size={16} /></button>
+                  <button aria-label={`Eliminar venta ${order.code}`} className="icon-button danger" onClick={() => onDeleteOrder(order)} type="button">
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -3337,6 +3337,19 @@ export function AdminConsole({
   const [trashQuery, setTrashQuery] = useState("");
   const [trashTypeFilter, setTrashTypeFilter] = useState<TrashItem["type"] | "all">("all");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const adminMenuToggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!adminMenuOpen) return;
+    // En celular el menú lateral se cierra con Escape y el foco vuelve al botón que lo abrió.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector(".admin-modal-backdrop")) return;
+      setAdminMenuOpen(false);
+      adminMenuToggleRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [adminMenuOpen]);
   const selectableProductCategories = useMemo(() => leafCategories(categories), [categories]);
   const requestDeleteOrder = (order: OrderRecord) => {
     setOrderToEdit(null);
@@ -3479,7 +3492,7 @@ export function AdminConsole({
 
   return (
     <div className="admin-layout">
-      <aside className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
+      <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />
           <div>
@@ -3490,6 +3503,7 @@ export function AdminConsole({
             aria-expanded={adminMenuOpen}
             aria-label={adminMenuOpen ? "Cerrar panel de gestión" : "Abrir panel de gestión"}
             className="admin-menu-toggle"
+            ref={adminMenuToggleRef}
             onClick={() => setAdminMenuOpen((current) => !current)}
             type="button"
           >
@@ -3497,7 +3511,7 @@ export function AdminConsole({
           </button>
         </div>
         <div className="admin-sidebar-body">
-          <nav className="admin-nav">
+          <nav aria-label="Secciones" className="admin-nav">
             {options.map(({ id, href, label, icon: Icon }) => (
               <Link className={section === id ? "active" : ""} href={href} key={id}>
                 <Icon size={18} />
@@ -3512,7 +3526,7 @@ export function AdminConsole({
         </div>
       </aside>
 
-      <main className="admin-main">
+      <div className="admin-main">
         <div className="admin-current-branch-banner">
           <span>Sucursal activa</span>
           <button className="admin-current-branch" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button">
@@ -3657,8 +3671,8 @@ export function AdminConsole({
                         <span>{subcategory.description || "Sin descripción"}</span>
                         <small>{subcategory.count} productos</small>
                         <div className="admin-subcategory-actions">
-                          <button className="icon-button" onClick={() => setModal({ type: "subcategory-edit", subcategory })} type="button"><Pencil size={15} /></button>
-                          <button className="icon-button danger" onClick={() => setModal({ type: "subcategory-delete", subcategory, stage: 1 })} type="button"><Trash2 size={15} /></button>
+                          <button aria-label={`Editar ${subcategory.name}`} className="icon-button" onClick={() => setModal({ type: "subcategory-edit", subcategory })} type="button"><Pencil size={15} /></button>
+                          <button aria-label={`Eliminar ${subcategory.name}`} className="icon-button danger" onClick={() => setModal({ type: "subcategory-delete", subcategory, stage: 1 })} type="button"><Trash2 size={15} /></button>
                         </div>
                       </article>
                     ))}
@@ -3678,7 +3692,7 @@ export function AdminConsole({
                         <span>{category.description || "Sin descripción"}</span>
                       </div>
                       {isFixedSpecialCategory ? <span className="admin-fixed-badge">{category.showInMenu ? "Página fija visible" : "Página fija oculta"}</span> : (
-                        <button className="admin-chevron" onClick={() => setModal({ type: "subcategory-create", categoryId: category.id })} type="button">
+                        <button aria-haspopup="dialog" aria-label={`Nueva subcategoría en ${category.name}`} className="admin-chevron" onClick={() => setModal({ type: "subcategory-create", categoryId: category.id })} type="button">
                           <ChevronRight size={18} />
                         </button>
                       )}
@@ -3708,9 +3722,9 @@ export function AdminConsole({
                             <span>{item.description || "Categoría interna"}</span>
                             <small>{itemSubcategories.length} subcategorías</small>
                             <div className="admin-subcategory-actions">
-                              <button className="icon-button" onClick={() => setModal({ type: "subcategory-create", categoryId: item.id })} type="button"><PackagePlus size={15} /></button>
-                              <button className="icon-button" onClick={() => setModal({ type: "category-edit", category: item })} type="button"><Pencil size={15} /></button>
-                              <button className="icon-button danger" onClick={() => setModal({ type: "category-delete", category: item, stage: categoryDeletionImpactById.get(item.id)?.hasContents ? 1 : 2 })} type="button"><Trash2 size={15} /></button>
+                              <button aria-haspopup="dialog" aria-label={`Nueva subcategoría en ${item.name}`} className="icon-button" onClick={() => setModal({ type: "subcategory-create", categoryId: item.id })} type="button"><PackagePlus size={15} /></button>
+                              <button aria-label={`Editar ${item.name}`} className="icon-button" onClick={() => setModal({ type: "category-edit", category: item })} type="button"><Pencil size={15} /></button>
+                              <button aria-label={`Eliminar ${item.name}`} className="icon-button danger" onClick={() => setModal({ type: "category-delete", category: item, stage: categoryDeletionImpactById.get(item.id)?.hasContents ? 1 : 2 })} type="button"><Trash2 size={15} /></button>
                             </div>
                           </article>
                         )] : [];
@@ -3722,8 +3736,8 @@ export function AdminConsole({
                           <span>{subcategory.description || "Sin descripción"}</span>
                           <small>{subcategory.count} productos</small>
                           <div className="admin-subcategory-actions">
-                            <button className="icon-button" onClick={() => setModal({ type: "subcategory-edit", subcategory })} type="button"><Pencil size={15} /></button>
-                            <button className="icon-button danger" onClick={() => setModal({ type: "subcategory-delete", subcategory, stage: 1 })} type="button"><Trash2 size={15} /></button>
+                            <button aria-label={`Editar ${subcategory.name}`} className="icon-button" onClick={() => setModal({ type: "subcategory-edit", subcategory })} type="button"><Pencil size={15} /></button>
+                            <button aria-label={`Eliminar ${subcategory.name}`} className="icon-button danger" onClick={() => setModal({ type: "subcategory-delete", subcategory, stage: 1 })} type="button"><Trash2 size={15} /></button>
                           </div>
                         </article>
                           )),
@@ -3792,8 +3806,8 @@ export function AdminConsole({
                       </div>
                       <div className="admin-row-actions">
                         <span className="admin-stock-pill">{formatPrice(getOrderBranchRevenueCents(order, selectedBranch.id))} | {order.status}</span>
-                        <button className="icon-button" onClick={() => setOrderToEdit(order)} type="button"><Pencil size={16} /></button>
-                        <button className="icon-button danger" onClick={() => requestDeleteOrder(order)} type="button"><Trash2 size={16} /></button>
+                        <button aria-label={`Editar venta ${order.code}`} className="icon-button" onClick={() => setOrderToEdit(order)} type="button"><Pencil size={16} /></button>
+                        <button aria-label={`Eliminar venta ${order.code}`} className="icon-button danger" onClick={() => requestDeleteOrder(order)} type="button"><Trash2 size={16} /></button>
                       </div>
                     </div>
                   ))}
@@ -3860,7 +3874,7 @@ export function AdminConsole({
             <div id="admin-section-ventas-web">
             <SectionHeader
               action={(
-                <div className="admin-period-toggle" role="tablist" aria-label="Periodo de ventas web">
+                <div className="admin-period-toggle" role="group" aria-label="Período de ventas web">
                   <button
                     aria-pressed={webPeriod === "day"}
                     className={`button button-light${webPeriod === "day" ? " active" : ""}`}
@@ -4069,7 +4083,7 @@ export function AdminConsole({
             </div>
           </>
         )}
-      </main>
+      </div>
 
       {branchPickerOpen ? (
         <BranchPickerModal

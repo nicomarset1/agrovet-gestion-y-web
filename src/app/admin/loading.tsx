@@ -5,7 +5,7 @@ export default function AdminLoading() {
       <span className="admin-skeleton-sr">Cargando panel…</span>
       <div className="container">
         <div className="admin-layout" aria-hidden="true">
-          <aside className="admin-sidebar card">
+          <aside aria-label="Panel de gestión" className="admin-sidebar card">
             <div className="admin-brand">
               <span className="admin-brand-mark" />
               <div className="admin-skeleton-stack">
@@ -19,7 +19,7 @@ export default function AdminLoading() {
               ))}
             </div>
           </aside>
-          <main className="admin-main">
+          <div className="admin-main">
             <div className="admin-current-branch-banner">
               <span className="admin-skeleton-line short" style={{ width: 120 }} />
               <span className="admin-skeleton-line" style={{ width: 200 }} />
@@ -44,7 +44,7 @@ export default function AdminLoading() {
                 <span className="admin-skeleton-line row" key={index} />
               ))}
             </div>
-          </main>
+          </div>
         </div>
       </div>
     </div>
