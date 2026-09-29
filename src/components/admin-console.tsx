@@ -2380,7 +2380,7 @@ function DashboardCharts({
                 <span>{item.percent}%</span>
                 <small>{formatPrice(item.value)}</small>
               </div>
-            )) : <p className="description">Todavia no hay ventas registradas.</p>}
+            )) : <p className="description">Todavía no hay ventas registradas.</p>}
           </div>
         </div>
       </section>
