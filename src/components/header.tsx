@@ -36,7 +36,7 @@ export async function Header() {
           </Link>
           <CatalogMenu items={menuItems} />
           <LiveSearch products={searchProducts} />
-          <nav className="navigation">
+          <nav aria-label="Principal" className="navigation">
             <StoreNavLink />
             <SmoothAnchor href="/#locales"><MapPin size={15} style={{ display: "inline", verticalAlign: "-2px" }} /> Locales</SmoothAnchor>
             <CartButton />
