@@ -34,7 +34,6 @@ export const metadata: Metadata = {
   },
   description,
   applicationName: siteName,
-  alternates: { canonical: "/" },
   robots: { index: true, follow: true },
   icons: {
     icon: "/icon.png",
@@ -44,7 +43,6 @@ export const metadata: Metadata = {
     type: "website",
     siteName,
     locale: "es_AR",
-    url: siteUrl,
     title: "Agrovet | Alimentos y cuidado para perros y gatos",
     description,
     images: [absoluteUrl("/agrovet-logo.png")],
