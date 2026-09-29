@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Home } from "lucide-react";
+import { Home, PawPrint, ShoppingBag } from "lucide-react";
 
 export const metadata = {
   title: "Página no encontrada | Agrovet",
@@ -7,47 +7,35 @@ export const metadata = {
 
 export default function NotFound() {
   return (
-    <main className="hero">
+    <section className="state-page">
       <div className="container">
-        <section className="hero-box" style={{ minHeight: 420 }}>
-          <div className="hero-content" style={{ maxWidth: 660 }}>
-            <p className="eyebrow">Página no encontrada</p>
-            <h1>404</h1>
-            <p>
-              La dirección que buscaste no existe, fue movida o está escrita con otro
-              enlace. Podés volver al inicio o seguir en la tienda.
-            </p>
-            <div className="hero-actions">
-              <Link className="button button-primary" href="/">
-                <Home size={16} />
-                Ir al inicio
-              </Link>
-              <Link className="button button-light" href="/tienda">
-                <ArrowLeft size={16} />
-                Volver a la tienda
-              </Link>
-            </div>
+        <div className="state-card">
+          <div className="state-visual" aria-hidden="true">
+            <span className="state-code display">404</span>
+            <span className="state-paws">
+              <PawPrint size={22} />
+              <PawPrint size={18} />
+              <PawPrint size={14} />
+            </span>
           </div>
-          <div className="hero-shape" aria-hidden="true" style={{ background: "#f2cac4", opacity: 0.95 }} />
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              right: "clamp(16px, 6vw, 70px)",
-              top: "50%",
-              transform: "translateY(-50%)",
-              width: "min(36vw, 320px)",
-              aspectRatio: "1",
-              borderRadius: "50%",
-              background: "radial-gradient(circle at 30% 30%, rgba(91, 15, 115, .18), rgba(91, 15, 115, .03) 58%, transparent 59%)",
-              display: "grid",
-              placeItems: "center",
-            }}
-          >
-            <AlertTriangle size={88} strokeWidth={1.7} color="#5b0f73" />
+          <p className="eyebrow">Página no encontrada</p>
+          <h1 className="display">Esta página se nos escapó</h1>
+          <p className="state-copy">
+            La dirección que buscaste no existe, fue movida o está escrita con otro
+            enlace. Podés volver al inicio o seguir en la tienda.
+          </p>
+          <div className="state-actions">
+            <Link className="button button-primary" href="/tienda">
+              <ShoppingBag size={17} />
+              Ir a la tienda
+            </Link>
+            <Link className="button button-light" href="/">
+              <Home size={17} />
+              Ir al inicio
+            </Link>
           </div>
-        </section>
+        </div>
       </div>
-    </main>
+    </section>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, CheckCircle2, Clock3, MessageCircle, ShoppingBag } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Lock, MessageCircle, Minus, PawPrint, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Branch } from "@/lib/types";
@@ -29,7 +29,7 @@ function getMercadoPagoReturn(params: URLSearchParams) {
 }
 
 export function CartPage({ branches }: { branches: Branch[] }) {
-  const { items, totalCents, change, remove, clear } = useCart();
+  const { items, totalItems, totalCents, change, remove, clear } = useCart();
   const handledPaymentReturn = useRef(false);
   const [branchId, setBranchId] = useState(branches[0]?.id ?? 0);
   const [fulfillment, setFulfillment] = useState<"retiro" | "envio">("retiro");
@@ -89,15 +89,15 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           finalStatus: "pending",
           title: "Pedido recibido",
           text: order
-            ? `Recibimos el pedido ${order}, pero Mercado Pago todavia esta procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
-            : "Recibimos tu pedido, pero Mercado Pago todavia esta procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
+            ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
+            : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
         });
       } else if (payment === "failure") {
         setMessage({
           error: true,
           outsideCheckout: true,
-          title: "No se completo el pago",
-          text: "Mercado Pago rechazo o cancelo el pago. Tu carrito sigue guardado para que puedas revisar los datos e intentar nuevamente.",
+          title: "No se completó el pago",
+          text: "Mercado Pago rechazó o canceló el pago. Tu carrito sigue guardado para que puedas revisar los datos e intentar nuevamente.",
         });
       }
       window.history.replaceState(null, "", window.location.pathname);
@@ -177,15 +177,23 @@ export function CartPage({ branches }: { branches: Branch[] }) {
     <div className={`container cart-page${showFinalMessage ? " cart-page-confirmed" : ""}`}>
       <section>
         {!showFinalMessage ? (
-          <>
-            <p className="eyebrow">Tu compra</p>
-            <h1 className="display">Carrito</h1>
-          </>
+          <div className="cart-heading">
+            <div>
+              <p className="eyebrow">Tu compra</p>
+              <h1 className="display">Carrito</h1>
+            </div>
+            {items.length > 0 ? (
+              <span className="cart-heading-count">{totalItems} {totalItems === 1 ? "producto" : "productos"}</span>
+            ) : null}
+          </div>
         ) : null}
         {items.length > 0 && showCartMessage ? (
-          <div className="card empty">
-            <h2>{message?.title}</h2>
-            <p>{message?.text}</p>
+          <div className={`cart-alert${message?.error ? " is-error" : ""}`} role="alert">
+            <span className="cart-alert-icon" aria-hidden="true"><CircleAlert size={20} /></span>
+            <div>
+              <h2>{message?.title}</h2>
+              <p>{message?.text}</p>
+            </div>
           </div>
         ) : null}
         {showFinalMessage ? (
@@ -222,39 +230,58 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             <p className="order-confirmation-thanks">Gracias por elegir Agrovet para cuidar a tus mascotas.</p>
           </div>
         ) : items.length === 0 && message ? (
-          <div className="card empty">
-            <h2>{message?.title ?? (message?.error ? "No se completo el pago" : "Pedido recibido")}</h2>
+          <div className={`card empty cart-empty${message?.error ? " is-error" : " is-success"}`}>
+            <span className="cart-empty-icon" aria-hidden="true">{message?.error ? <CircleAlert /> : <CheckCircle2 />}</span>
+            <h2>{message?.title ?? (message?.error ? "No se completó el pago" : "Pedido recibido")}</h2>
             <p>{message?.text}</p>
-            <Link className="button button-primary" href="/tienda">Volver a la tienda</Link>
+            <Link className="button button-primary" href="/tienda">Volver a la tienda <ArrowRight size={17} /></Link>
           </div>
         ) : items.length === 0 ? (
-          <div className="card empty"><h2>Tu carrito está vacío</h2><p>Encontrá alimento, accesorios o farmacia para tu mascota.</p><Link className="button button-primary" href="/tienda">Ir a la tienda</Link></div>
-        ) : items.map((item) => (
-          <article className="card cart-line" key={item.variantId}>
-            <div>
-              <h3>{item.brand} {item.name}</h3>
-              <small>Presentación: {item.label}</small>
-              <div className="qty">
-                <button className="qty-button" onClick={() => change(item.variantId, item.quantity - 1)} type="button">-</button>
-                <strong>{item.quantity}</strong>
-                <button className="qty-button" onClick={() => change(item.variantId, item.quantity + 1)} type="button">+</button>
-                <button className="remove" onClick={() => remove(item.variantId)} type="button">Eliminar</button>
-              </div>
-            </div>
-            <strong>{formatPrice(item.priceCents * item.quantity)}</strong>
-          </article>
-        ))}
+          <div className="card empty cart-empty">
+            <span className="cart-empty-icon" aria-hidden="true"><ShoppingBag /></span>
+            <h2>Tu carrito está vacío</h2>
+            <p>Encontrá alimento, accesorios o farmacia para tu mascota.</p>
+            <Link className="button button-primary" href="/tienda">Ir a la tienda <ArrowRight size={17} /></Link>
+          </div>
+        ) : (
+          <div className="cart-lines">
+            {items.map((item, index) => (
+              <article className="card cart-line" key={item.variantId} style={{ ["--i" as string]: Math.min(index, 8) }}>
+                <span className="cart-line-thumb" aria-hidden="true"><PawPrint size={22} /></span>
+                <div className="cart-line-info">
+                  <p className="cart-line-brand">{item.brand}</p>
+                  <h3><Link href={`/producto/${item.productSlug}`}>{item.name}</Link></h3>
+                  <small>Presentación: {item.label}</small>
+                </div>
+                <div className="cart-line-price">
+                  <strong>{formatPrice(item.priceCents * item.quantity)}</strong>
+                  {item.quantity > 1 ? <small>{formatPrice(item.priceCents)} c/u</small> : null}
+                </div>
+                <div className="qty">
+                  <div className="qty-stepper" role="group" aria-label={`Cantidad de ${item.name}`}>
+                    <button aria-label="Restar una unidad" className="qty-button" disabled={item.quantity <= 1} onClick={() => change(item.variantId, item.quantity - 1)} type="button"><Minus size={15} /></button>
+                    <strong aria-live="polite">{item.quantity}</strong>
+                    <button aria-label="Sumar una unidad" className="qty-button" onClick={() => change(item.variantId, item.quantity + 1)} type="button"><Plus size={15} /></button>
+                  </div>
+                  <button className="remove" onClick={() => remove(item.variantId)} type="button"><Trash2 size={14} /> Eliminar</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
       {items.length > 0 && !showFinalMessage && (
-        <aside className="card checkout">
+        <aside className="card checkout" id="checkout">
           <h2>Finalizar pedido</h2>
-          {message && !message.outsideCheckout && <p className={`notice ${message.error ? "error" : ""}`}>{message.text}</p>}
+          {message && !message.outsideCheckout && <p className={`notice ${message.error ? "error" : ""}`} role={message.error ? "alert" : "status"}>{message.text}</p>}
           <form onSubmit={submit}>
-            <input className="field" name="name" placeholder="Nombre y apellido" required />
-            <input className="field" name="phone" placeholder="WhatsApp" required />
-            <input className="field" name="email" placeholder="Email" type="email" required />
+            <p className="checkout-step">Tus datos</p>
+            <input aria-label="Nombre y apellido" autoComplete="name" className="field" name="name" placeholder="Nombre y apellido" required />
+            <input aria-label="WhatsApp" autoComplete="tel" className="field" inputMode="tel" name="phone" placeholder="WhatsApp" required type="tel" />
+            <input aria-label="Email" autoComplete="email" className="field" name="email" placeholder="Email" type="email" required />
             <input name="fulfillment" type="hidden" value={fulfillment} />
             <input name="branchId" type="hidden" value={effectiveBranchId} />
+            <p className="checkout-step">Entrega</p>
             <div className="choice-grid two">
               <button className={`choice-card ${fulfillment === "retiro" ? "active" : ""}`} onClick={() => setFulfillment("retiro")} type="button">
                 <strong>Retiro</strong>
@@ -270,11 +297,12 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                 <span>Mar del Plata</span>
               </button>
             </div>
+            <p className="checkout-step">Pago</p>
             <p className="notice cash-discount-notice">{cashDiscountNote}</p>
             <div className="choice-grid two">
               <button className={`choice-card ${effectivePaymentMethod === "mercado_pago" ? "active" : ""}`} onClick={() => setPaymentMethod("mercado_pago")} type="button">
                 <strong>Mercado Pago</strong>
-                <span>Credito, debito, saldo MP y cuotas</span>
+                <span>Crédito, débito, saldo MP y cuotas</span>
               </button>
               <button
                 className={`choice-card ${effectivePaymentMethod === "efectivo" ? "active" : ""}`}
@@ -286,7 +314,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                 <span>En sucursal con 10% de descuento</span>
               </button>
             </div>
-            {fulfillment === "envio" && <p className="notice">Los pedidos con envio se abonan online con Mercado Pago antes de salir a reparto.</p>}
+            {fulfillment === "envio" && <p className="notice">Los pedidos con envío se abonan online con Mercado Pago antes de salir a reparto.</p>}
             {belowDeliveryMinimum && <p className="notice error">El envío se habilita desde {formatPrice(deliveryMinimumCents)}. Con este total, el pedido es solo retiro por sucursal.</p>}
             {fulfillment === "envio" && (
               <>
@@ -314,7 +342,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
                   <strong>Retiro en sucursal</strong>
                   <p>En tan solo 2 horas tu pedido estará listo para retirar en la sucursal seleccionada. Los pedidos permanecen en sucursal durante 3 días hábiles; si necesitás más tiempo, comunicate con nosotros.</p>
                 </div>
-                <label>Stock a reservar en</label>
+                <p className="checkout-step">Stock a reservar en</p>
                 <div className="choice-grid">
                   {branches.map((branch) => (
                     <button className={`choice-card ${branchId === branch.id ? "active" : ""}`} key={branch.id} onClick={() => setBranchId(branch.id)} type="button">
@@ -334,9 +362,12 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             {unavailable.length > 0 && <p className="notice error">Sin unidades suficientes en este local: {unavailable.map((item) => item.name).join(", ")}.</p>}
             <div className="checkout-total"><span>Total</span><span>{formatPrice(totalCents)}</span></div>
             {effectivePaymentMethod === "efectivo" && <div className="checkout-total-cash"><span>Total en efectivo</span><span>{formatPrice(cashTotalCents)}</span></div>}
+            <button aria-busy={pending} className={`button button-primary checkout-submit${pending ? " is-pending" : ""}`} disabled={pending || unavailable.length > 0}>
+              {pending ? <span className="loader-dot" aria-hidden="true" /> : effectivePaymentMethod === "mercado_pago" ? <Lock size={16} /> : <Check size={17} />}
+              {pending ? "Procesando..." : effectivePaymentMethod === "mercado_pago" ? "Pagar con Mercado Pago" : "Reservar pedido"}
+            </button>
             <Link className="button button-light" href="/tienda">Seguir comprando</Link>
-            <button className="button button-primary" disabled={pending || unavailable.length > 0}>{pending ? "Procesando..." : effectivePaymentMethod === "mercado_pago" ? "Pagar con Mercado Pago" : "Reservar pedido"}</button>
-            <p className="notice">Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
+            <p className="notice checkout-footnote">Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
           </form>
         </aside>
       )}

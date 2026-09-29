@@ -4,16 +4,16 @@ export function SpecialPageShell({ title, description }: { title: string; descri
   const paragraphs = description.split(/\n+/).map((line) => line.trim()).filter(Boolean);
 
   return (
-    <main className="section">
+    <main className="special-page section">
       <div className="container">
-        <div className="section-heading">
+        <section className="special-hero">
           <div>
-            <p className="eyebrow">Agrovet</p>
+            <p className="eyebrow">Agrovet Mar del Plata</p>
             <h1>{title}</h1>
             <p>{paragraphs[0] ?? "Contenido pendiente de cargar."}</p>
           </div>
           <Link className="button button-light" href="/tienda">Ver tienda</Link>
-        </div>
+        </section>
         {paragraphs.length > 1 ? (
           <section className="card special-page-content">
             {paragraphs.slice(1).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}

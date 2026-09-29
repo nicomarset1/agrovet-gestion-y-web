@@ -79,7 +79,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     totalItems: items.reduce((total, item) => total + item.quantity, 0),
     totalCents: items.reduce((total, item) => total + item.priceCents * item.quantity, 0),
     add: (incoming) => {
-      push({ title: "Producto agregado", message: `${incoming.brand} ${incoming.name} - ${incoming.label}`, type: "success" });
+      push({ title: "Producto agregado", message: `${incoming.brand} ${incoming.name} · ${incoming.label}`, type: "success" });
       setItems((current) => {
       const found = current.find((item) => item.variantId === incoming.variantId);
       if (found) return current.map((item) => item.variantId === incoming.variantId ? { ...item, quantity: item.quantity + 1 } : item);
