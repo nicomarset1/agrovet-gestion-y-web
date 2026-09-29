@@ -490,3 +490,86 @@
     margin-left: auto;
   }
 }
+
+/* ===== Gráficos del dashboard ===== */
+.admin-shell .admin-bar-fill {
+  transform-origin: left center;
+  animation: admin-bar-grow .7s var(--ease-out) both;
+}
+
+.admin-shell .admin-bar-row:nth-child(2) .admin-bar-fill { animation-delay: 40ms; }
+.admin-shell .admin-bar-row:nth-child(3) .admin-bar-fill { animation-delay: 80ms; }
+.admin-shell .admin-bar-row:nth-child(4) .admin-bar-fill { animation-delay: 120ms; }
+.admin-shell .admin-bar-row:nth-child(5) .admin-bar-fill { animation-delay: 160ms; }
+.admin-shell .admin-bar-row:nth-child(6) .admin-bar-fill { animation-delay: 200ms; }
+.admin-shell .admin-bar-row:nth-child(7) .admin-bar-fill { animation-delay: 240ms; }
+
+/* Días sin ventas: la barra mínima queda tenue para no parecer un monto. */
+.admin-shell .admin-bar-fill.is-empty {
+  opacity: .28;
+}
+
+.admin-shell .admin-bar-track {
+  transition: box-shadow var(--dur-fast) ease;
+}
+
+.admin-shell .admin-bar-row:hover .admin-bar-track {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, .1);
+}
+
+@keyframes admin-bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+
+.admin-shell .admin-donut-chart {
+  position: relative;
+  animation: ui-scale-in var(--dur-slow) var(--ease-out) 80ms both;
+}
+
+/* Agujero central: el gráfico pasa de torta a dona. */
+.admin-shell .admin-donut-chart::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 2px 8px rgba(91, 15, 115, .08);
+}
+
+.admin-shell .admin-donut-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-shell .admin-donut-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+}
+
+.admin-shell .admin-mini-list span {
+  border-radius: var(--radius-sm);
+}
+
+.admin-shell .admin-title-button {
+  border-radius: var(--radius-sm);
+}
+
+.admin-shell .admin-title-button > svg {
+  flex: 0 0 auto;
+  color: #b9a7cc;
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-base) ease;
+}
+
+.admin-shell .admin-title-button:hover > svg {
+  transform: translateX(3px);
+  color: var(--forest);
+}
+
+.admin-shell .admin-menu-popover {
+  transform-origin: top right;
+  animation: ui-scale-in var(--dur-base) var(--ease-out) both;
+}

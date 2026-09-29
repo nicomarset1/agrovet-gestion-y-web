@@ -2324,8 +2324,8 @@ function DashboardCharts({
         const end = channelStats.slice(0, index + 1).reduce((sum, prev) => sum + prev.percent, 0);
         return `${item.color} ${start}% ${end}%`;
       }).join(", ")})`
-      : "conic-gradient(#f2e1e0 0% 100%)")
-    : "conic-gradient(#f2e1e0 0% 100%)";
+      : "conic-gradient(#ece4f5 0% 100%)")
+    : "conic-gradient(#ece4f5 0% 100%)";
   return (
     <div className="admin-chart-grid">
       <section className="card admin-panel">
@@ -2342,7 +2342,7 @@ function DashboardCharts({
               <div className="admin-bar-row" key={day.key}>
                 <span>{day.label}</span>
                 <div className="admin-bar-track" title={`${formatPrice(day.totalCents)}`} aria-label={`${day.label} ${formatPrice(day.totalCents)}`}>
-                  <div className="admin-bar-fill" style={{ width: `${day.percent}%` }} />
+                  <div className={`admin-bar-fill${day.totalCents === 0 ? " is-empty" : ""}`} style={{ width: `${day.percent}%` }} />
                 </div>
               </div>
             );
@@ -2376,7 +2376,7 @@ function DashboardCharts({
           <div className="admin-donut-list">
             {channelStats.length ? channelStats.map((item) => (
               <div className="admin-donut-row" key={item.name} title={formatPrice(item.value)}>
-                <strong>{item.name}</strong>
+                <strong><i aria-hidden="true" className="admin-donut-dot" style={{ background: item.color }} />{item.name}</strong>
                 <span>{item.percent}%</span>
                 <small>{formatPrice(item.value)}</small>
               </div>
