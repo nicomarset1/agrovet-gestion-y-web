@@ -433,3 +433,17 @@
   .route-loading-bar::after { animation: none; width: 100%; opacity: .5; }
   .state-paws svg { opacity: .6; }
 }
+
+/* ===== Rendimiento ===== */
+/* La marca usaba el PNG de 1024px (575 KB) en cada página: ahora una versión de 144px (6 KB). */
+.brand-mark {
+  background-image: url("/brand/agrovet-mark-144.png");
+  background-image: image-set(url("/brand/agrovet-mark-144.webp") type("image/webp"), url("/brand/agrovet-mark-144.png") type("image/png"));
+}
+
+/* Hero con <picture>: ocupa la caja igual que antes el next/image con fill. */
+.hero-picture, .hero-picture-image { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hero-picture-image { display: block; object-fit: cover; object-position: left center; border-radius: inherit; }
+@media (max-width: 640px) {
+  .hero-picture-image { object-position: center; }
+}
