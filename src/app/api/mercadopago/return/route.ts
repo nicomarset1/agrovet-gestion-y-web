@@ -15,11 +15,13 @@ export async function GET(request: Request) {
   const paymentId = (url.searchParams.get("payment_id") ?? url.searchParams.get("collection_id") ?? "").trim();
   const returnedOrder = (url.searchParams.get("external_reference") ?? "").trim();
 
-  if (!paymentId) {
+  // Si el cliente vuelve con "Volver al sitio" sin pagar, Mercado Pago manda payment_id=null (texto).
+  // Cualquier id vacío o no numérico se trata como abandono: el carrito queda intacto.
+  if (!/^\d+$/.test(paymentId)) {
     redirect(cartUrl(request, {
       payment: "failure",
       order: returnedOrder,
-      reason: "missing_payment",
+      reason: "abandoned",
     }));
   }
 

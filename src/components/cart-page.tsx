@@ -92,6 +92,13 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
             : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
         });
+      } else if (payment === "failure" && params.get("reason") === "abandoned") {
+        setMessage({
+          error: true,
+          outsideCheckout: true,
+          title: "No completaste el pago",
+          text: "No se hizo ningún cobro. Tu carrito sigue guardado para que puedas revisar los datos e intentar nuevamente cuando quieras.",
+        });
       } else if (payment === "failure") {
         setMessage({
           error: true,
