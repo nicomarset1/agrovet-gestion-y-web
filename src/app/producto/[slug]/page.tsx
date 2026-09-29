@@ -95,7 +95,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
           </div>
           <p className="description">{product.description}</p>
           {product.requiresAdvice && <div className="advice"><Stethoscope aria-hidden="true" size={18} /><p><strong>Producto veterinario.</strong> Consultá indicaciones, dosificación y contraindicaciones con un profesional antes de administrarlo.</p></div>}
-          <VariantSelector product={product} />
+          <VariantSelector product={{ ...product, imageUrl: "", description: "" }} />
         </section>
       </div>
     </div>

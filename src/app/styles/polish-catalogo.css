@@ -43,6 +43,9 @@
     linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
 }
 .product-art-image { object-fit: contain; padding: 14px; transition: transform var(--dur-slow) var(--ease-out); }
+/* Con foto real: fondo blanco, que es como vienen casi todas las fotos de producto. */
+.product-art:has(.product-art-image), .detail-art:has(.product-art-image) { background: #fff; }
+.product-art:has(.product-art-image) { border-bottom: 1px solid #f0e7fa; }
 .product-card:hover .product-art-image { transform: scale(1.04); }
 .product-badge {
   z-index: 2; top: 12px; left: 12px; padding: 5px 10px;

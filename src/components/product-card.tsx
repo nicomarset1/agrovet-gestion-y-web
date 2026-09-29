@@ -35,7 +35,8 @@ export function ProductCard({ product }: { product: Product }) {
           {product.size && product.size !== "todos" && <span>{product.size}</span>}
         </div>
         <div className="product-card-foot">
-          <ProductCardCart product={product} />
+          {/* Sin foto ni descripción: el componente de cliente no las usa y así no viajan de nuevo en la página. */}
+          <ProductCardCart product={{ ...product, imageUrl: "", description: "" }} />
           <div className="product-card-status">
             <span className={`stock-label ${stockState}`}>
               {total === 0 ? "Sin stock" : total <= 3 ? "Últimas unidades" : "Disponible"}
