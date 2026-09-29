@@ -6,7 +6,8 @@ import { formatPrice } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import { useCart } from "./cart-provider";
 
-export function ProductCardCart({ product }: { product: Product }) {
+// imageSrc viene calculado del servidor: acá el producto llega sin imageUrl para no inflar la página.
+export function ProductCardCart({ imageSrc = "", product }: { imageSrc?: string; product: Product }) {
   const firstAvailable = product.variants.find((variant) => variant.totalStock > 0) ?? product.variants[0] ?? null;
   const [variantId, setVariantId] = useState(firstAvailable?.id ?? 0);
   const [added, setAdded] = useState(false);
@@ -26,6 +27,7 @@ export function ProductCardCart({ product }: { product: Product }) {
       label: variant.label,
       priceCents: variant.priceCents,
       stocks: variant.stocks,
+      imageSrc,
     });
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1400);

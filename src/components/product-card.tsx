@@ -1,5 +1,6 @@
 import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Product } from "@/lib/types";
+import { productImageSrc } from "@/lib/product-image";
 import { cardPriceCents } from "./catalog-labels";
 import { ProductArt } from "./product-art";
 import { ProductCardCart } from "./product-card-cart";
@@ -36,7 +37,7 @@ export function ProductCard({ product }: { product: Product }) {
         </div>
         <div className="product-card-foot">
           {/* Sin foto ni descripción: el componente de cliente no las usa y así no viajan de nuevo en la página. */}
-          <ProductCardCart product={{ ...product, imageUrl: "", description: "" }} />
+          <ProductCardCart imageSrc={productImageSrc(product)} product={{ ...product, imageUrl: "", description: "" }} />
           <div className="product-card-status">
             <span className={`stock-label ${stockState}`}>
               {total === 0 ? "Sin stock" : total <= 3 ? "Últimas unidades" : "Disponible"}

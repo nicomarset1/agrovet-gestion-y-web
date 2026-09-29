@@ -6,7 +6,8 @@ import { applyCashDiscount, formatPrice } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import { useCart } from "./cart-provider";
 
-export function VariantSelector({ product }: { product: Product }) {
+// imageSrc viene calculado del servidor: acá el producto llega sin imageUrl para no inflar la página.
+export function VariantSelector({ imageSrc = "", product }: { imageSrc?: string; product: Product }) {
   const firstAvailable = product.variants.find((variant) => variant.totalStock > 0) ?? product.variants[0] ?? null;
   const [variantId, setVariantId] = useState(firstAvailable?.id ?? 0);
   const [added, setAdded] = useState(false);
@@ -24,6 +25,7 @@ export function VariantSelector({ product }: { product: Product }) {
       label: variant.label,
       priceCents: variant.priceCents,
       stocks: variant.stocks,
+      imageSrc,
     });
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1400);
@@ -60,7 +62,7 @@ export function VariantSelector({ product }: { product: Product }) {
       <div className="availability">
         <span className="availability-title">Stock por sucursal</span>
         {variant.stocks.map((stock) => (
-          <span className={`availability-row ${stock.quantity > 0 ? "in" : "out"}`} key={stock.branchId}><strong>{stock.branchName}</strong> <span>{stock.quantity > 0 ? `${stock.quantity} disponibles` : "sin stock"}</span></span>
+          <span className={`availability-row ${stock.quantity > 0 ? "in" : "out"}`} key={stock.branchId}><strong>{stock.branchName}</strong> <span>{stock.quantity > 0 ? `${stock.quantity} ${stock.quantity === 1 ? "disponible" : "disponibles"}` : "sin stock"}</span></span>
         ))}
       </div>
       <button className={`button button-primary detail-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem}>
