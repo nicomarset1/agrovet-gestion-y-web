@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, Search } from "lucide-react";
+import { CircleAlert, MapPin, MapPinCheck, MapPinX, Search } from "lucide-react";
 import type { CSSProperties, FormEvent } from "react";
 import { useMemo, useState } from "react";
 
@@ -75,23 +75,24 @@ export function DeliveryZoneChecker({ variant = "default" }: { variant?: "defaul
 
   return (
     <div className={`delivery-zone-card card${variant === "compact" ? " compact" : ""}`}>
-      {variant === "default" ? <div className="zone-map" aria-label="Zona de envío gratis">
+      {variant === "default" ? <div className="zone-map" aria-label="Zona de envío gratis" role="img">
         <span className="zone-circle" />
         <span className="zone-store"><MapPin size={18} /></span>
-        {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} style={markerStyle} />}
+        {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} key={`${zone.lat}-${zone.lon}`} style={markerStyle} />}
       </div> : null}
       <div className="zone-content">
         <p className="eyebrow">Zona de envío</p>
         <h3>Consultá si llegamos a tu dirección</h3>
         <p>Envíos gratis de lunes a sábados según zona, dentro de 3 km de Alberti 3213 y con compra mínima de $ 50.000.</p>
         <form className="zone-form" onSubmit={checkZone}>
-          <input className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tu dirección en Mar del Plata" />
-          <button className="mini-button" disabled={pending}><Search size={15} /> {pending ? "Buscando" : "Verificar"}</button>
+          <input aria-label="Tu dirección en Mar del Plata" autoComplete="street-address" className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tu dirección en Mar del Plata" />
+          <button aria-busy={pending} className="mini-button" disabled={pending}>{pending ? <span className="loader-dot" aria-hidden="true" /> : <Search size={15} />} {pending ? "Buscando" : "Verificar"}</button>
         </form>
-        {zone?.error && <p className="notice error">{zone.error}</p>}
+        {zone?.error && <p className="notice error zone-result" role="alert"><CircleAlert size={17} aria-hidden="true" /><span>{zone.error}</span></p>}
         {zone && !zone.error && (
-          <p className={`notice ${zone.deliveryAvailable ? "" : "error"}`}>
-            {zone.deliveryAvailable ? "Tu dirección está dentro de la zona de envío gratis." : "Tu dirección queda fuera de la zona de envío gratis."} Distancia estimada: {zone.distanceKm} km.
+          <p className={`notice zone-result ${zone.deliveryAvailable ? "is-inside" : "error"}`} role="status">
+            {zone.deliveryAvailable ? <MapPinCheck size={17} aria-hidden="true" /> : <MapPinX size={17} aria-hidden="true" />}
+            <span>{zone.deliveryAvailable ? "Tu dirección está dentro de la zona de envío gratis." : "Tu dirección queda fuera de la zona de envío gratis."} Distancia estimada: {zone.distanceKm} km.</span>
           </p>
         )}
       </div>
