@@ -32,7 +32,7 @@ export function ProductCardCart({ product }: { product: Product }) {
   }
 
   return (
-    <div className="card-cart-control">
+    <div className={`card-cart-control ${product.variants.length > 1 ? "has-variants" : ""}`}>
       {product.variants.length > 1 ? (
         <div className="card-variant-options" role="group" aria-label={`Elegir presentación de ${product.name}`}>
           {product.variants.map((item) => (
@@ -56,6 +56,7 @@ export function ProductCardCart({ product }: { product: Product }) {
       ) : null}
       <button className={`card-cart-button ${added ? "added" : ""}`} disabled={variant.totalStock === 0} onClick={addItem} aria-label={variant.totalStock ? `Agregar ${product.name} (${variant.label}) al carrito` : "Sin stock"} title={variant.totalStock ? "Agregar al carrito" : "Sin stock"} type="button">
         {added ? <Check size={18} /> : <ShoppingCart size={17} />}
+        <span className="card-cart-text">{added ? "Agregado" : variant.totalStock ? "Agregar" : "Sin stock"}</span>
       </button>
     </div>
   );

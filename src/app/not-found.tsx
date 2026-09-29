@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Home, PawPrint, ShoppingBag } from "lucide-react";
 
 export const metadata = {
-  title: "Página no encontrada | Agrovet",
+  title: "Página no encontrada",
 };
 
 export default function NotFound() {
