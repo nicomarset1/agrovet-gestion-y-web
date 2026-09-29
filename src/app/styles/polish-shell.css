@@ -1,3 +1,331 @@
 /* Pulido 2026-09 · Header, footer, menú de catálogo, buscador, home (nicol-57).
    Estilos NUEVOS de esta área van acá. Se cargan después de globals.css,
    así que pueden sobrescribir reglas existentes con la misma especificidad. */
+
+/* ===== Header ===== */
+
+/* El blur va en un pseudo-elemento: con backdrop-filter en el propio header, el header
+   pasa a ser el bloque contenedor de los position: fixed de adentro, y el drawer del
+   catálogo quedaba recortado al alto del header en vez de cubrir la pantalla. */
+.header {
+  backdrop-filter: none;
+  background: transparent;
+  isolation: isolate;
+  transition: box-shadow var(--dur-base) var(--ease-out);
+}
+.header::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: rgba(255, 255, 255, .93);
+  backdrop-filter: saturate(1.4) blur(14px);
+}
+/* Con el menú abierto el header sube por encima del flotante de WhatsApp y del resto. */
+.header:has(.catalog-menu.open) { z-index: 300; }
+
+/* Sombra suave cuando la página ya se desplazó (solo navegadores con scroll-timeline). */
+@supports (animation-timeline: scroll()) {
+  .header {
+    animation: shell-header-lift linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 90px;
+  }
+}
+@keyframes shell-header-lift {
+  from { box-shadow: 0 0 0 rgba(53, 12, 86, 0); }
+  to { box-shadow: 0 8px 24px rgba(53, 12, 86, .08); }
+}
+
+.brand { transition: opacity var(--dur-fast) ease; }
+.brand .brand-mark { transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) var(--ease-out); }
+.brand:hover .brand-mark { transform: rotate(-4deg) scale(1.04); box-shadow: var(--shadow-md); }
+.brand-title { letter-spacing: -.01em; }
+
+.catalog-trigger { border-radius: var(--radius-sm); transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-fast) ease, background var(--dur-fast) ease; }
+.catalog-menu.open .catalog-trigger { border-color: #d8c3f0; background: var(--sage); box-shadow: none; transform: none; }
+
+.search input { transition: border-color var(--dur-fast) ease, box-shadow var(--dur-base) var(--ease-out); }
+.search input:hover { border-color: #d6c1ee; }
+.search input:focus { outline: none; border-color: var(--forest-light); box-shadow: var(--focus-ring); }
+.search .search-icon { transition: color var(--dur-fast) ease; pointer-events: none; }
+.search:focus-within .search-icon { color: var(--forest); }
+.search-clear { animation: ui-scale-in var(--dur-fast) var(--ease-out) both; }
+
+@media (min-width: 1001px) {
+  /* La navegación queda alineada al borde derecho del contenedor, como el resto de la página. */
+  .navigation { margin-left: auto; align-items: center; gap: 6px; }
+  .navigation a {
+    position: relative; min-height: 40px; padding: 0 12px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .navigation a:hover { transform: none; background: var(--sage); color: var(--forest); }
+  .nav-cart { padding-right: 14px; border: 1px solid var(--line); background: white; }
+  .nav-cart:hover { border-color: #d8c3f0; }
+  .cart-count { top: -6px; left: 24px; box-shadow: 0 0 0 2px white; animation: ui-scale-in var(--dur-base) var(--ease-spring) backwards; }
+}
+
+/* ===== Buscador ===== */
+.search-panel {
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  max-height: min(560px, calc(100dvh - 190px)); overflow-y: auto; overscroll-behavior: contain;
+  animation: ui-fade-up var(--dur-base) var(--ease-out) both;
+}
+.search-result { border-radius: var(--radius-sm); transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out); }
+.search-result:hover, .search-result:focus-visible { background: var(--sage); transform: translateX(2px); }
+.search-result strong { line-height: 1.3; }
+.search-all {
+  position: sticky; bottom: -8px; margin: 4px -8px -8px; padding: 12px; min-height: 44px;
+  background: white; border-radius: 0 0 var(--radius-md) var(--radius-md);
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.search-all:hover { background: #faf6ff; color: var(--forest-light); }
+
+/* ===== Mega menú (escritorio) ===== */
+.catalog-mega {
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  transform: translateY(8px) scale(.985); transform-origin: top left;
+  transition: width var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out), visibility var(--dur-base) ease;
+}
+.catalog-menu.open > .catalog-mega { transform: none; }
+.catalog-mega-root { transition: color var(--dur-fast) ease, background var(--dur-fast) ease; }
+.catalog-mega-root > svg:last-child { transition: transform var(--dur-base) var(--ease-out), color var(--dur-fast) ease; }
+.catalog-mega-content { animation: ui-fade-in var(--dur-base) var(--ease-out) both; }
+.catalog-mega-group { animation: ui-fade-up var(--dur-slow) var(--ease-out) both; }
+.catalog-mega-group:nth-child(2) { animation-delay: 40ms; }
+.catalog-mega-group:nth-child(3) { animation-delay: 80ms; }
+.catalog-mega-group:nth-child(n+4) { animation-delay: 120ms; }
+.catalog-mega-heading > a { padding: 6px 10px; border-radius: 999px; transition: background var(--dur-fast) ease; }
+.catalog-mega-heading > a:hover { background: var(--sage); }
+.catalog-mega-links > a { transition: background var(--dur-fast) ease, color var(--dur-fast) ease; }
+
+/* ===== Drawer del catálogo (celular y tablet) ===== */
+@media (max-width: 820px) {
+  .catalog-mobile-overlay { z-index: 240; background: rgba(24, 12, 31, .42); backdrop-filter: blur(3px); }
+  .catalog-mobile-drawer {
+    inset: 0 auto 0 0; height: 100dvh; background: white;
+    padding: 0 12px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+    transition: transform var(--dur-slow) var(--ease-out), visibility var(--dur-slow) ease;
+  }
+  .catalog-mobile-head { padding-top: calc(16px + env(safe-area-inset-top)); background: white; backdrop-filter: none; }
+  .catalog-mobile-head strong { font-size: 21px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .catalog-mobile-head button { transition: transform var(--dur-base) var(--ease-spring), background var(--dur-fast) ease, opacity var(--dur-base) ease; }
+  .catalog-mobile-head button:hover { transform: none; }
+  .catalog-mobile-head button:active { transform: scale(.92); }
+  .catalog-mobile-head .catalog-mobile-back.visible:hover { transform: none; }
+
+  /* Filas en flex: el texto ocupa el espacio libre y el contador y la flecha quedan
+     siempre alineados a la derecha, haya o no ícono o contador. */
+  .catalog-mobile-row {
+    display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 0 10px 0 12px;
+    border-radius: var(--radius-sm); font-weight: 750;
+    transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+  }
+  .catalog-mobile-row > span { flex: 1; min-width: 0; }
+  .catalog-mobile-row > small {
+    min-width: 28px; padding: 2px 7px; border-radius: 999px; background: #f4eefa;
+    text-align: center; font-weight: 800;
+  }
+  .catalog-mobile-row > svg:last-child:not(.catalog-mobile-row-icon) { flex: 0 0 auto; color: #a99bb2; }
+  .catalog-mobile-row:hover, .catalog-mobile-row:focus-visible { padding-left: 12px; }
+  .catalog-mobile-row:active { background: var(--sage); }
+  .catalog-mobile-list > li { border-bottom-color: #f3eef7; }
+  .catalog-mobile-list > li:last-child { border-bottom: 0; }
+  .catalog-mobile-view-all { min-height: 46px; margin: 2px 0 10px; border-radius: var(--radius-sm); }
+
+  /* Las filas entran escalonadas cada vez que cambia el nivel. */
+  .catalog-menu.open .catalog-mobile-list > li { animation: ui-fade-up var(--dur-slow) var(--ease-out) both; }
+  .catalog-menu.open .catalog-mobile-list > li:nth-child(2) { animation-delay: 25ms; }
+  .catalog-menu.open .catalog-mobile-list > li:nth-child(3) { animation-delay: 50ms; }
+  .catalog-menu.open .catalog-mobile-list > li:nth-child(4) { animation-delay: 75ms; }
+  .catalog-menu.open .catalog-mobile-list > li:nth-child(5) { animation-delay: 100ms; }
+  .catalog-menu.open .catalog-mobile-list > li:nth-child(6) { animation-delay: 125ms; }
+  .catalog-menu.open .catalog-mobile-list > li:nth-child(n+7) { animation-delay: 150ms; }
+}
+
+/* ===== Header en celular: más compacto para dejar lugar al contenido ===== */
+@media (max-width: 820px) {
+  html { scroll-padding-top: 170px; }
+  .header-main { padding: 10px 0 12px; row-gap: 10px; }
+  .brand-mark { width: 40px; height: 40px; border-radius: 12px; }
+  .brand-title { font-size: 19px; }
+  .brand-subtitle { font-size: 10px; margin-top: 3px; }
+  .catalog-trigger { min-height: 40px; padding: 0 12px; font-size: 15px; }
+  .search input { min-height: 44px; font-size: 15px; }
+  .search .search-icon { top: 12px; }
+  .search-clear { top: 7px; }
+  .navigation { gap: 8px; }
+  .navigation a { min-height: 36px; font-weight: 700; transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease; }
+  .navigation a:hover { transform: none; }
+  .navigation a:active { background: var(--sage); border-color: #d8c3f0; }
+  .cart-count { top: -7px; right: 8px; box-shadow: 0 0 0 2px white; }
+  .search-panel { max-height: calc(100dvh - 200px); }
+}
+
+/* ===== Topbar ===== */
+.topbar-inner { min-height: 36px; }
+@media (min-width: 901px) {
+  .topbar-track span + span::before { content: "•"; margin-right: 0; color: rgba(242, 235, 255, .45); }
+  .topbar-track { gap: 18px; }
+  .topbar-track span { display: inline-flex; align-items: center; gap: 18px; }
+}
+@media (max-width: 900px) {
+  .topbar-inner {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+  }
+}
+
+/* ===== Home: hero y franja de beneficios ===== */
+.hero-image-box { border-radius: var(--radius-md); animation: ui-fade-in var(--dur-slow) var(--ease-out) both; }
+.hero-buy-button { transition: box-shadow var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring), filter var(--dur-fast) ease; }
+.hero-buy-button:active { transform: scale(.96); }
+.hero-promo-ticker {
+  border-radius: var(--radius-md);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+.hero-promo-tag { border-radius: var(--radius-sm); }
+.trust-grid { margin-top: 12px; gap: 12px; }
+.trust-item {
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur-base) ease, transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+.trust-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.trust-item svg { transition: transform var(--dur-slow) var(--ease-spring); }
+.trust-item:hover svg { transform: scale(1.08) rotate(-4deg); }
+
+/* ===== Home: secciones ===== */
+.section-heading .eyebrow { margin: 0; }
+.section-heading .button { transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), background var(--dur-fast) ease, border-color var(--dur-fast) ease; }
+.section-heading .button-light:hover { border-color: #d8c3f0; }
+
+/* Aparición suave de las secciones al entrar en pantalla (solo con scroll-timeline).
+   Se anima el contenedor y no cada tarjeta, así no pisa los transform del hover. */
+@supports (animation-timeline: view()) {
+  main > .section .section-heading,
+  main > .section .visual-categories,
+  main > .section .product-grid,
+  #locales .branch-layout > * {
+    animation: ui-fade-up linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 55%;
+  }
+}
+
+/* Tarjetas de categorías */
+.visual-category {
+  border-radius: var(--radius-md);
+  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+.visual-category-image { transition: transform .6s var(--ease-out); }
+.visual-category:hover { transform: translateY(-3px); box-shadow: 0 20px 44px rgba(44, 13, 67, .24); }
+.visual-category:hover .visual-category-image { transform: scale(1.035); }
+.visual-category-button { transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), filter var(--dur-fast) ease; }
+.visual-category-button svg { transition: transform var(--dur-base) var(--ease-out); }
+.visual-category:hover .visual-category-button { filter: brightness(1.06); }
+.visual-category:hover .visual-category-button svg, .visual-category-button:focus-visible svg { transform: translateX(3px); }
+.visual-category-button:hover, .visual-category-button:focus-visible { transform: none; }
+/* Toda la tarjeta es clickeable: el link del botón se estira sobre la imagen. */
+.visual-category-button::after { content: ""; position: absolute; inset: -500px; }
+.visual-category { cursor: pointer; }
+.visual-category:has(.visual-category-button:focus-visible) { box-shadow: var(--focus-ring), 0 18px 42px rgba(44, 13, 67, .22); }
+.visual-category-button:focus-visible { box-shadow: 0 12px 24px rgba(91, 24, 134, .32); }
+
+/* ===== Sucursales ===== */
+#locales .branch-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; }
+#locales .pickup-info { border-radius: var(--radius-md); padding: 18px 20px; margin-bottom: 12px; }
+#locales .branch-grid { gap: 12px; }
+#locales .branch-card {
+  border-radius: var(--radius-md); padding: 20px;
+  display: flex; flex-direction: column; align-items: flex-start;
+  transition: border-color var(--dur-base) ease, transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+#locales .branch-card:hover { transform: translateY(-2px); border-color: #d8c3f0; box-shadow: var(--shadow-md); }
+#locales .branch-card .category-icon { margin-bottom: 14px; border-radius: var(--radius-sm); transition: background var(--dur-base) ease, color var(--dur-base) ease; }
+#locales .branch-card:hover .category-icon { background: var(--forest); color: white; }
+#locales .branch-card small { margin-top: 4px; line-height: 1.45; }
+#locales .branch-card .product-link { margin-top: auto; padding-top: 12px; display: inline-flex; align-items: center; gap: 4px; }
+#locales .branch-card .product-link::after { content: "→"; transition: transform var(--dur-base) var(--ease-out); }
+#locales .branch-card:hover .product-link::after { transform: translateX(3px); }
+#locales .delivery-zone-card { border-radius: var(--radius-md); }
+@media (min-width: 1001px) {
+  /* Con la columna angosta, el campo y el botón van uno debajo del otro para que se lea el placeholder. */
+  #locales .zone-form { grid-template-columns: 1fr; }
+  #locales .zone-form .mini-button { min-height: 44px; }
+}
+#locales .zone-map { border-radius: var(--radius-sm); }
+#locales .zone-circle { animation: shell-zone-breathe 3.2s ease-in-out infinite; }
+@keyframes shell-zone-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(213, 54, 54, .12); }
+  50% { box-shadow: 0 0 0 14px rgba(213, 54, 54, 0); }
+}
+@media (min-width: 1001px) {
+  #locales .branch-grid { align-items: stretch; }
+}
+@media (max-width: 1000px) {
+  #locales .branch-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  /* En celular cada sucursal ocupa una fila compacta con el ícono a la izquierda. */
+  #locales .branch-card {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 14px; row-gap: 2px;
+    align-items: center; padding: 16px; min-height: 0;
+  }
+  #locales .branch-card .category-icon { grid-row: 1 / span 3; width: 44px; height: 44px; margin: 0; align-self: start; }
+  #locales .branch-card .product-link { padding-top: 6px; }
+  #locales .branch-card .stock-label { grid-column: 2; }
+}
+
+/* ===== Footer ===== */
+.footer { padding-top: 48px; }
+.footer .brand-subtitle, .footer p { color: #d9c6ec; }
+.footer strong { color: white; }
+.footer h3 { color: #e9d5ff; font-size: 13px; letter-spacing: .12em; }
+.footer-links { color: #efe4fb; }
+.footer-links a { transition: transform var(--dur-base) var(--ease-out), color var(--dur-fast) ease; }
+.footer-links a::after { transition: right var(--dur-base) var(--ease-out); }
+.footer p a { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .3); text-underline-offset: 3px; transition: color var(--dur-fast) ease, text-decoration-color var(--dur-fast) ease; }
+.footer p a:hover { color: white; text-decoration-color: currentColor; }
+/* El link deshabilitado se ve como los demás, pero apagado. */
+.footer-link-disabled { color: #efe4fb; font-weight: inherit; opacity: .55; }
+.footer .brand-mark { box-shadow: 0 8px 18px rgba(0, 0, 0, .18); }
+.footer-bottom { color: #cdb7e2; border-top-color: rgba(255, 255, 255, .16); }
+@media (min-width: 641px) {
+  .footer-grid > div > p + p { margin-top: 12px; }
+}
+@media (max-width: 640px) {
+  .footer { padding: 36px 0 76px; }
+  .footer-grid { gap: 28px; }
+  .footer-links a, .footer-link-disabled { min-height: 38px; }
+  .footer-links a { transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease; }
+  .footer-links a:hover, .footer-links a:active { transform: none; background: rgba(255, 255, 255, .14); }
+  .footer-link-disabled { opacity: .5; }
+}
+
+/* ===== Flotante de WhatsApp ===== */
+/* Entra una vez y después solo late el anillo: el rebote continuo del botón distraía. */
+.whatsapp-float {
+  animation: ui-scale-in var(--dur-slow) var(--ease-spring) .6s backwards;
+  transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) var(--ease-out), background var(--dur-fast) ease;
+}
+.whatsapp-float::before { animation: whatsappRing 2.8s var(--ease-out) 1.2s infinite; }
+.whatsapp-float:hover { transform: translateY(-2px); }
+.whatsapp-float:active { transform: scale(.94); }
+.whatsapp-float:focus-visible { box-shadow: 0 0 0 3px white, 0 0 0 6px rgba(37, 211, 102, .55); }
+@media (max-width: 640px) {
+  .whatsapp-float { width: 52px; min-height: 52px; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .whatsapp-icon { width: 27px; height: 27px; }
+}
+@media print {
+  .whatsapp-float { display: none; }
+}
+
+/* Las animaciones atadas al scroll no respetan la duración global de reduced motion: se apagan acá. */
+@media (prefers-reduced-motion: reduce) {
+  .header,
+  main > .section .section-heading,
+  main > .section .visual-categories,
+  main > .section .product-grid,
+  #locales .branch-layout > *,
+  #locales .zone-circle { animation: none; }
+  .visual-category:hover, .visual-category:hover .visual-category-image, .trust-item:hover svg { transform: none; }
+}
