@@ -488,6 +488,7 @@ type ProductRow = {
   id: number; slug: string; name: string; brand: string; category: string; categorySlug: string;
   subcategory: string; subcategorySlug: string; species: Product["species"]; lifeStage: string; size: string; need: string;
   description: string; featured: boolean; requiresAdvice: boolean; active: boolean; color: string; imageUrl: string;
+  imageSample?: string;
 };
 
 type VariantRow = {
@@ -531,20 +532,17 @@ async function buildVariantsByProduct(productIds: number[], db: Db = sql): Promi
   return result;
 }
 
-function toProduct(row: ProductRow, variants: Variant[]): Product {
-  return { ...row, featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), active: Boolean(row.active), variants };
+// Fotos: las consultas de productos nunca traen el data URL completo (cientos de KB por foto), solo una
+// muestra corta ("largo:inicio:final") con la que se arma la ruta /api/product-image/[id]?v=...
+// El único que lee la foto entera es getProductImage.
+function productImageFromRow(row: ProductRow) {
+  return row.imageSample ? productImageSrcFromSample(row.id, row.imageSample) : row.imageUrl;
 }
 
-// Panel: en vez del data URL completo (cientos de KB por foto) se trae una muestra corta para versionar la ruta.
-function withAdminImageSrc(rows: Array<ProductRow & { imageSample?: string }>, products: Product[]) {
-  const samples = new Map(rows.map((row) => [row.id, row.imageSample ?? ""]));
-  return products.map((product) => {
-    const sample = samples.get(product.id) ?? "";
-    // La muestra no viaja al panel: solo sirve para armar la versión de la ruta.
-    const next: Product & { imageSample?: string } = { ...product };
-    delete next.imageSample;
-    return sample ? { ...next, imageUrl: productImageSrcFromSample(product.id, sample) } : next;
-  });
+function toProduct(row: ProductRow, variants: Variant[]): Product {
+  const { imageSample: _imageSample, ...product } = row;
+  void _imageSample;
+  return { ...product, imageUrl: productImageFromRow(row), featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), active: Boolean(row.active), variants };
 }
 
 async function hydrateProducts(rows: ProductRow[], db: Db = sql): Promise<Product[]> {
@@ -566,7 +564,11 @@ const baseSelect = `
     COALESCE(NULLIF(p.subcategory_name, ''), '${uncategorizedSubcategoryName}') AS subcategory,
     COALESCE(NULLIF(p.subcategory_slug, ''), '${uncategorizedSubcategorySlug}') AS "subcategorySlug",
     p.species, p.life_stage AS "lifeStage", p.size, p.need, p.description, p.featured,
-    p.requires_advice AS "requiresAdvice", p.active, p.color, p.image_url AS "imageUrl"
+    p.requires_advice AS "requiresAdvice", p.active, p.color,
+    CASE WHEN p.image_url ILIKE 'data:image/%' THEN '' ELSE p.image_url END AS "imageUrl",
+    CASE WHEN p.image_url ILIKE 'data:image/%'
+      THEN length(p.image_url) || ':' || left(p.image_url, 96) || ':' || right(p.image_url, 96)
+      ELSE '' END AS "imageSample"
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at IS NULL
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at IS NULL
@@ -587,13 +589,7 @@ function addInClause(clauses: string[], params: unknown[], expression: string, i
   clauses.push(`${expression} IN (${selected.map((item) => pushParam(params, item)).join(", ")})`);
 }
 
-const adminImageColumns = `CASE WHEN p.image_url LIKE 'data:image/%' THEN '' ELSE p.image_url END AS "imageUrl",
-    CASE WHEN p.image_url LIKE 'data:image/%'
-      THEN length(p.image_url) || ':' || left(p.image_url, 96) || ':' || right(p.image_url, 96)
-      ELSE '' END AS "imageSample"`;
-const adminBaseSelect = baseSelect.replace('p.image_url AS "imageUrl"', adminImageColumns);
-
-export async function getProducts(filters: CatalogFilters = {}, options: { adminImages?: boolean } = {}) {
+export async function getProducts(filters: CatalogFilters = {}) {
   await ensureSchema();
   const clauses: string[] = ["p.archived_at IS NULL", "p.purged_at IS NULL"];
   const params: unknown[] = [];
@@ -649,10 +645,6 @@ export async function getProducts(filters: CatalogFilters = {}, options: { admin
     orderBy = "ORDER BY p.active DESC, (SELECT MIN(price_cents) FROM variants WHERE product_id = p.id) DESC, p.name";
   } else if (filters.sort === "stock_desc") {
     orderBy = "ORDER BY p.active DESC, (SELECT COALESCE(SUM(quantity), 0) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id) DESC, p.name";
-  }
-  if (options.adminImages) {
-    const rows = await sql.unsafe(`${adminBaseSelect} WHERE ${clauses.join(" AND ")} ${orderBy}`, params as never[]) as unknown as Array<ProductRow & { imageSample?: string }>;
-    return withAdminImageSrc(rows, await hydrateProducts(rows));
   }
   const rows = await sql.unsafe(`${baseSelect} WHERE ${clauses.join(" AND ")} ${orderBy}`, params as never[]) as unknown as ProductRow[];
   return hydrateProducts(rows);
@@ -914,7 +906,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
 
 export async function getAdminSnapshot() {
   await ensureSchema();
-  const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts({ status: "all" }, { adminImages: true }), getBranches(), mapAdminOrders(), getWholesaleClients()]);
+  const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts({ status: "all" }), getBranches(), mapAdminOrders(), getWholesaleClients()]);
   return { products, branches, orders, wholesaleClients };
 }
 
