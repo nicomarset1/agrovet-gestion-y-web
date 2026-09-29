@@ -718,3 +718,87 @@
   border-color: #d9c4f2;
   box-shadow: var(--shadow-sm);
 }
+
+/* ===== Login ===== */
+.admin-shell .login {
+  position: relative;
+  max-width: 420px;
+  padding: 36px 34px 32px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  animation: ui-scale-in var(--dur-slow) var(--ease-out) both;
+}
+
+.admin-shell .login::before {
+  content: "";
+  display: block;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 18px;
+  border-radius: 18px;
+  background: var(--forest) url("/agrovet-logo.png") center / cover no-repeat;
+  box-shadow: 0 12px 26px rgba(91, 15, 115, .22);
+}
+
+.admin-shell .login h1 {
+  margin: 6px 0 10px;
+}
+
+.admin-shell .login .description {
+  margin: 0 auto;
+  max-width: 32ch;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.admin-shell .login form {
+  margin-top: 26px;
+}
+
+.admin-shell .login .field {
+  min-height: 52px;
+  font-size: 20px;
+  letter-spacing: .32em;
+  text-align: center;
+}
+
+.admin-shell .login .field::placeholder {
+  font-size: 15px;
+  letter-spacing: normal;
+}
+
+.admin-shell .login .button {
+  width: 100%;
+  min-height: 52px;
+}
+
+/* .notice es grilla centrada y partía el texto con <strong> en tres renglones. */
+.admin-shell .login .notice {
+  display: block;
+  min-height: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.admin-shell .login .notice.error {
+  border-color: #f3cfc7;
+  animation: admin-shake .36s var(--ease-out) both;
+}
+
+@keyframes admin-shake {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+
+@media (max-width: 640px) {
+  .admin-shell .login {
+    width: calc(100% - 32px);
+    margin: 32px auto;
+    padding: 28px 22px 24px;
+  }
+}
