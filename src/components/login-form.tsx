@@ -10,7 +10,9 @@ export function LoginForm() {
   return (
     <form action={action}>
       <input
+        aria-label="Código de acceso"
         autoComplete="current-password"
+        autoFocus
         className="field"
         inputMode="numeric"
         maxLength={12}

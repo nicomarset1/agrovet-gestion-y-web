@@ -991,3 +991,38 @@
   display: block;
   opacity: .22;
 }
+
+/* ===== Accesibilidad (auditoría de nicol-57) ===== */
+/* Contraste del aviso "Desactivado en tienda": #6b7280 sobre gris daba 4,28:1. */
+.admin-shell .admin-status-badge.muted {
+  color: var(--muted);
+}
+
+/* Títulos del panel con el mismo peso que la tienda. */
+.admin-shell .admin-section-head h1 {
+  font-weight: 750;
+}
+
+/* ===== Layout propio del panel (sin header ni footer de la tienda) ===== */
+/* Antes se descontaban los 125 px del header de la tienda. */
+.admin-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (min-width: 1121px) {
+  .admin-shell .admin-sidebar {
+    top: 24px;
+  }
+}
+
+/* Login centrado en la pantalla. */
+.admin-shell:has(> .login) {
+  display: grid;
+  align-content: center;
+  padding-block: 32px;
+}
+
+.admin-shell > .login {
+  margin-block: 0;
+}
