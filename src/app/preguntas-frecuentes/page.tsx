@@ -1,10 +1,15 @@
 import Link from "next/link";
+import { infoPageMetadata } from "@/lib/page-metadata";
 import { CreditCard, HelpCircle, MapPin, MessageCircle, PackageCheck, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
 import { getBranches } from "@/lib/db";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
 import { formatPrice } from "@/lib/format";
 
-export const metadata = { title: "Preguntas frecuentes" };
+export const metadata = infoPageMetadata({
+  title: "Preguntas frecuentes",
+  path: "/preguntas-frecuentes",
+  description: "Respuestas sobre cómo comprar en Agrovet: pedidos online, envíos en Mar del Plata, retiro por sucursal, pagos, stock y medicamentos.",
+});
 export const dynamic = "force-dynamic";
 
 const deliveryMinimumCents = 5000000;
@@ -60,7 +65,7 @@ export default async function PreguntasFrecuentesPage() {
   ];
 
   return (
-    <main className="faq-page section">
+    <div className="faq-page section">
       <div className="container">
         <div className="section-heading faq-heading">
           <div>
@@ -95,6 +100,6 @@ export default async function PreguntasFrecuentesPage() {
           <Link className="button button-primary" href="https://wa.me/5492234251324" rel="noreferrer" target="_blank">WhatsApp</Link>
         </section>
       </div>
-    </main>
+    </div>
   );
 }
