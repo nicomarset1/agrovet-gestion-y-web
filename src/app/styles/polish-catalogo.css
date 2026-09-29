@@ -538,3 +538,40 @@
   .detail-variant-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .variant-price { font-size: 28px; }
 }
+
+/* ===== Relacionados ===== */
+
+.related-products { margin-top: 56px; padding-top: 32px; border-top: 1px solid #efe6f8; }
+.related-products h2 { margin: 0 0 18px; font-size: var(--title-section); line-height: 1.1; }
+@media (max-width: 640px) {
+  .related-products { margin-top: 36px; padding-top: 24px; }
+}
+
+/* ===== Barra de compra fija (solo celular) ===== */
+
+.buy-bar { display: none; }
+@media (max-width: 640px) {
+  .buy-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, .97); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line); box-shadow: 0 -10px 26px rgba(91, 15, 115, .12);
+    transform: translateY(110%); visibility: hidden;
+    transition: transform var(--dur-base) var(--ease-out), visibility var(--dur-base);
+  }
+  .buy-bar.visible { transform: translateY(0); visibility: visible; }
+  .buy-bar-info { display: grid; min-width: 0; line-height: 1.15; }
+  .buy-bar-info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 700; }
+  .buy-bar-info strong { color: var(--forest); font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .buy-bar-button { flex: 0 0 auto; min-height: 46px; padding: 0 18px; gap: 7px; }
+  .buy-bar-button:disabled { background: #ece4f5; color: #6c5a7d; opacity: 1; box-shadow: none; }
+  .buy-bar-button.added { background: #2f7a3e; }
+  /* Espacio fijo abajo para que la barra no tape el final de la página (sin saltos al aparecer). */
+  body:has(.buy-bar) { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  /* Mientras la barra se ve, WhatsApp se esconde para no taparla. */
+  body[data-buy-bar="visible"] .whatsapp-float { opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(16px); }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .buy-bar { transition: none; }
+}
