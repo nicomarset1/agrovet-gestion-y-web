@@ -6,6 +6,9 @@ import { ProductArt } from "@/components/product-art";
 import { VariantSelector } from "@/components/variant-selector";
 import { getProduct } from "@/lib/db";
 import { absoluteUrl, siteName } from "@/lib/site";
+
+// Las fotos que sube el panel son data URL: sirven en la página pero no como imagen para redes ni buscadores.
+const isPublicImage = (url: string) => /^https?:\/\//.test(url);
 import type { Product } from "@/lib/types";
 
 function priceFrom(product: Product) {
@@ -28,7 +31,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: `${product.name} | ${product.brand}`,
       description,
       url: canonical,
-      images: product.imageUrl ? [{ url: product.imageUrl, alt: `${product.brand} ${product.name}` }] : undefined,
+      images: product.imageUrl && isPublicImage(product.imageUrl)
+        ? [{ url: product.imageUrl, alt: `${product.brand} ${product.name}` }]
+        : [{ url: absoluteUrl("/agrovet-logo.png"), alt: siteName }],
     },
   };
 }
@@ -48,7 +53,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     description: product.description,
     brand: { "@type": "Brand", name: product.brand },
     category: product.category,
-    image: product.imageUrl ? [product.imageUrl] : undefined,
+    image: product.imageUrl && isPublicImage(product.imageUrl) ? [product.imageUrl] : undefined,
     sku: product.variants[0]?.sku,
     offers: {
       "@type": "Offer",
@@ -88,7 +93,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
           <h1 className="display">{product.name}</h1>
           <div className="store-chips detail-tags">
             <Link className="chip active" href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link>
-            <Link className="chip" href={`/tienda?subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
+            <Link className="chip" href={`/tienda?category=${product.categorySlug}&subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
             {product.lifeStage && <span className="chip">{product.lifeStage}</span>}
             {product.size && product.size !== "todos" && <span className="chip">{product.size}</span>}
             {product.need && <span className="chip">{product.need}</span>}
