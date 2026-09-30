@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar } from "./calendar";
 import { formatShortDate, parseIsoDate, toIsoDate, today } from "./date-utils";
-import { portalTargetFor, usePopoverPosition } from "./use-popover-position";
+import { isCompactContext, portalTargetFor, usePopoverPosition } from "./use-popover-position";
 
 /**
  * Selector de UNA fecha (portado de proyecto-conmebol): reemplaza al <input type="date">, cuyo
@@ -43,6 +43,7 @@ export function DatePicker({
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState<Date>(() => parseIsoDate(value) ?? today());
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
+  const [compact, setCompact] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const position = usePopoverPosition(open, portalTarget, triggerRef, panelRef, 300);
@@ -56,6 +57,7 @@ export function DatePicker({
     if (open) return close();
     setFocused(parseIsoDate(value) ?? today());
     setPortalTarget(portalTargetFor(triggerRef.current));
+    setCompact(isCompactContext(triggerRef.current));
     setOpen(true);
   }
 
@@ -112,7 +114,7 @@ export function DatePicker({
         ? createPortal(
           <div
             aria-label={ariaLabel ?? "Elegir fecha"}
-            className={`ui-popover ui-date-popover is-${position.placement}`}
+            className={`ui-popover ui-date-popover is-${position.placement}${compact ? " is-compact" : ""}`}
             ref={panelRef}
             role="dialog"
             style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
