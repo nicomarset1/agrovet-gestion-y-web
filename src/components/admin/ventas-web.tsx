@@ -10,6 +10,32 @@ import type { Period, WebOrderStatus } from "@/components/admin/shared";
 
 const WEB_PERIOD_STORAGE_KEY = "agrovet-web-period";
 
+const periodOptions: { value: Period; label: string }[] = [
+  { value: "day", label: "Día" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mes" },
+  { value: "year", label: "Año" },
+];
+
+// Botones segmentados (mismo estilo que el período): uno activo a la vez.
+function Segmented<T extends string>({ label, onChange, options, value }: { label: string; onChange: (value: T) => void; options: { value: T; label: string }[]; value: T }) {
+  return (
+    <div className="admin-period-toggle admin-web-segment" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          aria-pressed={value === option.value}
+          className={`button button-light${value === option.value ? " active" : ""}`}
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function VentasWebSection({
   branches,
   onEditDistribution,
@@ -74,40 +100,7 @@ export function VentasWebSection({
     <div id="admin-section-ventas-web">
     <SectionHeader
       action={(
-        <div className="admin-period-toggle" role="group" aria-label="Período de ventas web">
-          <button
-            aria-pressed={webPeriod === "day"}
-            className={`button button-light${webPeriod === "day" ? " active" : ""}`}
-            onClick={() => setWebPeriod("day")}
-            type="button"
-          >
-            Día
-          </button>
-          <button
-            aria-pressed={webPeriod === "week"}
-            className={`button button-light${webPeriod === "week" ? " active" : ""}`}
-            onClick={() => setWebPeriod("week")}
-            type="button"
-          >
-            Semana
-          </button>
-          <button
-            aria-pressed={webPeriod === "month"}
-            className={`button button-light${webPeriod === "month" ? " active" : ""}`}
-            onClick={() => setWebPeriod("month")}
-            type="button"
-          >
-            Mes
-          </button>
-          <button
-            aria-pressed={webPeriod === "year"}
-            className={`button button-light${webPeriod === "year" ? " active" : ""}`}
-            onClick={() => setWebPeriod("year")}
-            type="button"
-          >
-            Año
-          </button>
-        </div>
+        <Segmented label="Período de ventas web" onChange={setWebPeriod} options={periodOptions} value={webPeriod} />
       )}
       subtitle="Historial general de pedidos web"
       title="Ventas web"
@@ -210,19 +203,21 @@ export function VentasWebSection({
         <div className="admin-web-filters">
           <div className="admin-web-filter-group">
             <span>Estado</span>
-            <div className="admin-web-filter-pills">
-              <button className={`choice-card${webHistoryStatusFilter === "all" ? " active" : ""}`} onClick={() => setWebHistoryStatusFilter("all")} type="button">Todo</button>
-              <button className={`choice-card${webHistoryStatusFilter === "done" ? " active" : ""}`} onClick={() => setWebHistoryStatusFilter("done")} type="button">Terminados</button>
-              <button className={`choice-card${webHistoryStatusFilter === "cancelled" ? " active" : ""}`} onClick={() => setWebHistoryStatusFilter("cancelled")} type="button">Cancelados</button>
-            </div>
+            <Segmented
+              label="Filtrar historial por estado"
+              onChange={setWebHistoryStatusFilter}
+              options={[{ value: "all", label: "Todo" }, { value: "done", label: "Terminados" }, { value: "cancelled", label: "Cancelados" }]}
+              value={webHistoryStatusFilter}
+            />
           </div>
           <div className="admin-web-filter-group">
             <span>Tipo</span>
-            <div className="admin-web-filter-pills">
-              <button className={`choice-card${webHistoryTypeFilter === "all" ? " active" : ""}`} onClick={() => setWebHistoryTypeFilter("all")} type="button">Todo</button>
-              <button className={`choice-card${webHistoryTypeFilter === "retiro" ? " active" : ""}`} onClick={() => setWebHistoryTypeFilter("retiro")} type="button">Retiro</button>
-              <button className={`choice-card${webHistoryTypeFilter === "envio" ? " active" : ""}`} onClick={() => setWebHistoryTypeFilter("envio")} type="button">Envío</button>
-            </div>
+            <Segmented
+              label="Filtrar historial por tipo"
+              onChange={setWebHistoryTypeFilter}
+              options={[{ value: "all", label: "Todo" }, { value: "retiro", label: "Retiro" }, { value: "envio", label: "Envío" }]}
+              value={webHistoryTypeFilter}
+            />
           </div>
         </div>
         <div className="admin-web-history-list">
