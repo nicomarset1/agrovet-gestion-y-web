@@ -787,7 +787,7 @@ export function getSubcategories() {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS categoryId, c.slug AS categorySlug, c.name AS categoryName, COUNT(p.id) AS count
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at = ''
     LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at = '' AND p.purged_at = ''
     WHERE s.deleted_at = ''
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
@@ -800,7 +800,7 @@ export function getSubcategoryBySlug(slug: string) {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS categoryId, c.slug AS categorySlug, c.name AS categoryName
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at = ''
     WHERE s.slug = ? AND s.deleted_at = ''
   `).get(slug) as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null } | undefined;
 }

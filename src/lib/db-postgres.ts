@@ -785,7 +785,7 @@ export async function getSubcategories() {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS "categoryId", c.slug AS "categorySlug", c.name AS "categoryName", COUNT(p.id)::int AS count
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at IS NULL
     LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at IS NULL AND p.purged_at IS NULL
     WHERE s.deleted_at IS NULL
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
@@ -799,7 +799,7 @@ export async function getSubcategoryBySlug(slug: string, db: Db = sql) {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS "categoryId", c.slug AS "categorySlug", c.name AS "categoryName"
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at IS NULL
     WHERE s.slug = ${slug} AND s.deleted_at IS NULL
   ` as unknown as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null }[];
   return row;
