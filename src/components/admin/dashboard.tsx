@@ -39,10 +39,13 @@ export function DashboardDetailModal({
   onSelectOrder: (order: OrderRecord) => void;
 }) {
   const [alertView, setAlertView] = useState<"out" | "low">("out");
-  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedRange, setSelectedRange] = useState<{ from: string; to: string } | null>(null);
   const now = new Date();
   const todayKey = dateKey(now);
-  const selectedDayValue = selectedDay || todayKey;
+  const rangeFrom = selectedRange?.from ?? todayKey;
+  const rangeTo = selectedRange?.to ?? todayKey;
+  const selectedDayValue = rangeFrom === rangeTo ? rangeFrom : "";
+  const setSelectedDay = (day: string) => setSelectedRange({ from: day, to: day });
   const selectedBranchOrders = useMemo(() => orders.filter((order) => getOrderBranchRevenueCents(order, selectedBranch.id) > 0), [orders, selectedBranch.id]);
   const monthGroups = useMemo(() => {
     const groups = new Map<string, number>();
@@ -76,8 +79,11 @@ export function DashboardDetailModal({
     }));
   }, [selectedBranch.id, selectedBranchOrders]);
   const selectedOrders = useMemo(
-    () => selectedBranchOrders.filter((order) => dateKey(toDate(order.createdAt)) === selectedDayValue),
-    [selectedBranchOrders, selectedDayValue],
+    () => selectedBranchOrders.filter((order) => {
+      const key = dateKey(toDate(order.createdAt));
+      return key >= rangeFrom && key <= rangeTo;
+    }),
+    [rangeFrom, rangeTo, selectedBranchOrders],
   );
   const todayOrders = useMemo(() => selectedBranchOrders.filter((order) => isCashOrder(order) && dateKey(toDate(order.createdAt)) === todayKey), [selectedBranchOrders, todayKey]);
   const pendingOrders = useMemo(() => selectedBranchOrders.filter((order) => isPendingWebOrder(order)), [selectedBranchOrders]);
@@ -243,13 +249,20 @@ export function DashboardDetailModal({
         {detail.type === "day-history" ? (
           <>
             <div className="admin-toolbar admin-toolbar-stack">
-              <label className="admin-point-field">
-                <span>Elegir día</span>
-                <input className="field" onChange={(event) => setSelectedDay(event.target.value)} type="date" value={selectedDayValue} />
-              </label>
+              <div className="admin-point-field">
+                <span>Día o rango</span>
+                <DateRangePicker
+                  ariaLabel="Día o rango de ventas"
+                  clearable={false}
+                  from={rangeFrom}
+                  max={todayKey}
+                  onChange={(from, to) => { if (from && to) setSelectedRange({ from, to }); }}
+                  to={rangeTo}
+                />
+              </div>
               <div className="admin-detail-summary compact">
                 <strong>{formatPrice(selectedOrders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranch.id), 0))}</strong>
-                <span>{selectedOrders.length} ventas en la fecha seleccionada de {selectedBranch.name}</span>
+                <span>{selectedOrders.length} ventas · {formatRange(rangeFrom, rangeTo)} · {selectedBranch.name}</span>
               </div>
             </div>
             <div className="admin-history-list">
