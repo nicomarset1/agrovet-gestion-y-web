@@ -879,7 +879,8 @@ type OrderItemAllocation = {
 
 // Impacto de restaurar cada pedido de la papelera (solo lectura): unidades, sucursales y faltantes de hoy.
 async function trashedOrderImpacts() {
-  const orders = await sql`SELECT id, branch_id AS "branchId" FROM orders WHERE deleted_at IS NOT NULL` as unknown as Array<{ id: number; branchId: number }>;
+  const orderRows = await sql`SELECT id, branch_id AS "branchId", status FROM orders WHERE deleted_at IS NOT NULL` as unknown as Array<{ id: number; branchId: number; status: string }>;
+  const orders = orderRows.map((order) => ({ id: order.id, branchId: order.branchId, holdsStock: holdsStock(order.status) }));
   if (!orders.length) return new Map();
   const ids = orders.map((order) => Number(order.id));
   const items = await sql`
@@ -2221,7 +2222,8 @@ export async function restoreTrashItem(input: { type: TrashItem["type"]; id: str
       const id = Number(input.id);
       const [order] = await tx`SELECT id, branch_id AS "branchId", status, fulfillment, deleted_at AS "deletedAt" FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string; fulfillment: string; deletedAt: unknown }[];
       if (!order?.deletedAt) return;
-      const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }>;
+      // Solo vuelve a descontar si el pedido retiene stock: es lo mismo que devolvió deleteOrder al borrarlo.
+      const items = holdsStock(order.status) ? await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }> : [];
       const allocations = await getAllocationBuckets(id, tx);
       for (const item of items) {
         const buckets = allocations.get(item.variantId) ?? [{ branchId: order.branchId, branchName: "", quantity: item.quantity }];
