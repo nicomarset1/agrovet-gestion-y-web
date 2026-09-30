@@ -369,6 +369,8 @@ const productBaseSchema = z.object({
   featured: z.enum(["on"]).optional(),
   requiresAdvice: z.enum(["on"]).optional(),
   active: z.enum(["on"]).optional(),
+  // "1" cuando el panel no tocó una categoría que está en la papelera: se conserva (ver updateProduct).
+  keepCategory: z.enum(["1"]).optional(),
   returnTo: z.string().trim().min(1),
 });
 
@@ -593,6 +595,7 @@ export async function updateProductAction(formData: FormData) {
     active: parsed.data.active === "on",
     color: parsed.data.color,
     imageUrl: productImageInput(parsed.data.imageUrl),
+    keepCategory: parsed.data.keepCategory === "1",
     variants: variants.map((variant) => ({
       id: variant.id,
       label: variant.label,
