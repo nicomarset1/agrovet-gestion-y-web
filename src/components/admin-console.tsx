@@ -18,7 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
@@ -2391,6 +2391,51 @@ function StatCard({
   return <div className="card admin-stat">{content}</div>;
 }
 
+// Movimiento del panel. La cascada de entrada va solo la primera vez que se abre el panel en la
+// pestaña; al cambiar de sección hay un fundido corto y el live-sync no anima nada (no remonta).
+let panelEnteredThisSession = false;
+const PANEL_ENTERED_STORAGE_KEY = "agrovet-panel-entered";
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+const noopSubscribe = () => () => {};
+// true en renders solo de cliente; false en el servidor y al hidratar el HTML ya pintado.
+function useClientRender() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
+
+// Cuenta hasta el valor en ~600 ms con requestAnimationFrame. Solo cuando cambia animateKey (primera
+// aparición o cambio de período) y si el número no vino pintado del servidor; si el valor cambia por
+// el live-sync, se muestra directo.
+function CountUp({ value, format, animateKey }: { value: number; format: (value: number) => string; animateKey: string }) {
+  const clientRender = useClientRender();
+  const [shown, setShown] = useState(() => (clientRender && !prefersReducedMotion() ? 0 : value));
+  const lastKey = useRef<string | null>(clientRender ? null : animateKey);
+  const frame = useRef<number | null>(null);
+  useEffect(() => {
+    const shouldAnimate = lastKey.current !== animateKey && !prefersReducedMotion();
+    lastKey.current = animateKey;
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    if (!shouldAnimate) {
+      frame.current = requestAnimationFrame(() => setShown(value));
+      return () => { if (frame.current !== null) cancelAnimationFrame(frame.current); };
+    }
+    const startedAt = performance.now();
+    const duration = 600;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setShown(Math.round(value * eased));
+      if (progress < 1) frame.current = requestAnimationFrame(tick);
+    };
+    frame.current = requestAnimationFrame(tick);
+    return () => { if (frame.current !== null) cancelAnimationFrame(frame.current); };
+  }, [animateKey, value]);
+  return <>{format(shown)}</>;
+}
+
 type DashboardPeriod = "today" | "7d" | "month";
 const DASHBOARD_PERIOD_STORAGE_KEY = "agrovet-dashboard-period";
 const DASHBOARD_PERIODS: { id: DashboardPeriod; label: string }[] = [
@@ -2535,7 +2580,14 @@ function DashboardOverview({
   pendingCount: number;
 }) {
   const [period, setPeriod] = useState<DashboardPeriod>("today");
+  const [periodChanges, setPeriodChanges] = useState(0);
   const periodStorageReady = useRef(false);
+  const choosePeriod = (next: DashboardPeriod) => {
+    if (next === period) return;
+    setPeriod(next);
+    setPeriodChanges((count) => count + 1);
+  };
+  const animateKey = `${period}:${periodChanges}`;
   useEffect(() => {
     let stored: string | null = null;
     try {
@@ -2619,7 +2671,7 @@ function DashboardOverview({
               aria-pressed={period === item.id}
               className={`button button-light${period === item.id ? " active" : ""}`}
               key={item.id}
-              onClick={() => setPeriod(item.id)}
+              onClick={() => choosePeriod(item.id)}
               type="button"
             >
               {item.label}
@@ -2629,12 +2681,12 @@ function DashboardOverview({
         <p className="admin-dashboard-scope">Sucursal: <strong>{selectedBranch.name}</strong> · Período: <strong>{periodName}</strong></p>
       </div>
 
-      <div className="admin-dash-top">
+      <div className={`admin-dash-top${periodChanges ? " is-period-swap" : ""}`} key={`top-${animateKey}`}>
         <Link className="card admin-dash-card admin-dash-sales" href={detailLink("day-history")}>
           <small>Ventas {ranges.periodLabel}</small>
-          <strong>{formatPrice(totalCents)}</strong>
+          <strong><CountUp animateKey={animateKey} format={formatPrice} value={totalCents} /></strong>
           <span className="admin-dash-sales-meta">
-            {current.length} {current.length === 1 ? "venta" : "ventas"} · ticket promedio {formatPrice(averageCents)}
+            <CountUp animateKey={animateKey} format={String} value={current.length} /> {current.length === 1 ? "venta" : "ventas"} · ticket promedio <CountUp animateKey={animateKey} format={formatPrice} value={averageCents} />
           </span>
           <span className={`admin-dash-change${change === null ? "" : change >= 0 ? " is-up" : " is-down"}`}>
             {change === null
@@ -2644,17 +2696,17 @@ function DashboardOverview({
         </Link>
         <Link className="card admin-dash-card admin-dash-mini" href={detailLink("out-stock")}>
           <small>Stock</small>
-          <strong>{zeroStockCount} <em>sin stock</em></strong>
+          <strong><CountUp animateKey={animateKey} format={String} value={zeroStockCount} /> <em>sin stock</em></strong>
           <span>{lowStockCount} con stock bajo · ver y sumar stock</span>
         </Link>
         <Link className="card admin-dash-card admin-dash-mini" href={detailLink("pending-orders")}>
           <small>Pedidos web pendientes</small>
-          <strong>{pendingCount}</strong>
+          <strong><CountUp animateKey={animateKey} format={String} value={pendingCount} /></strong>
           <span>{pendingCount === 1 ? "Pedido en curso" : "Pedidos en curso"} · ver y cerrar</span>
         </Link>
       </div>
 
-      <div className="admin-dash-grid">
+      <div className={`admin-dash-grid${periodChanges ? " is-period-swap" : ""}`} key={`grid-${animateKey}`}>
         <section className={`card admin-panel admin-dash-card admin-dash-days${period === "month" ? " is-month" : ""}`}>
           <header className="admin-dash-card-head">
             <h2>Ventas por día</h2>
@@ -3493,6 +3545,23 @@ export function AdminConsole({
   const [trashQuery, setTrashQuery] = useState("");
   const [trashTypeFilter, setTrashTypeFilter] = useState<TrashItem["type"] | "all">("all");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  // Mientras el selector de sucursal obligatorio tapa el panel, la entrada no cuenta: la cascada se
+  // ve recién cuando el panel queda a la vista.
+  const coveredByBranchPicker = !initialBranchId;
+  const [panelMotion, setPanelMotion] = useState<"enter" | "switch" | null>(() => (panelEnteredThisSession ? "switch" : "enter"));
+  useEffect(() => {
+    if (coveredByBranchPicker) return;
+    panelEnteredThisSession = true;
+    try {
+      window.sessionStorage.setItem(PANEL_ENTERED_STORAGE_KEY, "1");
+    } catch {
+      // Sin sessionStorage, una recarga vuelve a mostrar la cascada: no rompe nada.
+    }
+    // Al terminar se saca la clase para que remontar partes (por ejemplo, al cambiar el período)
+    // no repita la cascada.
+    const timer = window.setTimeout(() => setPanelMotion(null), 700);
+    return () => window.clearTimeout(timer);
+  }, [coveredByBranchPicker]);
   const adminMenuToggleRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!adminMenuOpen) return;
@@ -3642,7 +3711,7 @@ export function AdminConsole({
         : null;
 
   return (
-    <div className="admin-layout">
+    <div className={`admin-layout${panelMotion ? ` admin-${panelMotion}` : ""}`}>
       <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />

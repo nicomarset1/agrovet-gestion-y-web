@@ -67,18 +67,93 @@
   scrollbar-color: #d9c6ee transparent;
 }
 
-/* ===== Entrada de secciones ===== */
-.admin-shell .admin-main > :not([id^="admin-section-"]),
-.admin-shell .admin-main > [id^="admin-section-"] > * {
-  animation: ui-fade-up var(--dur-slow) var(--ease-out) both;
+/* ===== Entrada del panel =====
+   .admin-enter: primera vez que se abre el panel en la pestaña. Cascada sobria: fundido y 8 px de
+   desplazamiento, 280 ms, escalonado de 40 ms; todo termina antes de 600 ms.
+   .admin-switch: al cambiar de sección, solo un fundido corto del contenido.
+   El live-sync no remonta nada, así que no anima. Solo transform y opacity. */
+@keyframes admin-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
-.admin-shell .admin-main > :nth-child(2),
-.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(2) { animation-delay: 40ms; }
-.admin-shell .admin-main > :nth-child(3),
-.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(3) { animation-delay: 80ms; }
-.admin-shell .admin-main > :nth-child(n + 4),
-.admin-shell .admin-main > [id^="admin-section-"] > :nth-child(n + 4) { animation-delay: 120ms; }
+.admin-shell .admin-enter .admin-sidebar {
+  animation: ui-fade-in 280ms var(--ease-out) both;
+}
+
+.admin-shell .admin-enter .admin-main > :not([id^="admin-section-"]):not(.admin-dash-top):not(.admin-dash-grid),
+.admin-shell .admin-enter .admin-main > [id^="admin-section-"] > *,
+.admin-shell .admin-enter .admin-dash-top > *,
+.admin-shell .admin-enter .admin-dash-grid > * {
+  animation: admin-rise 280ms var(--ease-out) both;
+}
+
+.admin-shell .admin-enter .admin-main > :nth-child(2),
+.admin-shell .admin-enter .admin-main > [id^="admin-section-"] > :nth-child(2) { animation-delay: 40ms; }
+.admin-shell .admin-enter .admin-main > :nth-child(3),
+.admin-shell .admin-enter .admin-main > [id^="admin-section-"] > :nth-child(3) { animation-delay: 80ms; }
+.admin-shell .admin-enter .admin-main > [id^="admin-section-"] > :nth-child(n + 4) { animation-delay: 120ms; }
+.admin-shell .admin-enter .admin-dash-top > :nth-child(1) { animation-delay: 120ms; }
+.admin-shell .admin-enter .admin-dash-top > :nth-child(2) { animation-delay: 160ms; }
+.admin-shell .admin-enter .admin-dash-top > :nth-child(3) { animation-delay: 200ms; }
+.admin-shell .admin-enter .admin-dash-grid > :nth-child(1) { animation-delay: 220ms; }
+.admin-shell .admin-enter .admin-dash-grid > :nth-child(2) { animation-delay: 250ms; }
+.admin-shell .admin-enter .admin-dash-grid > :nth-child(n + 3) { animation-delay: 280ms; }
+
+.admin-shell .admin-switch .admin-main {
+  animation: ui-fade-in 160ms ease both;
+}
+
+/* Cambio de período: fundido corto del contenido, sin cascada. */
+.admin-shell .is-period-swap > * {
+  animation: ui-fade-in 180ms ease both;
+}
+
+/* Barras que crecen desde 0 (transform) y donas que se dibujan en arco, al entrar y al cambiar el
+   período. */
+@keyframes admin-day-grow {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+
+.admin-shell .admin-enter .admin-day-fill,
+.admin-shell .is-period-swap .admin-day-fill {
+  animation: admin-day-grow 500ms var(--ease-out) both;
+}
+
+.admin-shell .admin-enter .admin-day-fill { animation-delay: 260ms; }
+
+@property --admin-arc {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 360deg;
+}
+
+@keyframes admin-arc-draw {
+  from { --admin-arc: 0deg; }
+  to { --admin-arc: 360deg; }
+}
+
+.admin-shell .admin-share-donut {
+  -webkit-mask: conic-gradient(#000 var(--admin-arc), transparent 0);
+  mask: conic-gradient(#000 var(--admin-arc), transparent 0);
+}
+
+.admin-shell .admin-enter .admin-share-donut,
+.admin-shell .is-period-swap .admin-share-donut {
+  animation: admin-arc-draw 500ms var(--ease-out) both;
+}
+
+.admin-shell .admin-enter .admin-share-donut { animation-delay: 280ms; }
+
+/* Micro-interacciones: hover y press rápidos. */
+.admin-shell .button,
+.admin-shell .icon-button,
+.admin-shell .admin-nav a,
+.admin-shell .admin-stat-button,
+.admin-shell a.admin-dash-card {
+  transition-duration: var(--dur-fast);
+}
 
 /* Los contenedores de cada sección no tenían separación interna:
    el título quedaba pegado a filtros y tarjetas. */
@@ -267,9 +342,9 @@
   gap: 8px;
 }
 
-.admin-shell .admin-stat-grid > :nth-child(2) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 50ms both; }
-.admin-shell .admin-stat-grid > :nth-child(3) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 100ms both; }
-.admin-shell .admin-stat-grid > :nth-child(4) { animation: ui-fade-up var(--dur-slow) var(--ease-out) 150ms both; }
+.admin-shell .admin-enter .admin-stat-grid > :nth-child(2) { animation: admin-rise 280ms var(--ease-out) 160ms both; }
+.admin-shell .admin-enter .admin-stat-grid > :nth-child(3) { animation: admin-rise 280ms var(--ease-out) 200ms both; }
+.admin-shell .admin-enter .admin-stat-grid > :nth-child(4) { animation: admin-rise 280ms var(--ease-out) 240ms both; }
 
 .admin-shell .admin-stat-button {
   position: relative;
@@ -575,7 +650,6 @@
 
 .admin-shell .admin-donut-chart {
   position: relative;
-  animation: ui-scale-in var(--dur-slow) var(--ease-out) 80ms both;
 }
 
 /* Agujero central: el gráfico pasa de torta a dona. */
@@ -1379,4 +1453,29 @@
 .admin-shell .admin-share-donut::after {
   inset: 26%;
   box-shadow: none;
+}
+
+/* Esqueleto del dashboard nuevo. */
+.admin-shell .admin-skeleton-line.period {
+  width: 260px;
+  height: 44px;
+  border-radius: var(--radius-md);
+}
+
+.admin-shell .admin-skeleton-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 132px;
+  padding: 18px 20px;
+}
+
+.admin-shell .admin-skeleton .admin-dash-grid .admin-skeleton-line.row {
+  height: 26px;
+}
+
+/* El esqueleto aparece con un fundido corto (si la carga es rápida, casi no se ve) y el contenido
+   real entra con su propia animación sobre el mismo layout. */
+.admin-shell.admin-skeleton .admin-main > * {
+  animation: ui-fade-in 200ms ease both;
 }
