@@ -15,6 +15,7 @@ import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
+import { buildOrderImpacts } from "./trash-impact";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -2079,25 +2080,34 @@ export function getTrashItems(): TrashItem[] {
   `).all() as Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: string; refundMethod: string; refundNote: string }>;
   const products = db.prepare(`
     SELECT p.id, p.brand, p.name, COALESCE(c.name, 'Sin categoria') AS category, p.archived_at AS deletedAt,
-      COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0) AS stock
+      COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0) AS stock,
+      (SELECT COUNT(*) FROM variants v WHERE v.product_id = p.id) AS variantCount
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     WHERE p.archived_at != '' AND p.purged_at = ''
     ORDER BY p.archived_at DESC
-  `).all() as Array<{ id: number; brand: string; name: string; category: string; stock: number; deletedAt: string }>;
+  `).all() as Array<{ id: number; brand: string; name: string; category: string; stock: number; variantCount: number; deletedAt: string }>;
   const categories = db.prepare(`
-    SELECT id, name, slug, deleted_at AS deletedAt
-    FROM categories
-    WHERE deleted_at != ''
-    ORDER BY deleted_at DESC
-  `).all() as Array<{ id: number; name: string; slug: string; deletedAt: string }>;
+    SELECT c.id, c.name, c.slug, c.deleted_at AS deletedAt,
+      (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.archived_at = '' AND p.purged_at = '') AS productCount,
+      (SELECT COUNT(*) FROM subcategories s WHERE s.category_id = c.id AND s.deleted_at = '') AS subcategoryCount,
+      (SELECT COUNT(*) FROM categories child WHERE child.parent_category_id = c.id AND child.deleted_at = '') AS childCount,
+      CASE WHEN c.parent_category_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM categories parent WHERE parent.id = c.parent_category_id AND parent.deleted_at = '')
+        THEN 1 ELSE 0 END AS restoresAsRoot
+    FROM categories c
+    WHERE c.deleted_at != ''
+    ORDER BY c.deleted_at DESC
+  `).all() as Array<{ id: number; name: string; slug: string; deletedAt: string; productCount: number; subcategoryCount: number; childCount: number; restoresAsRoot: number }>;
   const subcategories = db.prepare(`
-    SELECT s.slug, s.name, COALESCE(c.name, 'Sin categoria') AS category, s.deleted_at AS deletedAt
+    SELECT s.slug, s.name, COALESCE(c.name, 'Sin categoria') AS category, s.deleted_at AS deletedAt,
+      (SELECT COUNT(*) FROM products p WHERE p.subcategory_slug = s.slug AND p.archived_at = '' AND p.purged_at = '') AS productCount
     FROM subcategories s
     LEFT JOIN categories c ON c.id = s.category_id
     WHERE s.deleted_at != ''
     ORDER BY s.deleted_at DESC
-  `).all() as Array<{ slug: string; name: string; category: string; deletedAt: string }>;
+  `).all() as Array<{ slug: string; name: string; category: string; deletedAt: string; productCount: number }>;
+  const orderImpacts = trashedOrderImpacts();
   const clients = db.prepare(`
     SELECT id, business_name AS businessName, contact_name AS contactName, phone, email, deleted_at AS deletedAt
     FROM wholesale_clients
@@ -2117,6 +2127,7 @@ export function getTrashItems(): TrashItem[] {
       source: order.source,
       refundMethod: order.refundMethod ?? "",
       refundNote: order.refundNote ?? "",
+      impact: orderImpacts.get(order.id),
     })),
     ...products.map((product): TrashItem => ({
       type: "product",
@@ -2127,6 +2138,7 @@ export function getTrashItems(): TrashItem[] {
       deletedAt: product.deletedAt,
       status: "Archivado",
       source: "Productos",
+      impact: { variantCount: Number(product.variantCount), stock: Number(product.stock) },
     })),
     ...categories.map((category): TrashItem => ({
       type: "category",
@@ -2137,6 +2149,12 @@ export function getTrashItems(): TrashItem[] {
       deletedAt: category.deletedAt,
       status: "Eliminada",
       source: "Categorias",
+      impact: {
+        productCount: Number(category.productCount),
+        subcategoryCount: Number(category.subcategoryCount),
+        childCount: Number(category.childCount),
+        restoresAsRoot: Boolean(category.restoresAsRoot),
+      },
     })),
     ...subcategories.map((subcategory): TrashItem => ({
       type: "subcategory",
@@ -2147,6 +2165,7 @@ export function getTrashItems(): TrashItem[] {
       deletedAt: subcategory.deletedAt,
       status: "Eliminada",
       source: "Subcategorias",
+      impact: { productCount: Number(subcategory.productCount) },
     })),
     ...clients.map((client): TrashItem => ({
       type: "client",
@@ -2159,6 +2178,30 @@ export function getTrashItems(): TrashItem[] {
       source: "Clientes",
     })),
   ].sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+// Impacto de restaurar cada pedido de la papelera (solo lectura): unidades, sucursales y faltantes de hoy.
+function trashedOrderImpacts() {
+  const orders = db.prepare("SELECT id, branch_id AS branchId FROM orders WHERE deleted_at != ''").all() as Array<{ id: number; branchId: number }>;
+  if (!orders.length) return new Map();
+  const ids = orders.map((order) => order.id);
+  const marks = ids.map(() => "?").join(", ");
+  const items = db.prepare(`
+    SELECT oi.order_id AS orderId, oi.variant_id AS variantId, oi.quantity, COALESCE(p.name, '') AS productName, COALESCE(v.label, '') AS variantLabel
+    FROM order_items oi
+    LEFT JOIN variants v ON v.id = oi.variant_id
+    LEFT JOIN products p ON p.id = v.product_id
+    WHERE oi.order_id IN (${marks})
+  `).all(...ids) as Array<{ orderId: number; variantId: number; quantity: number; productName: string; variantLabel: string }>;
+  const allocations = db.prepare(`SELECT order_id AS orderId, variant_id AS variantId, branch_id AS branchId, quantity FROM order_item_allocations WHERE order_id IN (${marks})`)
+    .all(...ids) as Array<{ orderId: number; variantId: number; branchId: number; quantity: number }>;
+  const variantIds = [...new Set(items.map((item) => item.variantId))];
+  const inventory = variantIds.length
+    ? db.prepare(`SELECT variant_id AS variantId, branch_id AS branchId, quantity FROM inventory WHERE variant_id IN (${variantIds.map(() => "?").join(", ")})`)
+      .all(...variantIds) as Array<{ variantId: number; branchId: number; quantity: number }>
+    : [];
+  const branches = db.prepare("SELECT id, name FROM branches").all() as Array<{ id: number; name: string }>;
+  return buildOrderImpacts({ orders, items, allocations, inventory, branches });
 }
 
 function purgeTrashedProducts(olderThanDays?: number) {

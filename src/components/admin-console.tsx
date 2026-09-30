@@ -387,7 +387,7 @@ export function AdminConsole({
       {modal?.type === "product-edit" ? <ProductModal categories={categories} mode="edit" onClose={() => setModal(null)} product={modal.product} returnTo={productReturnTo} subcategories={subcategories} /> : null}
       {modal?.type === "product-delete" ? <ProductDeleteModal onClose={() => setModal(null)} product={modal.product} /> : null}
       {trashItemToRestore ? <RestoreTrashItemModal item={trashItemToRestore} onClose={() => setTrashItemToRestore(null)} returnTo={sectionHref("papelera")} /> : null}
-      {emptyTrashOpen ? <EmptyTrashModal count={trashItems.length} onClose={() => setEmptyTrashOpen(false)} returnTo={sectionHref("papelera")} /> : null}
+      {emptyTrashOpen ? <EmptyTrashModal count={trashItems.length} items={trashItems} onClose={() => setEmptyTrashOpen(false)} returnTo={sectionHref("papelera")} /> : null}
       {modal?.type === "stock-edit" ? <StockEditModal branch={selectedBranch} onClose={() => setModal(null)} product={modal.product} variantId={modal.variantId} returnTo={modal.returnTo} /> : null}
       {modal?.type === "wholesale-client-create" ? <WholesaleClientModal onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}
       {modal?.type === "wholesale-client-edit" ? <WholesaleClientModal client={modal.client} onClose={() => setModal(null)} returnTo={sectionHref("clientes")} /> : null}

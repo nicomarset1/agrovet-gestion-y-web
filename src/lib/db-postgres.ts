@@ -13,6 +13,7 @@ import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
+import { buildOrderImpacts } from "./trash-impact";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
@@ -875,6 +876,36 @@ type OrderItemAllocation = {
   branchName: string;
   quantity: number;
 };
+
+// Impacto de restaurar cada pedido de la papelera (solo lectura): unidades, sucursales y faltantes de hoy.
+async function trashedOrderImpacts() {
+  const orders = await sql`SELECT id, branch_id AS "branchId" FROM orders WHERE deleted_at IS NOT NULL` as unknown as Array<{ id: number; branchId: number }>;
+  if (!orders.length) return new Map();
+  const ids = orders.map((order) => Number(order.id));
+  const items = await sql`
+    SELECT oi.order_id AS "orderId", oi.variant_id AS "variantId", oi.quantity, COALESCE(p.name, '') AS "productName", COALESCE(v.label, '') AS "variantLabel"
+    FROM order_items oi
+    LEFT JOIN variants v ON v.id = oi.variant_id
+    LEFT JOIN products p ON p.id = v.product_id
+    WHERE oi.order_id IN ${sql(ids)}
+  ` as unknown as Array<{ orderId: number; variantId: number; quantity: number; productName: string; variantLabel: string }>;
+  const allocations = await sql`
+    SELECT order_id AS "orderId", variant_id AS "variantId", branch_id AS "branchId", quantity FROM order_item_allocations WHERE order_id IN ${sql(ids)}
+  ` as unknown as Array<{ orderId: number; variantId: number; branchId: number; quantity: number }>;
+  const variantIds = [...new Set(items.map((item) => Number(item.variantId)))];
+  const inventory = variantIds.length
+    ? await sql`SELECT variant_id AS "variantId", branch_id AS "branchId", quantity FROM inventory WHERE variant_id IN ${sql(variantIds)}` as unknown as Array<{ variantId: number; branchId: number; quantity: number }>
+    : [];
+  const branches = await sql`SELECT id, name FROM branches` as unknown as Array<{ id: number; name: string }>;
+  const num = <T extends Record<string, unknown>>(rows: T[], keys: (keyof T)[]) => rows.map((row) => ({ ...row, ...Object.fromEntries(keys.map((key) => [key, Number(row[key])])) }) as T);
+  return buildOrderImpacts({
+    orders: num(orders, ["id", "branchId"]),
+    items: num(items, ["orderId", "variantId", "quantity"]),
+    allocations: num(allocations, ["orderId", "variantId", "branchId", "quantity"]),
+    inventory: num(inventory, ["variantId", "branchId", "quantity"]),
+    branches: num(branches, ["id"]),
+  });
+}
 
 async function getAllocationBuckets(orderId: number, db: Db = sql) {
   const rows = await db`
@@ -2007,25 +2038,33 @@ export async function getTrashItems(): Promise<TrashItem[]> {
     ` as unknown as Promise<Array<{ id: number; code: string; customerName: string; amountCents: number; status: string; source: string; deletedAt: unknown; refundMethod: string; refundNote: string }>>,
     sql`
       SELECT p.id, p.brand, p.name, COALESCE(c.name, 'Sin categoria') AS category, p.archived_at AS "deletedAt",
-        COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0)::int AS stock
+        COALESCE((SELECT SUM(i.quantity) FROM inventory i JOIN variants v ON v.id = i.variant_id WHERE v.product_id = p.id), 0)::int AS stock,
+        (SELECT COUNT(*) FROM variants v WHERE v.product_id = p.id)::int AS "variantCount"
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
       WHERE p.archived_at IS NOT NULL AND p.purged_at IS NULL
       ORDER BY p.archived_at DESC
-    ` as unknown as Promise<Array<{ id: number; brand: string; name: string; category: string; stock: number; deletedAt: unknown }>>,
+    ` as unknown as Promise<Array<{ id: number; brand: string; name: string; category: string; stock: number; variantCount: number; deletedAt: unknown }>>,
     sql`
-      SELECT id, name, slug, deleted_at AS "deletedAt"
-      FROM categories
-      WHERE deleted_at IS NOT NULL
-      ORDER BY deleted_at DESC
-    ` as unknown as Promise<Array<{ id: number; name: string; slug: string; deletedAt: unknown }>>,
+      SELECT c.id, c.name, c.slug, c.deleted_at AS "deletedAt",
+        (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.archived_at IS NULL AND p.purged_at IS NULL)::int AS "productCount",
+        (SELECT COUNT(*) FROM subcategories s WHERE s.category_id = c.id AND s.deleted_at IS NULL)::int AS "subcategoryCount",
+        (SELECT COUNT(*) FROM categories child WHERE child.parent_category_id = c.id AND child.deleted_at IS NULL)::int AS "childCount",
+        CASE WHEN c.parent_category_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM categories parent WHERE parent.id = c.parent_category_id AND parent.deleted_at IS NULL)
+          THEN TRUE ELSE FALSE END AS "restoresAsRoot"
+      FROM categories c
+      WHERE c.deleted_at IS NOT NULL
+      ORDER BY c.deleted_at DESC
+    ` as unknown as Promise<Array<{ id: number; name: string; slug: string; deletedAt: unknown; productCount: number; subcategoryCount: number; childCount: number; restoresAsRoot: boolean }>>,
     sql`
-      SELECT s.slug, s.name, COALESCE(c.name, 'Sin categoria') AS category, s.deleted_at AS "deletedAt"
+      SELECT s.slug, s.name, COALESCE(c.name, 'Sin categoria') AS category, s.deleted_at AS "deletedAt",
+        (SELECT COUNT(*) FROM products p WHERE p.subcategory_slug = s.slug AND p.archived_at IS NULL AND p.purged_at IS NULL)::int AS "productCount"
       FROM subcategories s
       LEFT JOIN categories c ON c.id = s.category_id
       WHERE s.deleted_at IS NOT NULL
       ORDER BY s.deleted_at DESC
-    ` as unknown as Promise<Array<{ slug: string; name: string; category: string; deletedAt: unknown }>>,
+    ` as unknown as Promise<Array<{ slug: string; name: string; category: string; deletedAt: unknown; productCount: number }>>,
     sql`
       SELECT id, business_name AS "businessName", contact_name AS "contactName", phone, email, deleted_at AS "deletedAt"
       FROM wholesale_clients
@@ -2033,6 +2072,7 @@ export async function getTrashItems(): Promise<TrashItem[]> {
       ORDER BY deleted_at DESC
     ` as unknown as Promise<Array<{ id: number; businessName: string; contactName: string; phone: string; email: string; deletedAt: unknown }>>,
   ]);
+  const orderImpacts = await trashedOrderImpacts();
 
   return [
     ...orders.map((order): TrashItem => ({
@@ -2046,6 +2086,7 @@ export async function getTrashItems(): Promise<TrashItem[]> {
       source: order.source,
       refundMethod: order.refundMethod ?? "",
       refundNote: order.refundNote ?? "",
+      impact: orderImpacts.get(Number(order.id)),
     })),
     ...products.map((product): TrashItem => ({
       type: "product",
@@ -2056,6 +2097,7 @@ export async function getTrashItems(): Promise<TrashItem[]> {
       deletedAt: toIso(product.deletedAt),
       status: "Archivado",
       source: "Productos",
+      impact: { variantCount: Number(product.variantCount), stock: Number(product.stock) },
     })),
     ...categories.map((category): TrashItem => ({
       type: "category",
@@ -2066,6 +2108,12 @@ export async function getTrashItems(): Promise<TrashItem[]> {
       deletedAt: toIso(category.deletedAt),
       status: "Eliminada",
       source: "Categorias",
+      impact: {
+        productCount: Number(category.productCount),
+        subcategoryCount: Number(category.subcategoryCount),
+        childCount: Number(category.childCount),
+        restoresAsRoot: Boolean(category.restoresAsRoot),
+      },
     })),
     ...subcategories.map((subcategory): TrashItem => ({
       type: "subcategory",
@@ -2076,6 +2124,7 @@ export async function getTrashItems(): Promise<TrashItem[]> {
       deletedAt: toIso(subcategory.deletedAt),
       status: "Eliminada",
       source: "Subcategorias",
+      impact: { productCount: Number(subcategory.productCount) },
     })),
     ...clients.map((client): TrashItem => ({
       type: "client",
