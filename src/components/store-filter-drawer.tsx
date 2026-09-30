@@ -8,9 +8,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countSelectedGroups, groupSeparator, type FacetGroup } from "./catalog-labels";
 
 // Solo lo que el panel muestra: así viaja menos información al navegador.
-type FacetItem = { name: string };
+// Los contadores son contextuales (calculados con los demás filtros activos); las opciones en 0 no llegan,
+// salvo las que el cliente ya eligió, que se muestran para poder sacarlas.
+type FacetItem = { name: string; count: number };
 export type DrawerFacets = {
   categories: (FacetItem & { slug: string })[];
+  species: FacetItem[];
   brands: FacetGroup[];
   lifeStages: FacetGroup[];
   sizes: FacetGroup[];
@@ -51,13 +54,20 @@ function selected(input?: string | string[]) {
   return Array.isArray(input) ? input : input ? [input] : [];
 }
 
+function ChoiceCount({ count }: { count?: number }) {
+  if (count === undefined) return null;
+  return <small aria-label={`${count} ${count === 1 ? "producto" : "productos"}`} className="filter-choice-count">{count}</small>;
+}
+
 function ChoiceRadio({
   checked,
+  count,
   label,
   name,
   value,
 }: {
   checked: boolean;
+  count?: number;
   label: string;
   name: string;
   value: string;
@@ -66,18 +76,21 @@ function ChoiceRadio({
     <label className={`filter-choice ${checked ? "active" : ""}`}>
       <input defaultChecked={checked} name={name} type="radio" value={value} />
       <span>{label}</span>
+      <ChoiceCount count={count} />
     </label>
   );
 }
 
 function ChoiceCheck({
   checked,
+  count,
   label,
   name,
   onChange,
   value,
 }: {
   checked: boolean;
+  count?: number;
   label: string;
   name: string;
   onChange?: () => void;
@@ -91,6 +104,7 @@ function ChoiceCheck({
         <input defaultChecked={checked} name={name} type="checkbox" value={value} />
       )}
       <span>{label}</span>
+      <ChoiceCount count={count} />
     </label>
   );
 }
@@ -99,6 +113,7 @@ function GroupCheck({ group, name, selectedValues }: { group: FacetGroup; name: 
   return (
     <ChoiceCheck
       checked={group.values.some((value) => selectedValues.includes(value))}
+      count={group.count}
       label={group.label}
       name={name}
       value={group.values.join(groupSeparator)}
@@ -122,6 +137,9 @@ function clamp(value: number, min: number, max: number) {
 export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; filters: Filters }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  // "Perro" incluye los productos para perro y gato (mismo criterio que el filtro).
+  const speciesCount = (name: string) => facets.species.find((item) => item.name === name)?.count ?? 0;
+  const petCounts = { perro: speciesCount("perro") + speciesCount("perro-gato"), gato: speciesCount("gato") + speciesCount("perro-gato") };
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   // Cerrar devuelve el foco al botón "Filtrar" (Escape, la X o tocar afuera).
@@ -351,8 +369,8 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
           <Section active={Boolean(filters.pet)} title="Animal">
             <div className="filter-choice-grid">
               <ChoiceRadio checked={!filters.pet} label="Todos" name="pet" value="" />
-              <ChoiceRadio checked={filters.pet === "perro"} label="Perro" name="pet" value="perro" />
-              <ChoiceRadio checked={filters.pet === "gato"} label="Gato" name="pet" value="gato" />
+              {(petCounts.perro > 0 || filters.pet === "perro") && <ChoiceRadio checked={filters.pet === "perro"} count={petCounts.perro} label="Perro" name="pet" value="perro" />}
+              {(petCounts.gato > 0 || filters.pet === "gato") && <ChoiceRadio checked={filters.pet === "gato"} count={petCounts.gato} label="Gato" name="pet" value="gato" />}
             </div>
           </Section>
           <Section active={selected(filters.category).length > 0} title="Categoría">
@@ -360,6 +378,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
               {facets.categories.map((category) => (
                 <ChoiceCheck
                   checked={selectedCategories.includes(category.slug)}
+                  count={category.count}
                   key={category.slug}
                   label={category.name}
                   name="category"
@@ -461,7 +480,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
           </Section>
           <Section active={selectedPresentations.length > 0} title="Presentación">
             <div className="filter-choice-grid">
-              {facets.presentations.map((presentation) => <ChoiceCheck checked={selectedPresentations.includes(presentation.name)} key={presentation.name} label={presentation.name} name="presentation" value={presentation.name} />)}
+              {facets.presentations.map((presentation) => <ChoiceCheck checked={selectedPresentations.includes(presentation.name)} count={presentation.count} key={presentation.name} label={presentation.name} name="presentation" value={presentation.name} />)}
             </div>
           </Section>
           <Section active={Boolean(filters.stock)} title="Stock">
