@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, type DayState } from "./calendar";
 import { addDays, endOfMonth, formatRange, parseIsoDate, startOfMonth, toIsoDate, today } from "./date-utils";
-import { portalTargetFor, usePopoverPosition } from "./use-popover-position";
+import { isCompactContext, portalTargetFor, usePopoverPosition } from "./use-popover-position";
 
 type Shortcut = { label: string; range: () => [Date, Date] };
 
@@ -66,6 +66,7 @@ export function DateRangePicker({
   const [anchor, setAnchor] = useState<Date | null>(null);
   const [hover, setHover] = useState<Date | null>(null);
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
+  const [compact, setCompact] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const position = usePopoverPosition(open, portalTarget, triggerRef, panelRef, 300);
@@ -83,6 +84,7 @@ export function DateRangePicker({
     setAnchor(null);
     setHover(null);
     setPortalTarget(portalTargetFor(triggerRef.current));
+    setCompact(isCompactContext(triggerRef.current));
     setOpen(true);
   }
 
@@ -182,7 +184,7 @@ export function DateRangePicker({
         ? createPortal(
           <div
             aria-label={ariaLabel ?? "Elegir rango de fechas"}
-            className={`ui-popover ui-date-popover is-${position.placement}`}
+            className={`ui-popover ui-date-popover is-${position.placement}${compact ? " is-compact" : ""}`}
             ref={panelRef}
             role="dialog"
             style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
