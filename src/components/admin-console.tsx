@@ -292,6 +292,7 @@ export function AdminConsole({
             categories={categories}
             categoryDeletionImpactById={categoryDeletionImpactById}
             openModal={setModal}
+            products={products}
             returnTo={sectionHref("categorias")}
             subcategories={subcategories}
           />
