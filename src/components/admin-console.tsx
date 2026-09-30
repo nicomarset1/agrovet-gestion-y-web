@@ -7,6 +7,8 @@ import {
   BarChart3,
   Boxes,
   ChevronRight,
+  ChevronsLeft,
+  MapPin,
   FolderTree,
   Grid2x2,
   PackagePlus,
@@ -21,6 +23,7 @@ import {
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
+import { Select } from "@/components/ui/select";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
@@ -209,7 +212,6 @@ function SectionHeader({
   return (
     <header className="admin-section-head">
       <div>
-        <p className="eyebrow">Panel de gestión</p>
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
@@ -3545,6 +3547,26 @@ export function AdminConsole({
   const [trashQuery, setTrashQuery] = useState("");
   const [trashTypeFilter, setTrashTypeFilter] = useState<TrashItem["type"] | "all">("all");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem("agrovet-sidebar-collapsed");
+    } catch {
+      stored = null;
+    }
+    if (stored === "1") queueMicrotask(() => setSidebarCollapsed(true));
+  }, []);
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      try {
+        window.localStorage.setItem("agrovet-sidebar-collapsed", current ? "0" : "1");
+      } catch {
+        // Sin almacenamiento, la preferencia dura hasta recargar.
+      }
+      return !current;
+    });
+  };
   // Mientras el selector de sucursal obligatorio tapa el panel, la entrada no cuenta: la cascada se
   // ve recién cuando el panel queda a la vista.
   const coveredByBranchPicker = !initialBranchId;
@@ -3711,7 +3733,7 @@ export function AdminConsole({
         : null;
 
   return (
-    <div className={`admin-layout${panelMotion ? ` admin-${panelMotion}` : ""}`}>
+    <div className={`admin-layout${panelMotion ? ` admin-${panelMotion}` : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />
@@ -3730,10 +3752,23 @@ export function AdminConsole({
             <ChevronRight size={22} />
           </button>
         </div>
+        <button
+          aria-label={`Sucursal activa: ${selectedBranch?.name ?? "Sucursal"}. Cambiar sucursal`}
+          className="admin-branch-switch"
+          onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }}
+          title="Cambiar sucursal"
+          type="button"
+        >
+          <MapPin size={16} />
+          <span className="admin-branch-switch-copy">
+            <small>Sucursal activa</small>
+            <strong>{selectedBranch?.name ?? "Sucursal"}</strong>
+          </span>
+        </button>
         <div className="admin-sidebar-body">
           <nav aria-label="Secciones" className="admin-nav">
             {options.map(({ id, href, label, icon: Icon }) => (
-              <Link className={section === id ? "active" : ""} href={href} key={id}>
+              <Link className={section === id ? "active" : ""} href={href} key={id} title={sidebarCollapsed ? label : undefined}>
                 <Icon size={18} />
                 <span>{label}</span>
                 <AdminNavTail />
@@ -3743,16 +3778,20 @@ export function AdminConsole({
           <form action={logoutAction} className="admin-logout">
             <button className="button button-light" type="submit">Cerrar sesión</button>
           </form>
+          <button
+            aria-label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
+            aria-pressed={sidebarCollapsed}
+            className="admin-sidebar-collapse"
+            onClick={toggleSidebar}
+            type="button"
+          >
+            <ChevronsLeft size={16} />
+            <span>Contraer menú</span>
+          </button>
         </div>
       </aside>
 
       <div className="admin-main">
-        <div className="admin-current-branch-banner">
-          <span>Sucursal activa</span>
-          <button className="admin-current-branch" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button">
-            {selectedBranch?.name ?? "Sucursal"}
-          </button>
-        </div>
         {section === "resumen" && (
           <>
             <SectionHeader subtitle="Cómo vienen las ventas, el stock y los pedidos de la sucursal activa" title="Dashboard" />
@@ -3781,42 +3820,49 @@ export function AdminConsole({
                 <Search size={18} />
                 <input className="field" onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar productos por nombre o categoría..." value={productQuery} />
               </label>
-              <label className="admin-point-field">
-                <span>Categoría</span>
-                <select
-                  className="field"
-                  value={productCategoryFilter}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setProductCategoryFilter(next);
-                    setProductSubcategoryFilter("");
-                  }}
-                >
-                  <option value="">Todas</option>
-                  <option value={UNCATEGORIZED_CATEGORY_VALUE}>Sin categoría</option>
-                  {selectableProductCategories.map((category) => <option key={category.id} value={category.slug}>{category.parentCategoryName ? `${category.parentCategoryName} / ${category.name}` : category.name}</option>)}
-                </select>
-              </label>
-              <label className="admin-point-field">
-                <span>Subcategoría</span>
-                <select className="field" disabled={!productCategoryFilter} value={productSubcategoryFilter} onChange={(event) => setProductSubcategoryFilter(event.target.value)}>
-                  <option value="">{productCategoryFilter ? "Todas" : "Primero elegí una categoría"}</option>
-                  {productCategoryFilter ? <option value={UNCATEGORIZED_SUBCATEGORY_SLUG}>Sin subcategoría</option> : null}
-                  {availableProductSubcategories.map((subcategory) => <option key={subcategory.slug} value={subcategory.slug}>{subcategory.name}</option>)}
-                </select>
-              </label>
-              <label className="admin-point-field">
-                <span>Estado tienda</span>
-                <select className="field" value={productStatusFilter} onChange={(event) => setProductStatusFilter(event.target.value as "all" | "active" | "inactive")}>
-                  <option value="all">Todos</option>
-                  <option value="active">Activos</option>
-                  <option value="inactive">Desactivados</option>
-                </select>
-              </label>
+              <Select
+                ariaLabel="Categoría"
+                onChange={(next) => {
+                  setProductCategoryFilter(next);
+                  setProductSubcategoryFilter("");
+                }}
+                options={[
+                  { value: "", label: "Todas las categorías" },
+                  { value: UNCATEGORIZED_CATEGORY_VALUE, label: "Sin categoría" },
+                  ...selectableProductCategories.map((category) => ({
+                    value: category.slug,
+                    label: category.name,
+                    path: category.parentCategoryName ? `${category.parentCategoryName} / ${category.name}` : undefined,
+                    depth: category.parentCategoryName ? 1 : 0,
+                  })),
+                ]}
+                value={productCategoryFilter}
+              />
+              <Select
+                ariaLabel="Subcategoría"
+                disabled={!productCategoryFilter}
+                onChange={setProductSubcategoryFilter}
+                options={[
+                  { value: "", label: productCategoryFilter ? "Todas las subcategorías" : "Subcategoría: elegí una categoría" },
+                  ...(productCategoryFilter ? [{ value: UNCATEGORIZED_SUBCATEGORY_SLUG, label: "Sin subcategoría" }] : []),
+                  ...availableProductSubcategories.map((subcategory) => ({ value: subcategory.slug, label: subcategory.name })),
+                ]}
+                value={productSubcategoryFilter}
+              />
+              <Select
+                ariaLabel="Estado en la tienda"
+                onChange={(next) => setProductStatusFilter(next as "all" | "active" | "inactive")}
+                options={[
+                  { value: "all", label: "Todos los estados" },
+                  { value: "active", label: "Activos en tienda" },
+                  { value: "inactive", label: "Desactivados" },
+                ]}
+                value={productStatusFilter}
+              />
             </div>
             <div className="card admin-panel admin-table-wrap">
               <div className="admin-table-head">
-                <span>Nombre</span><span>Categoría</span><span>Subcategoría</span><span>Precio</span><span>Stock</span><span>Acciones</span>
+                <span>Producto</span><span>Categoría</span><span>Precio</span><span>Stock</span><span>Tienda y acciones</span>
               </div>
               <div className="admin-product-list">
                 {visibleProducts.map((product) => {
@@ -3827,22 +3873,29 @@ export function AdminConsole({
                     <div className="admin-table-row" key={product.id}>
                       <div className="admin-product-cell">
                         {product.imageUrl ? (
-                          <Image alt="" className="admin-product-thumb" height={48} loading="lazy" src={product.imageUrl} unoptimized width={48} />
+                          <Image alt="" className="admin-product-thumb" height={40} loading="lazy" src={product.imageUrl} unoptimized width={40} />
                         ) : (
                           <span aria-hidden="true" className="admin-product-thumb is-empty" style={{ background: product.color }} />
                         )}
-                        <div>
-                          <strong>{product.brand} {product.name}</strong>
-                          {!product.active ? <span className="admin-status-badge muted">Desactivado en tienda</span> : null}
-                          <small>{product.description}</small>
+                        <div className="admin-product-copy">
+                          <strong title={`${product.brand} ${product.name}`}>{product.name}</strong>
+                          <small>
+                            {product.brand}
+                            {product.variants.length ? ` · ${product.variants.map((variant) => variant.label).join(", ")}` : ""}
+                            {!product.active ? <span className="admin-status-badge muted">Desactivado</span> : null}
+                          </small>
                         </div>
                       </div>
-                      <span>{product.category}</span>
-                      <span>{product.subcategory}</span>
-                      <strong>{formatPrice(mainVariant?.priceCents ?? 0)}</strong>
-                      <span className={`admin-stock-pill admin-stock-pill-wide ${!product.active ? "muted" : mainVariant && mainVariant.totalStock <= 3 ? "danger" : ""}`}>
-                        <strong>{mainVariant?.totalStock ?? 0} unidades</strong>
-                        <small>{product.active ? `${stockIndependencia} Ind. | ${stockBelgrano} Belgrano` : "Stock sin alerta"}</small>
+                      <span className="admin-product-category">
+                        {product.category}
+                        {product.subcategory ? <><span aria-hidden="true"> › </span><span className="admin-product-sub">{product.subcategory}</span></> : null}
+                      </span>
+                      <strong className="admin-product-price">{formatPrice(mainVariant?.priceCents ?? 0)}</strong>
+                      <span
+                        className={`admin-stock-pill admin-stock-compact ${!product.active ? "muted" : mainVariant && mainVariant.totalStock <= 3 ? "danger" : ""}`}
+                        title={`${mainVariant?.totalStock ?? 0} unidades: ${stockIndependencia} en Independencia y ${stockBelgrano} en Belgrano`}
+                      >
+                        {stockIndependencia} Ind · {stockBelgrano} Bel
                       </span>
                       <div className="admin-row-actions">
                         <form action={updateProductActiveAction}>
