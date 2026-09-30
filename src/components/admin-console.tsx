@@ -205,7 +205,9 @@ export function AdminConsole({
   ] as const;
 
   return (
-    <div className={`admin-layout${panelMotion ? ` admin-${panelMotion}` : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+    // "admin-section-swap" y no "admin-switch": esa clase es el interruptor viejo de globals.css (fondo
+    // blanco, letra en 800, borde) y durante la animación le cambiaba el aspecto a todo el panel.
+    <div className={`admin-layout${panelMotion === "enter" ? " admin-enter" : panelMotion === "switch" ? " admin-section-swap" : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />

@@ -70,7 +70,8 @@
 /* ===== Entrada del panel =====
    .admin-enter: primera vez que se abre el panel en la pestaña. Cascada sobria: fundido y 8 px de
    desplazamiento, 280 ms, escalonado de 40 ms; todo termina antes de 600 ms.
-   .admin-switch: al cambiar de sección, solo un fundido corto del contenido.
+   .admin-section-swap: al cambiar de sección, solo un fundido corto del contenido (no se llama
+   .admin-switch porque esa clase es el interruptor de globals.css).
    El live-sync no remonta nada, así que no anima. Solo transform y opacity. */
 @keyframes admin-rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -100,7 +101,7 @@
 .admin-shell .admin-enter .admin-dash-grid > :nth-child(2) { animation-delay: 250ms; }
 .admin-shell .admin-enter .admin-dash-grid > :nth-child(n + 3) { animation-delay: 280ms; }
 
-.admin-shell .admin-switch .admin-main {
+.admin-shell .admin-section-swap .admin-main {
   animation: ui-fade-in 160ms ease both;
 }
 
