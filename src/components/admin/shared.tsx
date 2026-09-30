@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { NumberInput } from "@/components/ui/form-controls";
+import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { updateOrderAction, updateStockAction } from "@/app/gestion-agrovet/actions";
@@ -222,8 +223,20 @@ export function isCancelledOrder(order: OrderRecord) {
   return /cancelad/i.test(order.status);
 }
 
+// Pedido web con Mercado Pago que ya tiene el stock reservado (12 h) y todavía no está pago.
+export function isReservedWebOrder(order: OrderRecord) {
+  return isWebOrder(order) && order.status === reservedStatus;
+}
+
+// Sin cobro todavía: no suma ingresos ni entra en pendientes de retiro/envío (los reservados van en su propio grupo).
 export function isAwaitingOnlinePayment(order: OrderRecord) {
-  return isWebOrder(order) && /mercado pago/i.test(order.paymentMethod) && order.paidCents < order.totalCents && /pendiente de pago|esperando pago/i.test(order.status);
+  return isReservedWebOrder(order) || (isWebOrder(order) && /mercado pago/i.test(order.paymentMethod) && order.paidCents < order.totalCents && /pendiente de pago|esperando pago/i.test(order.status));
+}
+
+// "Reservado · vence 23:15" (o "vence 30/09 09:15" si es otro día).
+export function reservationLabel(order: OrderRecord) {
+  const until = order.reservedUntil ? formatReservationTime(order.reservedUntil) : "";
+  return until ? `Reservado · vence ${until}` : `Reservado · ${mercadoPagoReservationHours} h`;
 }
 
 export function trashTypeLabel(type: TrashItem["type"]) {
@@ -592,11 +605,14 @@ export function PendingOrderCard({
 }) {
   const itemLabel = getOrderDisplayItems(order, branchId).slice(0, 3).join(" · ");
   const compactMode = dense || branchId !== undefined;
+  // Reservado: todavía no está pago, así que no se puede cerrar como retirado/entregado; solo cancelar (devuelve el stock).
+  const reserved = isReservedWebOrder(order);
   return (
     <article className={`admin-pending-card${compactMode ? " dense" : ""}`}>
       <header className="admin-pending-card-head">
         <div>
           <strong>{order.code}</strong>
+          {reserved ? <span className="admin-reserved-chip">{reservationLabel(order)}</span> : null}
         </div>
         <div className="admin-pending-card-head-actions">
           <button className="button button-light subtle" onClick={() => onSelectOrder(order)} type="button">
@@ -610,7 +626,13 @@ export function PendingOrderCard({
       </div>
       <div className="admin-pending-card-footer">
         <div className="admin-order-status-actions">
-          {showStatusActions ? (
+          {showStatusActions && reserved ? (
+            onCancelOrder ? (
+              <button className="button button-light" onClick={() => onCancelOrder(order)} type="button">Cancelar</button>
+            ) : (
+              <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
+            )
+          ) : showStatusActions ? (
             order.fulfillment.toLowerCase().includes("envio") ? (
               <>
                 {onCompleteOrder ? (
@@ -639,7 +661,7 @@ export function PendingOrderCard({
               </>
             )
           ) : null}
-          {onEditDistribution ? (
+          {onEditDistribution && !reserved ? (
             <button className="button button-light subtle" onClick={() => onEditDistribution(order)} type="button">
               Cambiar sucursal
             </button>
