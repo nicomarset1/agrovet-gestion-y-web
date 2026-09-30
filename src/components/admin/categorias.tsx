@@ -564,7 +564,12 @@ export function CategoriesSection({
   });
 
   function menuStatus(category: Category, parent?: Category) {
-    if (!parent) return <span className="admin-cat-badge is-on">En el menú</span>;
+    if (!parent) {
+      // Una principal restaurada desde la papelera vuelve con show_in_menu apagado y sin padre: no sale en el menú.
+      return category.showInMenu
+        ? <span className="admin-cat-badge is-on">En el menú</span>
+        : <span className="admin-cat-badge is-warn" title="Editala y marcá &quot;Categoría principal del menú&quot; para que vuelva a aparecer.">Fuera del menú · revisar</span>;
+    }
     if (PET_ROOTS.includes(parent.slug)) {
       const speciesCount = products.filter((product) => product.categorySlug === category.slug && product.species === parent.slug).length;
       return speciesCount >= MENU_MIN_PRODUCTS
