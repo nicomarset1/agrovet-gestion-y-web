@@ -5,7 +5,7 @@
 import { useRouter } from "next/navigation";
 import { Minus, PackagePlus, Pencil, Plus, ScanBarcode, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, installmentsLabel } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { formatRange } from "@/components/ui/date-utils";
@@ -142,7 +142,7 @@ function PointOfSalePanel({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-  const paymentSummary = paymentMethod === "Tarjeta" ? `Tarjeta · ${installments === "1" ? "1 cuota" : `${installments} cuotas`}` : paymentMethod;
+  const paymentSummary = paymentMethod === "Tarjeta" ? `Tarjeta · ${installmentsLabel(installments)}` : paymentMethod;
   return (
     <div className="admin-point-grid">
       <section className="card admin-panel admin-pos-main">

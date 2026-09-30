@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot } from "@/lib/db";
+import { fixInstallmentsText } from "@/lib/format";
 import { reservedStatus } from "@/lib/reservation";
 
 function ascii(value: string) {
@@ -29,7 +30,8 @@ function orderDayKey(createdAt: string) {
 const isoDay = /^\d{4}-\d{2}-\d{2}$/;
 
 function parsePayment(source: string) {
-  const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas\))?/i.exec(source);
+  // Acepta "(3 cuotas)" y "(1 cuota)": las ventas viejas guardaron "(1 cuotas)".
+  const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas?\))?/i.exec(source);
   if (match) return match[1].trim().toLowerCase();
   if (source.toLowerCase().includes("mayorista")) return "mayorista";
   return source.toLowerCase().includes("tienda online") ? "web" : "otro";
@@ -211,7 +213,7 @@ function buildSalesReportPdf(input: {
       tableHeader();
     }
     const customerLabel = /^Caja\b/i.test(order.source) ? "Mostrador" : order.customerName;
-    const customerLines = wrapText(`${customerLabel} - ${order.source}`, 38);
+    const customerLines = wrapText(`${customerLabel} - ${fixInstallmentsText(order.source)}`, 38);
     const statusLines = wrapText(order.status, 18);
     const rowHeight = Math.max(28, 14 + Math.max(customerLines.length, statusLines.length) * 10);
     commands.push(drawRect(margin, y - rowHeight + 8, contentWidth, rowHeight, "1 1 1", "0.918 0.835 0.820"));
