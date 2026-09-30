@@ -13,6 +13,7 @@ import {
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
+import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
@@ -605,7 +606,42 @@ const baseSelect = `
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at = ''
 `;
 
+// Devuelve el stock de un pedido según sus asignaciones por sucursal (o la sucursal del pedido si no tiene).
+function restoreOrderStock(orderId: number, fallbackBranchId: number) {
+  const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(orderId) as Array<{ variantId: number; quantity: number }>;
+  const allocations = getAllocationBuckets(orderId);
+  const restore = db.prepare("UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
+  for (const item of items) {
+    const buckets = allocations.get(item.variantId);
+    const targets = buckets?.length ? buckets : [{ branchId: fallbackBranchId, quantity: item.quantity }];
+    for (const target of targets) restore.run(target.quantity, item.variantId, target.branchId);
+  }
+}
+
+const expiredReservationFilter = `status = ? AND deleted_at = '' AND paid_cents = 0 AND created_at < datetime('now', '-${mercadoPagoReservationHours} hours')`;
+
+// Reservas de Mercado Pago vencidas (más de 12 h sin pago): pasan a "Cancelado (reserva vencida)" y
+// devuelven el stock. Se llama dentro de una transacción (en SQLite las transacciones son exclusivas).
+function releaseExpiredReservationsIn() {
+  const released = db.prepare(`UPDATE orders SET status = ? WHERE ${expiredReservationFilter} RETURNING id, branch_id AS branchId`)
+    .all(reservationExpiredStatus, reservedStatus) as Array<{ id: number; branchId: number }>;
+  for (const order of released) restoreOrderStock(order.id, order.branchId);
+  if (released.length) bumpSyncVersion();
+  return released.length;
+}
+
+// En lecturas (tienda, ficha, panel) se revisa como mucho una vez por minuto, y solo escribe si hay algo vencido.
+let lastReservationSweep = 0;
+export function releaseExpiredReservations(options: { force?: boolean } = {}) {
+  if (!options.force && Date.now() - lastReservationSweep < 60_000) return 0;
+  lastReservationSweep = Date.now();
+  const pending = db.prepare(`SELECT EXISTS (SELECT 1 FROM orders WHERE ${expiredReservationFilter}) AS any`).get(reservedStatus) as { any: number };
+  if (!pending.any) return 0;
+  return db.transaction(() => releaseExpiredReservationsIn()).immediate();
+}
+
 export function getProducts(filters: CatalogFilters = {}) {
+  releaseExpiredReservations();
   const clauses: string[] = ["p.archived_at = ''", "p.purged_at = ''"];
   const params: string[] = [];
   if (filters.status === "inactive") {
@@ -677,6 +713,7 @@ export function getProducts(filters: CatalogFilters = {}) {
 }
 
 export function getProduct(slug: string) {
+  releaseExpiredReservations();
   const row = db.prepare(`${baseSelect} WHERE p.slug = ? AND p.active = 1 AND p.archived_at = '' AND p.purged_at = ''`).get(slug) as ProductRow | undefined;
   return row ? hydrateProduct(row) : undefined;
 }
@@ -835,7 +872,7 @@ function mapAdminOrders(): OrderRecord[] {
     WHERE o.deleted_at = ''
     ORDER BY o.created_at DESC, o.id DESC
   `).all() as Omit<OrderRecord, "itemCount" | "items">[];
-  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(order.status)));
+  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(order.status)));
   if (!visibleOrders.length) return [];
   const items = db.prepare(`
     SELECT oi.order_id AS orderId, oi.variant_id AS variantId, p.name AS productName, p.brand,
@@ -883,12 +920,14 @@ function mapAdminOrders(): OrderRecord[] {
     ...order,
     paymentMethod: order.paymentMethod ?? "",
     paidCents: order.paidCents ?? order.totalCents,
+    ...(order.status === reservedStatus ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}),
     itemCount: itemsByOrder.get(order.id)?.reduce((sum, item) => sum + item.quantity, 0) ?? 0,
     items: itemsByOrder.get(order.id) ?? [],
   }));
 }
 
 export function getAdminSnapshot() {
+  releaseExpiredReservations();
   return { products: getProducts({ status: "all" }), branches: getBranches(), orders: mapAdminOrders(), wholesaleClients: getWholesaleClients() };
 }
 
@@ -1467,6 +1506,8 @@ export function createOrder(input: {
   name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string };
 }) {
   return db.transaction(() => {
+    // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
+    releaseExpiredReservationsIn();
     const deliveryPlan = input.fulfillment === "envio" ? resolveDeliveryAllocationPlan(input.items) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
     const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(resolvedBranchId);
@@ -1477,7 +1518,7 @@ export function createOrder(input: {
     const status = input.cashSale
       ? "Cerrado"
       : isMercadoPago
-        ? "Esperando pago"
+        ? reservedStatus // Mercado Pago: el stock queda reservado 12 h hasta que se acredite el pago
         : input.fulfillment === "envio"
           ? "Pendiente de envío"
           : "Pendiente de retiro";
@@ -1526,15 +1567,15 @@ export function createOrder(input: {
     for (const line of lines) {
       insertLine.run(order.lastInsertRowid, line.variantId, line.quantity, line.unitPrice);
       for (const allocation of line.allocations) {
-        if (!isMercadoPago) {
-          const result = deduct.run(allocation.quantity, line.variantId, allocation.branchId, allocation.quantity);
-          if (result.changes === 0) throw new Error("No hay stock suficiente para reservar.");
-        }
+        // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
+        const result = deduct.run(allocation.quantity, line.variantId, allocation.branchId, allocation.quantity);
+        if (result.changes === 0) throw new Error("No hay stock suficiente para reservar.");
         insertOrderAllocation.run(order.lastInsertRowid, line.variantId, allocation.branchId, allocation.quantity);
       }
     }
     bumpSyncVersion();
-    return { code, totalCents };
+    const createdAt = (db.prepare("SELECT created_at AS createdAt FROM orders WHERE id = ?").get(order.lastInsertRowid) as { createdAt: string }).createdAt;
+    return { code, totalCents, ...(isMercadoPago ? { reservedUntil: reservationExpiry(createdAt).toISOString() } : {}) };
   })();
 }
 
@@ -1543,10 +1584,11 @@ export type PaymentReconciliation = "paid" | "review" | "missing";
 const paymentReviewStatus = "Pago recibido - revisar";
 const stockRaceError = "No hay stock suficiente para acreditar el pago.";
 
-// Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
-// "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
+// Pedidos de Mercado Pago sin cobro que NO tienen stock tomado: los "Esperando pago" anteriores a la
+// reserva y los cancelados sin pago (reserva vencida o pago no completado, ya devolvieron el stock).
+// Si después llega un pago aprobado, markOrderPaidByCode los reactiva descontando el stock de nuevo.
 function isAwaitingPaymentStatus(status: string) {
-  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(status.trim());
+  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(status.trim());
 }
 
 export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): PaymentReconciliation {
@@ -1566,15 +1608,30 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
     const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
     const amountMatches = validAmount && amountCents === order.totalCents;
     const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
+    const reserved = !deleted && order.status === reservedStatus;
 
     // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
-    if (!deleted && !awaitingPayment && order.paidCents >= order.totalCents) {
+    if (!deleted && !awaitingPayment && !reserved && order.paidCents >= order.totalCents) {
       return /revisar/i.test(order.status) ? "review" : "paid";
     }
 
+    // Reserva vigente (aunque ya pasaron las 12 h, si todavía no se liberó): el stock ya está descontado.
+    if (reserved && amountMatches) {
+      db.prepare(`
+        UPDATE orders
+        SET paid_cents = total_cents,
+            payment_method = ?,
+            status = CASE WHEN fulfillment = 'envio' THEN 'Pendiente de envío' ELSE 'Pendiente de retiro' END
+        WHERE id = ?
+      `).run(method, order.id);
+      bumpSyncVersion();
+      return "paid";
+    }
+
     // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
-    // queda visible en el panel para revisar, con lo realmente cobrado y sin mover stock.
+    // queda visible en el panel para revisar, con lo realmente cobrado y sin stock tomado.
     if (!awaitingPayment || !amountMatches) {
+      if (reserved) restoreOrderStock(order.id, order.branchId);
       db.prepare("UPDATE orders SET paid_cents = ?, payment_method = ?, status = ?, deleted_at = '' WHERE id = ?")
         .run(validAmount ? amountCents : 0, method, paymentReviewStatus, order.id);
       bumpSyncVersion();
@@ -1641,27 +1698,42 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
   }).immediate();
 }
 
-// Pago de Mercado Pago rechazado, cancelado o vencido: el pedido que seguía esperando el cobro se marca cancelado.
-// No mueve stock (nunca lo tomó) y, si después llega un pago aprobado, markOrderPaidByCode lo reactiva.
+// Pago de Mercado Pago que no se va a completar (cancelado o vencido en MP, o el cliente volvió al sitio
+// sin pagar): el pedido pasa a "Cancelado (pago no completado)" y, si tenía reserva, devuelve el stock.
+// Si después llega un pago aprobado, markOrderPaidByCode lo reactiva.
 export function markOrderPaymentFailedByCode(code: string) {
-  const result = db.prepare(`
-    UPDATE orders
-    SET status = 'Cancelado (pago no completado)'
-    WHERE code = ? AND deleted_at = '' AND paid_cents = 0 AND status IN ('Esperando pago', 'Pendiente de pago')
-  `).run(code);
-  if (result.changes) bumpSyncVersion();
-  return result.changes > 0;
+  return db.transaction(() => {
+    const order = db.prepare(`
+      SELECT id, branch_id AS branchId, status FROM orders
+      WHERE code = ? AND deleted_at = '' AND paid_cents = 0 AND status IN (?, 'Esperando pago', 'Pendiente de pago')
+    `).get(code, reservedStatus) as { id: number; branchId: number; status: string } | undefined;
+    if (!order) return false;
+    if (order.status === reservedStatus) restoreOrderStock(order.id, order.branchId);
+    db.prepare("UPDATE orders SET status = ? WHERE id = ?").run(paymentFailedStatus, order.id);
+    bumpSyncVersion();
+    return true;
+  }).immediate();
 }
 
-// Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia).
-// Solo aplica si sigue esperando el pago y sin cobro: esos pedidos nunca tomaron stock.
+// Solo lectura: hasta cuándo sigue reservado un pedido (para el mensaje de pago pendiente).
+export function getOrderReservation(code: string) {
+  const order = db.prepare("SELECT status, created_at AS createdAt FROM orders WHERE code = ? AND deleted_at = ''").get(code) as { status: string; createdAt: string } | undefined;
+  return order?.status === reservedStatus ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : null;
+}
+
+// Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia)
+// y devuelve el stock que había reservado. Solo aplica si sigue sin cobro.
 export function discardUnpaidOrder(code: string) {
-  const result = db.prepare(`
-    UPDATE orders
-    SET deleted_at = CURRENT_TIMESTAMP
-    WHERE code = ? AND deleted_at = '' AND paid_cents = 0 AND status = 'Esperando pago'
-  `).run(code);
-  if (result.changes) bumpSyncVersion();
+  db.transaction(() => {
+    const order = db.prepare(`
+      SELECT id, branch_id AS branchId, status FROM orders
+      WHERE code = ? AND deleted_at = '' AND paid_cents = 0 AND status IN (?, 'Esperando pago')
+    `).get(code, reservedStatus) as { id: number; branchId: number; status: string } | undefined;
+    if (!order) return;
+    if (order.status === reservedStatus) restoreOrderStock(order.id, order.branchId);
+    db.prepare("UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+    bumpSyncVersion();
+  }).immediate();
 }
 
 export function createWholesaleOrder(input: {

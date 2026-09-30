@@ -1,9 +1,10 @@
-import { markOrderPaidByCode, markOrderPaymentFailedByCode } from "@/lib/db";
+import { markOrderPaidByCode, markOrderPaymentFailedByCode, releaseExpiredReservations } from "@/lib/db";
 import { getMercadoPagoPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
 import { hasMercadoPagoWebhookSecret, validateMercadoPagoWebhookSignature } from "@/lib/mercadopago-webhook";
 
-// Estados de un pago que ya no se va a acreditar. Si el cliente reintenta y paga, el pedido se reactiva.
-const failedPaymentStatuses = new Set(["cancelled", "rejected", "expired"]);
+// Estados de un pago que ya no se va a acreditar: liberan la reserva. Un "rejected" NO libera: el cliente
+// puede reintentar con otra tarjeta en el mismo checkout; si no paga, la reserva vence sola a las 12 h.
+const failedPaymentStatuses = new Set(["cancelled", "expired"]);
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Aprovecha cada aviso de Mercado Pago para liberar reservas vencidas (liberación perezosa, sin cron).
+    await releaseExpiredReservations({ force: true });
     const payment = await getMercadoPagoPayment(paymentId);
     if (payment.status === "approved" && payment.external_reference) {
       const amountCents = paymentAmountCents(payment);
