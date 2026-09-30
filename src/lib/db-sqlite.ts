@@ -38,11 +38,14 @@ db.exec(`
 db.prepare("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('sync_version', 0)").run();
 db.prepare("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('catalog_version', 0)").run();
 
+// Devuelve true si la columna se acaba de crear.
 function ensureColumn(table: string, column: string, definition: string) {
   const exists = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!exists.some((entry) => entry.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    return true;
   }
+  return false;
 }
 
 function bumpSyncVersion() {
@@ -173,11 +176,13 @@ ensureColumn("branches", "map_url", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "delivery_address", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "delivery_distance_km", "REAL");
 ensureColumn("orders", "payment_method", "TEXT NOT NULL DEFAULT ''");
-ensureColumn("orders", "paid_cents", "INTEGER NOT NULL DEFAULT 0");
+const paidCentsAdded = ensureColumn("orders", "paid_cents", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("orders", "deleted_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_method", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_note", "TEXT NOT NULL DEFAULT ''");
-db.prepare("UPDATE orders SET paid_cents = total_cents WHERE paid_cents = 0 AND payment_method != 'Cuenta corriente'").run();
+// Relleno único al crear la columna (los pedidos viejos estaban cobrados). Correrlo en cada arranque marcaba
+// como pagos los pedidos de Mercado Pago sin cobro (reservados, esperando pago) cada vez que se reiniciaba el servidor.
+if (paidCentsAdded) db.prepare("UPDATE orders SET paid_cents = total_cents WHERE paid_cents = 0 AND payment_method != 'Cuenta corriente'").run();
 ensureColumn("categories", "description", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("categories", "parent_category_id", "INTEGER REFERENCES categories(id) ON DELETE SET NULL");
 ensureColumn("categories", "show_in_menu", "INTEGER NOT NULL DEFAULT 0");

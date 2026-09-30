@@ -3,7 +3,7 @@
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { portalTargetFor, usePopoverPosition } from "./use-popover-position";
+import { isCompactContext, portalTargetFor, usePopoverPosition } from "./use-popover-position";
 
 export type SelectOption = {
   value: string;
@@ -82,6 +82,7 @@ export function Select({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(-1);
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
+  const [compact, setCompact] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -120,6 +121,7 @@ export function Select({
     const selectedIndex = selectable.findIndex((option) => option.value === value);
     setActive(selectedIndex >= 0 ? selectedIndex : enabledIndexes[0] ?? -1);
     setPortalTarget(portalTargetFor(triggerRef.current));
+    setCompact(isCompactContext(triggerRef.current));
     setOpen(true);
   }
 
@@ -222,7 +224,7 @@ export function Select({
       {open && portalTarget
         ? createPortal(
           <div
-            className={`ui-popover ui-select-popover is-${position.placement}`}
+            className={`ui-popover ui-select-popover is-${position.placement}${compact ? " is-compact" : ""}`}
             ref={panelRef}
             style={{ top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }}
           >

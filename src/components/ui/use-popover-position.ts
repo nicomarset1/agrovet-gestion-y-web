@@ -68,3 +68,12 @@ export function usePopoverPosition(
 export function portalTargetFor(trigger: HTMLElement | null): Element {
   return trigger?.closest("dialog") ?? document.body;
 }
+
+/**
+ * Densidad del panel: dentro de .admin-shell (o de un contenedor con data-ui-density="compact"),
+ * en escritorio los paneles desplegables usan filas más bajas. En celular siguen cómodos para el dedo.
+ */
+export function isCompactContext(trigger: HTMLElement | null): boolean {
+  if (!trigger?.closest(".admin-shell, [data-ui-density='compact']")) return false;
+  return window.matchMedia("(min-width: 821px)").matches;
+}
