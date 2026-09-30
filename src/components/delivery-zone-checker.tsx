@@ -2,7 +2,7 @@
 
 import { CircleAlert, MapPin, MapPinCheck, MapPinX, Search } from "lucide-react";
 import type { CSSProperties, FormEvent } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { deliveryOrigin } from "@/lib/delivery-zone";
 import { DeliveryZoneMap } from "./delivery-zone-map";
 
@@ -29,12 +29,6 @@ export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: {
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<Zone | null>(null);
   const [pending, setPending] = useState(false);
-  // El resultado se trae a la vista con aire abajo (scroll-margin-bottom) para que no lo tape el botón flotante de WhatsApp.
-  const revealResult = useCallback((node: HTMLParagraphElement | null) => {
-    if (!node) return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    node.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
-  }, []);
   const markerStyle = useMemo<CSSProperties | undefined>(() => {
     if (!zone || zone.error || typeof zone.lat !== "number" || typeof zone.lon !== "number") return undefined;
     const bearing = toBearingDegrees(zone.lat, zone.lon);
@@ -106,9 +100,9 @@ export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: {
           <input aria-label="Tu dirección en Mar del Plata" autoComplete="street-address" className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tu dirección en Mar del Plata" />
           <button aria-busy={pending} className="mini-button" disabled={pending}>{pending ? <span className="loader-dot" aria-hidden="true" /> : <Search size={15} />} {pending ? "Buscando" : "Verificar"}</button>
         </form>
-        {zone?.error && <p className="notice error zone-result" key={`error-${zone.error}`} ref={revealResult} role="alert"><CircleAlert size={17} aria-hidden="true" /><span>{zone.error}</span></p>}
+        {zone?.error && <p className="notice error zone-result" role="alert"><CircleAlert size={17} aria-hidden="true" /><span>{zone.error}</span></p>}
         {zone && !zone.error && (
-          <p className={`notice zone-result ${zone.deliveryAvailable ? "is-inside" : "error"}`} key={`ok-${zone.lat}-${zone.lon}`} ref={revealResult} role="status">
+          <p className={`notice zone-result ${zone.deliveryAvailable ? "is-inside" : "error"}`} role="status">
             {zone.deliveryAvailable ? <MapPinCheck size={17} aria-hidden="true" /> : <MapPinX size={17} aria-hidden="true" />}
             <span>{zone.deliveryAvailable ? "Tu dirección está dentro de la zona de envío gratis." : "Tu dirección queda fuera de la zona de envío gratis."} Distancia estimada: {zone.distanceKm} km.</span>
           </p>
