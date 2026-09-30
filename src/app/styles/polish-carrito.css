@@ -326,3 +326,9 @@
   padding: 6px 12px; border-radius: 999px; background: rgba(31, 21, 21, .72); color: white;
   font-size: 12px; font-weight: 700; white-space: nowrap; pointer-events: none;
 }
+
+/* El resultado de la zona queda por encima del botón flotante de WhatsApp al traerlo a la vista. */
+.delivery-zone-card .zone-result { scroll-margin-bottom: 96px; }
+@media (max-width: 640px) {
+  .delivery-zone-card .zone-result { scroll-margin-bottom: 76px; }
+}
