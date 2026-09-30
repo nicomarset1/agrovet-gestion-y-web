@@ -2335,3 +2335,521 @@
   white-space: nowrap;
   vertical-align: middle;
 }
+
+/* ===== Ventas: filtros, resumen y tabla ===== */
+.admin-shell .admin-sales-filters {
+  grid-template-columns: minmax(0, 1.2fr) repeat(3, minmax(0, 1fr));
+  align-items: center;
+}
+
+.admin-shell .admin-sales-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px 28px;
+  align-items: center;
+}
+
+.admin-shell .admin-sales-kpis {
+  display: flex;
+  gap: 28px;
+}
+
+.admin-shell .admin-sales-kpis > div,
+.admin-shell .admin-sales-breakdown {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-shell .admin-sales-kpis small,
+.admin-shell .admin-sales-breakdown > small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.admin-shell .admin-sales-kpis strong {
+  color: var(--ink);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-sales-breakdown ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-shell .admin-sales-breakdown li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f7f1fd;
+  font-size: 13px;
+}
+
+.admin-shell .admin-sales-breakdown li strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-sales-breakdown li small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.admin-shell .admin-sales-table-wrap {
+  padding: 4px 0 0;
+  overflow: hidden;
+}
+
+.admin-shell .admin-sales-scroll {
+  overflow-x: auto;
+}
+
+.admin-shell .admin-sales-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-shell .admin-sales-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-shell .admin-sales-table th:first-child,
+.admin-shell .admin-sales-table td:first-child {
+  padding-left: 16px;
+}
+
+.admin-shell .admin-sales-table th:last-child,
+.admin-shell .admin-sales-table td:last-child {
+  padding-right: 16px;
+}
+
+.admin-shell .admin-sales-table .is-end {
+  text-align: right;
+}
+
+.admin-shell .admin-sort,
+.admin-shell .admin-sort-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.admin-shell .admin-sort:hover,
+.admin-shell .admin-sort.is-active {
+  color: var(--forest);
+}
+
+.admin-shell .admin-sales-table td {
+  height: 44px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1eaf8;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.admin-shell .admin-sales-table tbody tr:hover {
+  background: #fcf9ff;
+}
+
+.admin-shell .admin-sales-table .is-date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-sales-table .is-code {
+  font-weight: 700;
+}
+
+.admin-shell .admin-sales-table .is-customer,
+.admin-shell .admin-sales-table .is-payment {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-shell .admin-sales-table .is-total {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-sales-status {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f4f0f8;
+  color: #4a3c57;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-shell .admin-sales-table .admin-row-actions {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.admin-shell .admin-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-shell .admin-pager-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-shell .admin-sales-table-wrap .admin-dash-empty {
+  margin: 12px 16px 16px;
+}
+
+@media (max-width: 1120px) {
+  .admin-shell .admin-sales-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-shell .admin-sales-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell .admin-sales-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell .admin-sales-kpis {
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .admin-shell .admin-sales-kpis strong {
+    font-size: 18px;
+  }
+}
+
+/* Ventas en celular: cada venta como una tarjeta compacta en vez de una tabla con scroll. */
+@media (max-width: 640px) {
+  .admin-shell .admin-sales-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .admin-shell .admin-sales-table,
+  .admin-shell .admin-sales-table tbody {
+    display: block;
+  }
+
+  .admin-shell .admin-sales-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #f1eaf8;
+  }
+
+  .admin-shell .admin-sales-table td,
+  .admin-shell .admin-sales-table td:first-child,
+  .admin-shell .admin-sales-table td:last-child {
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  .admin-shell .admin-sales-table .is-code { grid-column: 1; grid-row: 1; }
+  .admin-shell .admin-sales-table .is-total { grid-column: 2; grid-row: 1; }
+  .admin-shell .admin-sales-table .is-date { grid-column: 1; grid-row: 2; font-size: 12px; }
+  .admin-shell .admin-sales-table .is-status { grid-column: 2; grid-row: 2; text-align: right; }
+  .admin-shell .admin-sales-table .is-customer { grid-column: 1; grid-row: 3; max-width: none; }
+  .admin-shell .admin-sales-table .is-payment { grid-column: 1; grid-row: 4; max-width: none; color: var(--muted); font-size: 12px; }
+  .admin-shell .admin-sales-table .is-actions { grid-column: 2; grid-row: 3 / span 2; align-self: center; }
+  .admin-shell .admin-sales-table .is-channel,
+  .admin-shell .admin-sales-table .is-branch {
+    display: none;
+  }
+}
+
+/* ===== Caja: escaneo rápido, líneas con subtotal y total grande solo en el resumen ===== */
+.admin-shell .admin-point-grid {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+}
+
+.admin-shell .admin-pos-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.admin-shell .admin-pos-top .admin-point-field,
+.admin-shell .admin-pos-payment,
+.admin-shell .admin-pos-installments {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.admin-shell .admin-pos-installments {
+  min-width: 140px;
+}
+
+.admin-shell .admin-pos-scan-field {
+  position: relative;
+  display: block;
+}
+
+.admin-shell .admin-pos-scan-field svg {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  color: var(--muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.admin-shell .admin-pos-scan-field .field {
+  min-height: 44px;
+  padding-left: 42px;
+  font-size: 16px;
+}
+
+.admin-shell .admin-pos-scan .admin-scan-row .button {
+  min-height: 44px;
+}
+
+.admin-shell .admin-pos-keys {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-shell .admin-pos-keys kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+  font: 700 11px/16px var(--font-body), sans-serif;
+  text-align: center;
+}
+
+.admin-shell .admin-pos-notice {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  animation: ui-fade-in var(--dur-base) ease both;
+}
+
+.admin-shell .admin-pos-notice.is-ok {
+  background: #eef8f1;
+  color: #1f6b3d;
+}
+
+.admin-shell .admin-pos-notice.is-error {
+  background: #fff4f2;
+  color: #98402d;
+}
+
+.admin-shell .admin-pos-cart {
+  margin-top: 12px;
+}
+
+.admin-shell .admin-pos-lines {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.admin-shell .admin-pos-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 104px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #f1eaf8;
+  border-radius: 0;
+  background: transparent;
+}
+
+.admin-shell .admin-pos-line.is-flash {
+  animation: admin-pos-flash 700ms var(--ease-out);
+}
+
+@keyframes admin-pos-flash {
+  from { background: #f1e6ff; }
+  to { background: transparent; }
+}
+
+.admin-shell .admin-pos-line-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.admin-shell .admin-pos-line-copy strong,
+.admin-shell .admin-pos-line-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-shell .admin-pos-line-copy small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-shell .admin-pos-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-shell .admin-pos-qty span {
+  min-width: 26px;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-pos-qty .qty-button {
+  width: 30px;
+  height: 30px;
+}
+
+.admin-shell .admin-pos-qty .qty-button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.admin-shell .admin-pos-subtotal {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-pos-summary {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  position: sticky;
+  top: 16px;
+}
+
+.admin-shell .admin-pos-summary-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.admin-shell .admin-pos-total {
+  color: var(--forest);
+  font-size: 34px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-pos-summary-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-shell .admin-pos-close {
+  min-height: 46px;
+  font-size: 15px;
+}
+
+.admin-shell .admin-pos-summary .admin-caja-range {
+  margin-top: 8px;
+}
+
+@media (max-width: 1000px) {
+  .admin-shell .admin-point-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell .admin-pos-summary {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-shell .admin-pos-top {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-shell .admin-pos-scan {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell .admin-pos-keys {
+    display: none;
+  }
+
+  .admin-shell .admin-pos-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+  }
+
+  .admin-shell .admin-pos-line-copy {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell .admin-pos-qty .qty-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .admin-shell .admin-pos-subtotal {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .admin-shell .admin-pos-line > .icon-button {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
+  }
+}

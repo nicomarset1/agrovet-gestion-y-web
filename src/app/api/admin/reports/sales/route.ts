@@ -17,6 +17,17 @@ function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
+// Día del pedido en hora de Argentina ("2026-09-29"), igual que lo muestra el panel. created_at viene en
+// UTC; sin esto, una venta de las 22 h caía en el día (o el mes) siguiente.
+const argentinaDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
+function orderDayKey(createdAt: string) {
+  const normalized = createdAt.includes("T") ? createdAt : createdAt.replace(" ", "T");
+  const date = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized) ? new Date(normalized) : new Date(`${normalized}Z`);
+  return Number.isNaN(date.getTime()) ? createdAt.slice(0, 10) : argentinaDay.format(date);
+}
+
+const isoDay = /^\d{4}-\d{2}-\d{2}$/;
+
 function parsePayment(source: string) {
   const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas\))?/i.exec(source);
   if (match) return match[1].trim().toLowerCase();
@@ -220,6 +231,11 @@ export async function GET(request: Request) {
   const snapshot = await getAdminSnapshot();
   const url = new URL(request.url);
   const month = url.searchParams.get("month") || new Date().toISOString().slice(0, 7);
+  // Rango de fechas (yyyy-mm-dd) que manda la sección Ventas; si no viene, se usa el mes como antes.
+  const fromParam = url.searchParams.get("from") ?? "";
+  const toParam = url.searchParams.get("to") ?? "";
+  const hasRange = isoDay.test(fromParam) && isoDay.test(toParam);
+  const [from, to] = hasRange && fromParam > toParam ? [toParam, fromParam] : [fromParam, toParam];
   const branch = url.searchParams.get("branch") || "all";
   const channel = url.searchParams.get("channel") || "all";
   const payment = url.searchParams.get("payment") || "all";
@@ -227,8 +243,8 @@ export async function GET(request: Request) {
     if (isCancelledOrder(order)) return false;
     // Reservados de Mercado Pago: todavía no están pagos, no son ventas.
     if (order.status === reservedStatus) return false;
-    const orderMonth = order.createdAt.slice(0, 7);
-    if (orderMonth !== month) return false;
+    const day = orderDayKey(order.createdAt);
+    if (hasRange ? day < from || day > to : day.slice(0, 7) !== month) return false;
     if (branch !== "all" && !orderHasBranch(order, branch)) return false;
     if (channel === "web" && !order.source.toLowerCase().includes("tienda online")) return false;
     if (channel === "store" && !order.source.toLowerCase().includes("caja")) return false;
@@ -254,7 +270,7 @@ export async function GET(request: Request) {
 
   const channelLabel = channel === "all" ? "Todos" : channel === "web" ? "Tienda online" : channel === "store" ? "Caja" : "Mayorista";
   const pdf = buildSalesReportPdf({
-    month,
+    month: hasRange ? (from === to ? from : `${from} a ${to}`) : month,
     branchLabel: branch === "all" ? "Todas" : snapshot.branches.find((item) => String(item.id) === branch)?.name ?? branch,
     channelLabel,
     paymentLabel: payment === "all" ? "Todos" : payment,
@@ -267,7 +283,7 @@ export async function GET(request: Request) {
   return new Response(pdf, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename=registro-${month}.pdf`,
+      "Content-Disposition": `attachment; filename=registro-${hasRange ? (from === to ? from : `${from}_${to}`) : month}.pdf`,
     },
   });
 }
