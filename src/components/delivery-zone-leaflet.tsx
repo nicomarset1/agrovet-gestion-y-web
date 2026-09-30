@@ -16,13 +16,16 @@ export default function DeliveryZoneLeaflet({ point, onReady, onFail }: { point:
   const mapRef = useRef<L.Map | null>(null);
   const addressLayerRef = useRef<L.Marker | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
+  // Como un mapa de Google embebido: en reposo la rueda y el dedo mueven la página; después de un clic
+  // o un toque, el mapa usa la rueda (zoom) y el arrastre, hasta que el cursor sale o se toca afuera.
   // Solo se monta en el navegador (next/dynamic sin SSR), así que matchMedia está disponible.
-  const [touchLocked, setTouchLocked] = useState(() => window.matchMedia("(pointer: coarse)").matches);
+  const [coarsePointer] = useState(() => window.matchMedia("(pointer: coarse)").matches);
+  const [active, setActive] = useState(false);
+  const [wheelHint, setWheelHint] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
     const map = L.map(container, {
       center: origin,
       zoom: 13,
@@ -71,36 +74,71 @@ export default function DeliveryZoneLeaflet({ point, onReady, onFail }: { point:
       alt: "Sucursal Av. Independencia y Alberti",
     }).addTo(map);
 
-    // Un toque (un dedo, casi sin moverse y corto) habilita mover el mapa con un dedo; deslizar sigue moviendo la página.
-    let touchStart: { x: number; y: number; time: number } | null = null;
-    const unlock = () => {
-      if (map.dragging.enabled()) return;
-      map.dragging.enable();
-      setTouchLocked(false);
+    // Activo: zoom con la rueda y arrastre libre. En reposo: la rueda y el dedo mueven la página.
+    const activate = () => {
+      if (!map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
+      if (!map.dragging.enabled()) map.dragging.enable();
+      setActive(true);
+      setWheelHint(false);
     };
+    const rest = () => {
+      map.scrollWheelZoom.disable();
+      if (coarsePointer) map.dragging.disable(); // en escritorio arrastrar no atrapa el scroll: queda siempre
+      setActive(false);
+    };
+
+    // Escritorio: un clic activa; al sacar el mouse del mapa vuelve al reposo. Ctrl + rueda hace zoom sin activar.
+    let hintTimer = 0;
+    const onWheel = (event: WheelEvent) => {
+      if (map.scrollWheelZoom.enabled()) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        map.setZoomAround(map.mouseEventToContainerPoint(event), map.getZoom() + (event.deltaY < 0 ? 1 : -1));
+        return;
+      }
+      setWheelHint(true);
+      window.clearTimeout(hintTimer);
+      hintTimer = window.setTimeout(() => setWheelHint(false), 1600);
+    };
+    // Solo mouse o lápiz: en celular el pointerdown también llega al empezar a deslizar y no tiene que activar.
+    const onMouseDown = (event: PointerEvent) => { if (event.pointerType !== "touch") activate(); };
+    const onMouseLeave = () => rest();
+
+    // Celular: un toque (un dedo, casi sin moverse y corto) activa; deslizar sigue moviendo la página.
+    let touchStart: { x: number; y: number; time: number } | null = null;
     const onTouchStart = (event: TouchEvent) => {
       touchStart = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY, time: Date.now() } : null;
     };
     const onTouchEnd = (event: TouchEvent) => {
       const touch = event.changedTouches[0];
-      if (touchStart && touch && Math.hypot(touch.clientX - touchStart.x, touch.clientY - touchStart.y) < 10 && Date.now() - touchStart.time < 500) unlock();
+      if (touchStart && touch && Math.hypot(touch.clientX - touchStart.x, touch.clientY - touchStart.y) < 10 && Date.now() - touchStart.time < 500) activate();
       touchStart = null;
     };
-    if (coarsePointer) {
-      container.addEventListener("touchstart", onTouchStart, { passive: true });
-      container.addEventListener("touchend", onTouchEnd, { passive: true });
-      container.addEventListener("click", unlock);
-    }
+    // Un clic o un toque fuera del mapa lo devuelve al reposo, así la página nunca queda atrapada.
+    const onPointerDownOutside = (event: PointerEvent) => {
+      if (!container.contains(event.target as Node)) rest();
+    };
+
+    container.addEventListener("wheel", onWheel, { passive: false });
+    container.addEventListener("pointerdown", onMouseDown);
+    container.addEventListener("mouseleave", onMouseLeave);
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("pointerdown", onPointerDownOutside, true);
 
     return () => {
+      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("pointerdown", onMouseDown);
+      container.removeEventListener("mouseleave", onMouseLeave);
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("click", unlock);
+      document.removeEventListener("pointerdown", onPointerDownOutside, true);
+      window.clearTimeout(hintTimer);
       window.clearTimeout(timeout);
       map.remove();
       mapRef.current = null;
     };
-  }, [onFail, onReady]);
+  }, [coarsePointer, onFail, onReady]);
 
   // Marcador de la dirección verificada y encuadre de sucursal + dirección.
   useEffect(() => {
@@ -128,10 +166,13 @@ export default function DeliveryZoneLeaflet({ point, onReady, onFail }: { point:
     map.fitBounds(L.latLngBounds([origin, target]), { padding: [48, 48], maxZoom: 15 });
   }, [point]);
 
+  const hint = coarsePointer
+    ? (active ? null : "Tocá el mapa para moverlo")
+    : (wheelHint ? "Hacé clic en el mapa para usar el zoom (o Ctrl + rueda)" : null);
   return (
-    <div className="zone-live">
+    <div className={`zone-live${active ? " is-active" : ""}`}>
       <div className="zone-live-map" ref={containerRef} />
-      {touchLocked ? <span className="zone-live-hint" aria-hidden="true">Tocá el mapa para moverlo</span> : null}
+      {hint ? <span className="zone-live-hint" aria-hidden="true">{hint}</span> : null}
     </div>
   );
 }
