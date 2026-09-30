@@ -21,7 +21,6 @@ export async function Footer() {
               <Link href="/tienda?pet=gato">Gatos</Link>
               <Link href="/tienda?category=perro-alimento-veterinario">Veterinario perro</Link>
               <Link href="/tienda?category=gato-alimento-veterinario">Veterinario gato</Link>
-              <Link href="/admin">Administración</Link>
             </div>
           </div>
           <div>

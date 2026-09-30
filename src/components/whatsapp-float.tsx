@@ -1,11 +1,12 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { isPanelPath } from "@/lib/panel-route";
 
 export function WhatsappFloat() {
   const pathname = usePathname();
 
-  if (pathname?.startsWith("/admin")) return null;
+  if (isPanelPath(pathname)) return null;
 
   return (
     <aside aria-label="Contacto por WhatsApp">

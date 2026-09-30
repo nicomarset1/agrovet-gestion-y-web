@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { isAdmin } from "@/lib/auth";
+import { panelPath } from "@/lib/panel-path";
 
 export const metadata = { title: "Ingreso administrativo" };
 
 export default async function LoginPage() {
-  if (await isAdmin()) redirect("/admin");
+  if (await isAdmin()) redirect(panelPath);
   return (
     <div className="admin-shell">
       <section className="card login">

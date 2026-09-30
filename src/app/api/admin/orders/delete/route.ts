@@ -4,6 +4,7 @@ import { z } from "zod";
 import { deleteOrder } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { isSameOriginMutation } from "@/lib/request-security";
+import { panelPath } from "@/lib/panel-path";
 
 export async function POST(request: Request) {
   await requireAdmin();
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Registro inválido." }, { status: 400 });
   }
   await deleteOrder(parsed.data.id);
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   revalidatePath("/");
   revalidatePath("/tienda");
   return NextResponse.json({ ok: true });

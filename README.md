@@ -7,7 +7,7 @@ Aplicacion web y panel de gestion para Agrovet Mar del Plata.
 - Tienda online responsive con buscador, categorias, filtros y carrito.
 - Productos con variantes, precios y stock por sucursal.
 - Pedidos web con retiro o envio, descuento de stock y seguimiento desde admin.
-- Panel `/admin` con login numerico, caja, ventas, clientes mayoristas, inventario, categorias y reportes PDF.
+- Panel de gestión con login numerico, caja, ventas, clientes mayoristas, inventario, categorias y reportes PDF.
 - Sincronizacion visual entre sesiones mediante `/api/sync-version`.
 
 ## Ejecutar en desarrollo

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { loginAction, type LoginState } from "@/app/admin/actions";
+import { loginAction, type LoginState } from "@/app/gestion-agrovet/actions";
 
 const initialState: LoginState = {};
 

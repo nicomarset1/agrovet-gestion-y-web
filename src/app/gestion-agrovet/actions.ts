@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
+import { panelPath } from "@/lib/panel-path";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import {
   createCategory,
@@ -63,7 +64,7 @@ export async function loginAction(_: LoginState, formData: FormData): Promise<Lo
   }
   await recordLoginAttempt(identifier, true);
   await startAdminSession();
-  redirect("/admin");
+  redirect(panelPath);
 }
 
 export async function logoutAction() {
@@ -85,7 +86,7 @@ export async function updateStockAction(formData: FormData) {
   await addInventory(parsed.data.variantId, parsed.data.branchId, parsed.data.quantity);
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -105,7 +106,7 @@ export async function createWholesaleClientAction(formData: FormData) {
   const parsed = wholesaleClientSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) throw new Error("Cliente inválido.");
   await createWholesaleClient(parsed.data);
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -124,7 +125,7 @@ export async function updateWholesaleClientAction(formData: FormData) {
     notes: parsed.data.notes ?? "",
     createdAt: "",
   });
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -136,7 +137,7 @@ export async function deleteWholesaleClientAction(formData: FormData) {
   }).safeParse(Object.fromEntries(formData));
   if (!parsed.success) throw new Error("Cliente inválido.");
   await deleteWholesaleClient(parsed.data.id);
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -171,7 +172,7 @@ export async function createWholesaleOrderAction(formData: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -210,7 +211,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
     });
     revalidatePath("/");
     revalidatePath("/tienda");
-    revalidatePath("/admin");
+    revalidatePath(panelPath);
     return { ok: true, code: order.code, totalCents: order.totalCents };
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo cerrar la venta.";
@@ -234,7 +235,7 @@ export async function updateOrderPaymentAction(formData: FormData) {
     paidCents: Math.round(parsed.data.paidAmount * 100),
     paymentMethod: parsed.data.paymentMethod ?? "",
   });
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -267,7 +268,7 @@ export async function createCategoryAction(formData: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -282,7 +283,7 @@ export async function updateCategoryAction(formData: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -297,8 +298,8 @@ export async function deleteCategoryAction(formData: FormData) {
   await deleteCategory(id);
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
-  redirect(appendFlash(returnTo ?? "/admin?section=categorias", "category-deleted"));
+  revalidatePath(panelPath);
+  redirect(appendFlash(returnTo ?? `${panelPath}?section=categorias`, "category-deleted"));
 }
 
 const subcategorySchema = z.object({
@@ -316,7 +317,7 @@ export async function createSubcategoryAction(formData: FormData) {
   await createSubcategory(parsed.data);
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -327,7 +328,7 @@ export async function updateSubcategoryAction(formData: FormData) {
   await updateSubcategory(parsed.data);
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -342,8 +343,8 @@ export async function deleteSubcategoryAction(formData: FormData) {
   await deleteSubcategory(slug);
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
-  redirect(appendFlash(returnTo ?? "/admin?section=categorias", "subcategory-deleted"));
+  revalidatePath(panelPath);
+  redirect(appendFlash(returnTo ?? `${panelPath}?section=categorias`, "subcategory-deleted"));
 }
 
 const uncategorizedCategoryValue = "__none";
@@ -429,7 +430,7 @@ export async function createProductAction(formData: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -439,7 +440,7 @@ export async function deleteProductAction(formData: FormData) {
   await deleteProduct(id);
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
 }
 
 const orderSchema = z.object({
@@ -498,7 +499,7 @@ export async function updateOrderAction(formData: FormData) {
       }))
       : undefined,
   });
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -511,7 +512,7 @@ export async function deleteOrderAction(formData: FormData) {
   if (!parsed.success) throw new Error("Registro inválido.");
   const { id, returnTo } = parsed.data;
   await deleteOrder(id);
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (returnTo) redirect(safeInternalPath(returnTo));
 }
 
@@ -526,7 +527,7 @@ export async function updateProductActiveAction(formData: FormData) {
   await setProductActive(parsed.data.id, parsed.data.active === "on");
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
@@ -541,7 +542,7 @@ export async function restoreTrashItemAction(formData: FormData) {
   await restoreTrashItem({ type: parsed.data.type, id: parsed.data.id });
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(appendFlash(safeInternalPath(parsed.data.returnTo), `restored-${parsed.data.type}`));
 }
 
@@ -554,7 +555,7 @@ export async function emptyTrashAction(formData: FormData) {
   await emptyTrash();
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   if (parsed.data.returnTo) redirect(appendFlash(safeInternalPath(parsed.data.returnTo), "trash-emptied"));
 }
 
@@ -606,6 +607,6 @@ export async function updateProductAction(formData: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/tienda");
-  revalidatePath("/admin");
+  revalidatePath(panelPath);
   redirect(safeInternalPath(parsed.data.returnTo));
 }
