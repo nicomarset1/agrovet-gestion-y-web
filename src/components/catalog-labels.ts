@@ -16,7 +16,7 @@ export function cardPriceCents(product: Product) {
 
 // Valores cargados a mano que solo difieren en tildes, ñ o mayúsculas ("pequeno" y "pequeño")
 // se muestran como UNA opción; al elegirla se filtra por todos los valores reales del grupo.
-export type FacetGroup = { label: string; values: string[] };
+export type FacetGroup = { label: string; values: string[]; count: number };
 export const groupSeparator = "||";
 
 const fold = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -32,7 +32,7 @@ export function groupFacetValues(items: { name: string; count?: number }[], form
   return [...groups.values()].map((members) => {
     // Etiqueta: la versión bien escrita (con tildes o ñ); si no hay, la más usada.
     const best = [...members].sort((a, b) => Number(hasAccents(b.name)) - Number(hasAccents(a.name)) || b.count - a.count)[0];
-    return { label: format(best.name), values: members.map((member) => member.name) };
+    return { label: format(best.name), values: members.map((member) => member.name), count: members.reduce((sum, member) => sum + member.count, 0) };
   });
 }
 

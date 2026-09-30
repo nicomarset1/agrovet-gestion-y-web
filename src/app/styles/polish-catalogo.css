@@ -350,6 +350,13 @@
 }
 .filter-choice:hover { transform: translateY(-1px); border-color: #d9c6f2; box-shadow: var(--shadow-sm); }
 .filter-choice:has(input:focus-visible) { box-shadow: var(--focus-ring); }
+/* Contador contextual de cada opción. */
+.filter-choice { gap: 6px; }
+.filter-choice-count {
+  min-width: 18px; padding: 1px 6px; border-radius: 999px; background: #f3e8ff; color: var(--forest);
+  font-size: 10.5px; font-weight: 800; line-height: 1.5; text-align: center; font-variant-numeric: tabular-nums;
+}
+.filter-choice.active .filter-choice-count, .filter-choice:has(input:checked) .filter-choice-count { background: rgba(255, 255, 255, .22); color: white; }
 .filter-choice-title { margin-top: 4px; }
 .price-input-grid input { border-radius: var(--radius-sm); transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease; }
 .price-input-grid input:focus { outline: none; border-color: var(--forest-light); box-shadow: var(--focus-ring); }
