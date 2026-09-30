@@ -7,7 +7,8 @@ import {
   BarChart3,
   Boxes,
   ChevronRight,
-  MoreVertical,
+  ChevronsLeft,
+  MapPin,
   FolderTree,
   Grid2x2,
   PackagePlus,
@@ -19,9 +20,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
+import { Select } from "@/components/ui/select";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
@@ -210,7 +212,6 @@ function SectionHeader({
   return (
     <header className="admin-section-head">
       <div>
-        <p className="eyebrow">Panel de gestión</p>
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
@@ -2392,162 +2393,371 @@ function StatCard({
   return <div className="card admin-stat">{content}</div>;
 }
 
-function DashboardCharts({
+// Movimiento del panel. La cascada de entrada va solo la primera vez que se abre el panel en la
+// pestaña; al cambiar de sección hay un fundido corto y el live-sync no anima nada (no remonta).
+let panelEnteredThisSession = false;
+const PANEL_ENTERED_STORAGE_KEY = "agrovet-panel-entered";
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+const noopSubscribe = () => () => {};
+// true en renders solo de cliente; false en el servidor y al hidratar el HTML ya pintado.
+function useClientRender() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
+
+// Cuenta hasta el valor en ~600 ms con requestAnimationFrame. Solo cuando cambia animateKey (primera
+// aparición o cambio de período) y si el número no vino pintado del servidor; si el valor cambia por
+// el live-sync, se muestra directo.
+function CountUp({ value, format, animateKey }: { value: number; format: (value: number) => string; animateKey: string }) {
+  const clientRender = useClientRender();
+  const [shown, setShown] = useState(() => (clientRender && !prefersReducedMotion() ? 0 : value));
+  const lastKey = useRef<string | null>(clientRender ? null : animateKey);
+  const frame = useRef<number | null>(null);
+  useEffect(() => {
+    const shouldAnimate = lastKey.current !== animateKey && !prefersReducedMotion();
+    lastKey.current = animateKey;
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    if (!shouldAnimate) {
+      frame.current = requestAnimationFrame(() => setShown(value));
+      return () => { if (frame.current !== null) cancelAnimationFrame(frame.current); };
+    }
+    const startedAt = performance.now();
+    const duration = 600;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setShown(Math.round(value * eased));
+      if (progress < 1) frame.current = requestAnimationFrame(tick);
+    };
+    frame.current = requestAnimationFrame(tick);
+    return () => { if (frame.current !== null) cancelAnimationFrame(frame.current); };
+  }, [animateKey, value]);
+  return <>{format(shown)}</>;
+}
+
+type DashboardPeriod = "today" | "7d" | "month";
+const DASHBOARD_PERIOD_STORAGE_KEY = "agrovet-dashboard-period";
+const DASHBOARD_PERIODS: { id: DashboardPeriod; label: string }[] = [
+  { id: "today", label: "Hoy" },
+  { id: "7d", label: "7 días" },
+  { id: "month", label: "Este mes" },
+];
+const DASHBOARD_PALETTE = ["#5b0f73", "#8b5cf6", "#c4a5f5", "#2f9e5b", "#d58a18", "#6c5a7d"];
+
+function addDays(value: Date, days: number) {
+  const copy = new Date(value);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+// Período actual y el anterior equivalente, en hora local (igual que el resto del panel).
+function dashboardRanges(period: DashboardPeriod, now: Date) {
+  const today = startOfDay(now);
+  if (period === "today") {
+    return {
+      current: { start: today, end: addDays(today, 1) },
+      previous: { start: addDays(today, -1), end: today },
+      compareLabel: "vs ayer",
+      previousName: "Ayer",
+      periodLabel: "hoy",
+    };
+  }
+  if (period === "7d") {
+    const start = addDays(today, -6);
+    return {
+      current: { start, end: addDays(today, 1) },
+      previous: { start: addDays(start, -7), end: start },
+      compareLabel: "vs 7 días anteriores",
+      previousName: "Los 7 días anteriores",
+      periodLabel: "en los últimos 7 días",
+    };
+  }
+  const monthStart = startOfMonth(now);
+  const previousMonthStart = new Date(monthStart);
+  previousMonthStart.setMonth(previousMonthStart.getMonth() - 1);
+  // Mes pasado hasta el mismo día, para comparar períodos del mismo largo.
+  const elapsedDays = Math.round((today.getTime() - monthStart.getTime()) / 86_400_000) + 1;
+  const previousEnd = addDays(previousMonthStart, elapsedDays);
+  return {
+    current: { start: monthStart, end: addDays(today, 1) },
+    previous: { start: previousMonthStart, end: previousEnd < monthStart ? previousEnd : monthStart },
+    compareLabel: "vs el mes pasado a esta altura",
+    previousName: "El mes pasado a esta altura",
+    periodLabel: "este mes",
+  };
+}
+
+function orderPaymentLabel(order: OrderRecord) {
+  const cash = /^Caja \/ ([^(]+)/i.exec(order.source);
+  const raw = (cash ? cash[1] : order.paymentMethod || "").trim();
+  if (/mercado pago/i.test(raw)) return "Mercado Pago";
+  if (/efectivo/i.test(raw)) return "Efectivo";
+  if (/tarjeta/i.test(raw)) return "Tarjeta";
+  if (/transferencia/i.test(raw)) return "Transferencia";
+  if (/^qr$/i.test(raw)) return "QR";
+  if (/cuenta corriente/i.test(raw)) return "Cuenta corriente";
+  return raw || "Otro";
+}
+
+function orderChannelLabel(order: OrderRecord) {
+  if (isCashOrder(order)) return "Mostrador";
+  if (isWholesaleOrder(order)) return "Mayoristas";
+  return "Tienda online";
+}
+
+function shareRows(totals: Map<string, number>) {
+  const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
+  return [...totals.entries()]
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value], index) => ({
+      name,
+      value,
+      percent: total ? Math.round((value / total) * 100) : 0,
+      color: DASHBOARD_PALETTE[index % DASHBOARD_PALETTE.length],
+    }));
+}
+
+function ShareCard({
+  title,
+  description,
+  rows,
+  emptyText,
+}: {
+  title: string;
+  description: string;
+  rows: ReturnType<typeof shareRows>;
+  emptyText: string;
+}) {
+  // Dona solo si hay dos o más valores con datos; con uno solo alcanza con la lista.
+  const stops = rows.map((row, index) => {
+    const start = rows.slice(0, index).reduce((sum, item) => sum + item.percent, 0);
+    return `${row.color} ${start}% ${index === rows.length - 1 ? 100 : Math.min(100, start + row.percent)}%`;
+  });
+  const gradient = `conic-gradient(${stops.join(", ")})`;
+  return (
+    <section className="card admin-panel admin-dash-card">
+      <header className="admin-dash-card-head">
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </header>
+      {rows.length ? (
+        <div className={`admin-share${rows.length > 1 ? " has-donut" : ""}`}>
+          {rows.length > 1 ? <div className="admin-donut-chart admin-share-donut" style={{ background: gradient }} role="img" aria-label={rows.map((row) => `${row.name} ${row.percent}%`).join(", ")} /> : null}
+          <ul className="admin-share-list">
+            {rows.map((row) => (
+              <li key={row.name}>
+                <span className="admin-share-name"><i aria-hidden="true" className="admin-donut-dot" style={{ background: row.color }} />{row.name}</span>
+                <strong>{formatPrice(row.value)}</strong>
+                <small>{row.percent}%</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="admin-dash-empty">{emptyText}</p>
+      )}
+    </section>
+  );
+}
+
+function DashboardOverview({
   orders,
-  products,
   branches,
-  branchRevenue,
+  selectedBranch,
   basePath,
-  selectedBranchId,
+  zeroStockCount,
+  lowStockCount,
+  pendingCount,
 }: {
   orders: OrderRecord[];
-  products: Product[];
   branches: Branch[];
-  branchRevenue: { branch: string; value: number }[];
+  selectedBranch: Branch;
   basePath: string;
-  selectedBranchId: number;
-  }) {
+  zeroStockCount: number;
+  lowStockCount: number;
+  pendingCount: number;
+}) {
+  const [period, setPeriod] = useState<DashboardPeriod>("today");
+  const [periodChanges, setPeriodChanges] = useState(0);
+  const periodStorageReady = useRef(false);
+  const choosePeriod = (next: DashboardPeriod) => {
+    if (next === period) return;
+    setPeriod(next);
+    setPeriodChanges((count) => count + 1);
+  };
+  const animateKey = `${period}:${periodChanges}`;
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(DASHBOARD_PERIOD_STORAGE_KEY);
+    } catch {
+      stored = null;
+    }
+    queueMicrotask(() => {
+      periodStorageReady.current = true;
+      if (stored === "today" || stored === "7d" || stored === "month") setPeriod(stored);
+    });
+  }, []);
+  useEffect(() => {
+    if (!periodStorageReady.current) return;
+    try {
+      window.localStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, period);
+    } catch {
+      // Sin almacenamiento el período vuelve a "Hoy" en la próxima carga.
+    }
+  }, [period]);
+
   const detailLink = (type: DashboardDetail["type"]) => buildAdminHref(basePath, {
-    branch: String(selectedBranchId),
+    branch: String(selectedBranch.id),
     detail: type,
     order: null,
     section: "resumen",
   });
-  const [channelRange, setChannelRange] = useState<"day" | "week" | "month">("day");
-  const [channelMenuOpen, setChannelMenuOpen] = useState(false);
-  const lastSevenDays = useMemo(() => {
-    const days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - index));
-      const key = dateKey(date);
-      const totalCents = orders
-        .filter((order) => dateKey(toDate(order.createdAt)) === key)
-        .reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranchId), 0);
-      return { key, label: formatDayLabel(date), totalCents };
-    });
-    const maxValue = Math.max(...days.map((day) => day.totalCents), 1);
-    return days.map((day) => ({ ...day, percent: Math.max(8, Math.round((day.totalCents / maxValue) * 100)) }));
-  }, [orders, selectedBranchId]);
-  const selectedBranchName = branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Sucursal activa";
-  const channelPeriodLabel = channelRange === "day" ? "del día" : channelRange === "week" ? "de la semana" : "del mes";
-  const channelStats = useMemo(() => {
-    const totals = {
-      "Sucursal Independencia": 0,
-      "Sucursal Belgrano": 0,
-    };
-    const todayKey = dateKey(new Date());
-    const currentWeekKey = weekKey(new Date());
-    const currentMonthKey = monthKey(new Date());
-    for (const order of orders) {
-      if (isCancelledOrder(order)) continue;
-      const orderDate = toDate(order.createdAt);
-      const orderDayKey = dateKey(orderDate);
-      if (channelRange === "day" && orderDayKey !== todayKey) continue;
-      if (channelRange === "week" && weekKey(orderDate) !== currentWeekKey) continue;
-      if (channelRange === "month" && monthKey(orderDate) !== currentMonthKey) continue;
-      if (order.branchId === 1) totals["Sucursal Independencia"] += getOrderBranchRevenueCents(order, 1);
-      else if (order.branchId === 2) totals["Sucursal Belgrano"] += getOrderBranchRevenueCents(order, 2);
+  const ranges = dashboardRanges(period, new Date());
+  const periodName = DASHBOARD_PERIODS.find((item) => item.id === period)?.label ?? "Hoy";
+
+  // Pedidos que suman dinero a la sucursal activa (sin cancelados ni pagos online pendientes).
+  const salesIn = (range: { start: Date; end: Date }, branchId: number) => orders
+    .map((order) => ({ order, cents: getOrderBranchRevenueCents(order, branchId), at: toDate(order.createdAt) }))
+    .filter((entry) => entry.cents > 0 && entry.at >= range.start && entry.at < range.end);
+  const current = salesIn(ranges.current, selectedBranch.id);
+  const previous = salesIn(ranges.previous, selectedBranch.id);
+  const totalCents = current.reduce((sum, entry) => sum + entry.cents, 0);
+  const previousCents = previous.reduce((sum, entry) => sum + entry.cents, 0);
+  const averageCents = current.length ? Math.round(totalCents / current.length) : 0;
+  const change = previousCents > 0 ? Math.round(((totalCents - previousCents) / previousCents) * 100) : null;
+
+  const days = (() => {
+    const first = period === "month" ? ranges.current.start : addDays(startOfDay(new Date()), -6);
+    const list: { key: string; label: string; cents: number }[] = [];
+    for (let day = new Date(first); day < ranges.current.end; day = addDays(day, 1)) {
+      list.push({ key: dateKey(day), label: formatDayLabel(day), cents: 0 });
     }
-    const palette = ["#5b0f73", "#7c3aed", "#8b5cf6", "#a78bfa"];
-    const entries = Object.entries(totals);
-    const total = entries.reduce((sum, [, current]) => sum + current, 0) || 1;
-    return entries.map(([name, value], index) => ({ name, value, percent: Math.round((value / total) * 100), color: palette[index % palette.length] }));
-  }, [channelRange, orders]);
-  const outStockByBranch = branches.map((branch) => ({
+    const byKey = new Map(list.map((item) => [item.key, item]));
+    const range = { start: first, end: ranges.current.end };
+    for (const entry of salesIn(range, selectedBranch.id)) {
+      const item = byKey.get(dateKey(entry.at));
+      if (item) item.cents += entry.cents;
+    }
+    return list;
+  })();
+  const maxDay = Math.max(...days.map((day) => day.cents), 1);
+
+  const channelTotals = new Map<string, number>([["Mostrador", 0], ["Tienda online", 0]]);
+  const paymentTotals = new Map<string, number>();
+  for (const entry of current) {
+    const channel = orderChannelLabel(entry.order);
+    const payment = orderPaymentLabel(entry.order);
+    channelTotals.set(channel, (channelTotals.get(channel) ?? 0) + entry.cents);
+    paymentTotals.set(payment, (paymentTotals.get(payment) ?? 0) + entry.cents);
+  }
+  const channelRows = shareRows(channelTotals);
+  const paymentRows = shareRows(paymentTotals);
+  const branchRows = branches.map((branch) => ({
     branch,
-    count: products.filter((product) => product.variants.every((variant) => (variant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0) === 0)).length,
+    cents: salesIn(ranges.current, branch.id).reduce((sum, entry) => sum + entry.cents, 0),
   }));
-  const channelTotal = channelStats.reduce((sum, item) => sum + item.value, 0);
-  const channelGradient = channelStats.length
-    ? (channelTotal > 0
-      ? `conic-gradient(${channelStats.map((item, index) => {
-        const start = channelStats.slice(0, index).reduce((sum, prev) => sum + prev.percent, 0);
-        const end = channelStats.slice(0, index + 1).reduce((sum, prev) => sum + prev.percent, 0);
-        return `${item.color} ${start}% ${end}%`;
-      }).join(", ")})`
-      : "conic-gradient(#ece4f5 0% 100%)")
-    : "conic-gradient(#ece4f5 0% 100%)";
+  const branchTotal = branchRows.reduce((sum, row) => sum + row.cents, 0);
+  const emptyText = period === "today" ? "Todavía no hay ventas hoy." : period === "7d" ? "No hubo ventas en los últimos 7 días." : "Todavía no hay ventas este mes.";
+
   return (
-    <div className="admin-chart-grid">
-      <section className="card admin-panel">
-        <Link className="admin-title-button" href={detailLink("day-history")}>
-          <div>
+    <>
+      <div className="admin-dashboard-bar">
+        <div className="admin-period-toggle admin-dashboard-period" role="group" aria-label="Período del dashboard">
+          {DASHBOARD_PERIODS.map((item) => (
+            <button
+              aria-pressed={period === item.id}
+              className={`button button-light${period === item.id ? " active" : ""}`}
+              key={item.id}
+              onClick={() => choosePeriod(item.id)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <p className="admin-dashboard-scope">Sucursal: <strong>{selectedBranch.name}</strong> · Período: <strong>{periodName}</strong></p>
+      </div>
+
+      <div className={`admin-dash-top${periodChanges ? " is-period-swap" : ""}`} key={`top-${animateKey}`}>
+        <Link className="card admin-dash-card admin-dash-sales" href={detailLink("day-history")}>
+          <small>Ventas {ranges.periodLabel}</small>
+          <strong><CountUp animateKey={animateKey} format={formatPrice} value={totalCents} /></strong>
+          <span className="admin-dash-sales-meta">
+            <CountUp animateKey={animateKey} format={String} value={current.length} /> {current.length === 1 ? "venta" : "ventas"} · ticket promedio <CountUp animateKey={animateKey} format={formatPrice} value={averageCents} />
+          </span>
+          <span className={`admin-dash-change${change === null ? "" : change >= 0 ? " is-up" : " is-down"}`}>
+            {change === null
+              ? `${ranges.previousName}: sin ventas para comparar`
+              : `${change >= 0 ? "+" : ""}${change}% ${ranges.compareLabel}`}
+          </span>
+        </Link>
+        <Link className="card admin-dash-card admin-dash-mini" href={detailLink("out-stock")}>
+          <small>Stock</small>
+          <strong><CountUp animateKey={animateKey} format={String} value={zeroStockCount} /> <em>sin stock</em></strong>
+          <span>{lowStockCount} con stock bajo · ver y sumar stock</span>
+        </Link>
+        <Link className="card admin-dash-card admin-dash-mini" href={detailLink("pending-orders")}>
+          <small>Pedidos web pendientes</small>
+          <strong><CountUp animateKey={animateKey} format={String} value={pendingCount} /></strong>
+          <span>{pendingCount === 1 ? "Pedido en curso" : "Pedidos en curso"} · ver y cerrar</span>
+        </Link>
+      </div>
+
+      <div className={`admin-dash-grid${periodChanges ? " is-period-swap" : ""}`} key={`grid-${animateKey}`}>
+        <section className={`card admin-panel admin-dash-card admin-dash-days${period === "month" ? " is-month" : ""}`}>
+          <header className="admin-dash-card-head">
             <h2>Ventas por día</h2>
-            <p className="description">{selectedBranchName}</p>
-          </div>
-          <ChevronRight size={18} />
-        </Link>
-        <div className="admin-bars">
-          {lastSevenDays.map((day) => {
-            return (
-              <div className="admin-bar-row" key={day.key}>
-                <span>{day.label}</span>
-                <div className="admin-bar-track" role="img" title={`${formatPrice(day.totalCents)}`} aria-label={`${day.label} ${formatPrice(day.totalCents)}`}>
-                  <div className={`admin-bar-fill${day.totalCents === 0 ? " is-empty" : ""}`} style={{ width: `${day.percent}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-      <section className="card admin-panel">
-        <div className="admin-donut-card-head">
-          <div>
-            <h2>Ingresos por canal</h2>
-            <p className="description">Total {channelPeriodLabel}</p>
-          </div>
-          <div className="admin-donut-actions">
-            <strong>{formatPrice(channelTotal)}</strong>
-            <div className="admin-menu-wrap">
-              <button aria-label="Cambiar periodo" className="icon-button" onClick={() => setChannelMenuOpen((value) => !value)} type="button">
-                <MoreVertical size={18} />
-              </button>
-              {channelMenuOpen ? (
-                <div className="admin-menu-popover">
-                  <button className={`admin-menu-item ${channelRange === "day" ? "active" : ""}`} onClick={() => { setChannelRange("day"); setChannelMenuOpen(false); }} type="button">Por día</button>
-                  <button className={`admin-menu-item ${channelRange === "week" ? "active" : ""}`} onClick={() => { setChannelRange("week"); setChannelMenuOpen(false); }} type="button">Por semana</button>
-                  <button className={`admin-menu-item ${channelRange === "month" ? "active" : ""}`} onClick={() => { setChannelRange("month"); setChannelMenuOpen(false); }} type="button">Por mes</button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        <div className="admin-donut-card">
-          <div className="admin-donut-chart" style={{ background: channelGradient }} title={channelTotal ? formatPrice(channelTotal) : "Sin ventas"} />
-          <div className="admin-donut-list">
-            {channelStats.length ? channelStats.map((item) => (
-              <div className="admin-donut-row" key={item.name} title={formatPrice(item.value)}>
-                <strong><i aria-hidden="true" className="admin-donut-dot" style={{ background: item.color }} />{item.name}</strong>
-                <span>{item.percent}%</span>
-                <small>{formatPrice(item.value)}</small>
-              </div>
-            )) : <p className="description">Todavía no hay ventas registradas.</p>}
-          </div>
-        </div>
-      </section>
-      <section className="card admin-panel admin-span-2">
-        <Link className="admin-title-button" href={detailLink("branch-stock")}>
-          <h2>Stock por sucursal</h2>
-          <ChevronRight size={18} />
-        </Link>
-        <div className="admin-mini-list admin-mini-list-columns">
-          {outStockByBranch.map((item) => (
-            <span key={item.branch.id}>{item.branch.name}: {item.count} sin stock</span>
-          ))}
-        </div>
-      </section>
-      <section className="card admin-panel admin-span-2">
-        <h2>Ingresos por sucursal</h2>
-        <div className="admin-donut-list">
-          {branchRevenue.map((item) => (
-            <div className="admin-donut-row" key={item.branch}>
-              <strong>{item.branch}</strong>
-              <span>{formatPrice(item.value)}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
+            <p>{period === "month" ? "Días de este mes" : "Últimos 7 días"} · {selectedBranch.name}</p>
+          </header>
+          <ul className={`admin-day-bars${days.length > 10 ? " is-dense" : ""}`} style={{ "--day-rows": Math.ceil(days.length / 3) } as CSSProperties}>
+            {days.map((day) => (
+              <li key={day.key}>
+                <span className="admin-day-label">{day.label}</span>
+                <span className="admin-day-track" aria-hidden="true">
+                  {day.cents > 0 ? <span className="admin-day-fill" style={{ width: `${Math.max(3, Math.round((day.cents / maxDay) * 100))}%` }} /> : null}
+                </span>
+                <strong className={day.cents ? "" : "is-zero"}>{formatPrice(day.cents)}</strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <ShareCard
+          description={`Mostrador (Caja) contra tienda online · ${periodName}`}
+          emptyText={emptyText}
+          rows={channelRows}
+          title="¿Por dónde vendés?"
+        />
+        <ShareCard
+          description={`Medio de pago de cada venta · ${periodName}`}
+          emptyText={emptyText}
+          rows={paymentRows}
+          title="¿Cómo te pagan?"
+        />
+        <section className="card admin-panel admin-dash-card">
+          <header className="admin-dash-card-head">
+            <h2>Comparación de sucursales</h2>
+            <p>Ventas de cada sucursal · {periodName}</p>
+          </header>
+          {branchTotal ? (
+            <ul className="admin-share-list">
+              {branchRows.map((row) => (
+                <li className={row.branch.id === selectedBranch.id ? "is-current" : ""} key={row.branch.id}>
+                  <span className="admin-share-name">{row.branch.name}{row.branch.id === selectedBranch.id ? " (activa)" : ""}</span>
+                  <strong>{formatPrice(row.cents)}</strong>
+                  <small>{Math.round((row.cents / branchTotal) * 100)}%</small>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="admin-dash-empty">{emptyText}</p>}
+          <Link className="admin-dash-link" href={detailLink("branch-stock")}>Ver stock por sucursal <ChevronRight size={15} /></Link>
+        </section>
+      </div>
+    </>
   );
 }
 
@@ -3337,6 +3547,43 @@ export function AdminConsole({
   const [trashQuery, setTrashQuery] = useState("");
   const [trashTypeFilter, setTrashTypeFilter] = useState<TrashItem["type"] | "all">("all");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem("agrovet-sidebar-collapsed");
+    } catch {
+      stored = null;
+    }
+    if (stored === "1") queueMicrotask(() => setSidebarCollapsed(true));
+  }, []);
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      try {
+        window.localStorage.setItem("agrovet-sidebar-collapsed", current ? "0" : "1");
+      } catch {
+        // Sin almacenamiento, la preferencia dura hasta recargar.
+      }
+      return !current;
+    });
+  };
+  // Mientras el selector de sucursal obligatorio tapa el panel, la entrada no cuenta: la cascada se
+  // ve recién cuando el panel queda a la vista.
+  const coveredByBranchPicker = !initialBranchId;
+  const [panelMotion, setPanelMotion] = useState<"enter" | "switch" | null>(() => (panelEnteredThisSession ? "switch" : "enter"));
+  useEffect(() => {
+    if (coveredByBranchPicker) return;
+    panelEnteredThisSession = true;
+    try {
+      window.sessionStorage.setItem(PANEL_ENTERED_STORAGE_KEY, "1");
+    } catch {
+      // Sin sessionStorage, una recarga vuelve a mostrar la cascada: no rompe nada.
+    }
+    // Al terminar se saca la clase para que remontar partes (por ejemplo, al cambiar el período)
+    // no repita la cascada.
+    const timer = window.setTimeout(() => setPanelMotion(null), 700);
+    return () => window.clearTimeout(timer);
+  }, [coveredByBranchPicker]);
   const adminMenuToggleRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!adminMenuOpen) return;
@@ -3389,7 +3636,6 @@ export function AdminConsole({
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
     return quantity > 0 && quantity <= 3;
   }).length;
-  const totalRevenue = orders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranch.id), 0);
   const pendingOrders = orders.filter((order) => belongsToDashboardBranch(order, selectedBranch.id) && isPendingWebOrder(order));
   const webOrders = orders.filter((order) => isWebOrder(order));
   const webPeriodRange = periodBounds(webPeriod, new Date());
@@ -3414,10 +3660,6 @@ export function AdminConsole({
     if (webHistoryTypeFilter === "envio" && !isDeliveryWebOrder(order)) return false;
     return true;
   }).sort((a, b) => toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime());
-  const branchRevenue = branches.map((branch) => ({
-    branch: branch.name,
-    value: orders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, branch.id), 0),
-  }));
   const billingOrders = orders.filter((order) => !isCancelledOrder(order) && !isAwaitingOnlinePayment(order) && dateKey(toDate(order.createdAt)) === billingDate && orderHasBranch(order, selectedBranch.id));
   const billingTotal = billingOrders.reduce((sum, order) => sum + getOrderBranchRevenueCents(order, selectedBranch.id), 0);
 
@@ -3491,7 +3733,7 @@ export function AdminConsole({
         : null;
 
   return (
-    <div className="admin-layout">
+    <div className={`admin-layout${panelMotion ? ` admin-${panelMotion}` : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />
@@ -3510,10 +3752,23 @@ export function AdminConsole({
             <ChevronRight size={22} />
           </button>
         </div>
+        <button
+          aria-label={`Sucursal activa: ${selectedBranch?.name ?? "Sucursal"}. Cambiar sucursal`}
+          className="admin-branch-switch"
+          onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }}
+          title="Cambiar sucursal"
+          type="button"
+        >
+          <MapPin size={16} />
+          <span className="admin-branch-switch-copy">
+            <small>Sucursal activa</small>
+            <strong>{selectedBranch?.name ?? "Sucursal"}</strong>
+          </span>
+        </button>
         <div className="admin-sidebar-body">
           <nav aria-label="Secciones" className="admin-nav">
             {options.map(({ id, href, label, icon: Icon }) => (
-              <Link className={section === id ? "active" : ""} href={href} key={id}>
+              <Link className={section === id ? "active" : ""} href={href} key={id} title={sidebarCollapsed ? label : undefined}>
                 <Icon size={18} />
                 <span>{label}</span>
                 <AdminNavTail />
@@ -3523,25 +3778,32 @@ export function AdminConsole({
           <form action={logoutAction} className="admin-logout">
             <button className="button button-light" type="submit">Cerrar sesión</button>
           </form>
+          <button
+            aria-label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
+            aria-pressed={sidebarCollapsed}
+            className="admin-sidebar-collapse"
+            onClick={toggleSidebar}
+            type="button"
+          >
+            <ChevronsLeft size={16} />
+            <span>Contraer menú</span>
+          </button>
         </div>
       </aside>
 
       <div className="admin-main">
-        <div className="admin-current-branch-banner">
-          <span>Sucursal activa</span>
-          <button className="admin-current-branch" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button">
-            {selectedBranch?.name ?? "Sucursal"}
-          </button>
-        </div>
         {section === "resumen" && (
           <>
-            <SectionHeader subtitle="Resumen general del negocio" title="Dashboard" />
-            <div className="admin-stat-grid">
-              <StatCard href={detailHref("revenue")} label="Ingresos totales" value={formatPrice(totalRevenue)} note="Incluye la facturación del día y meses anteriores" />
-              <StatCard href={detailHref("out-stock")} label="Sin stock" value={String(zeroStockPresentations.length)} note={`${lowStockPresentations} productos con stock bajo`} />
-              <StatCard href={detailHref("pending-orders")} label="Pedidos pendientes" value={String(pendingOrders.length)} note="Pedidos de la web en curso" />
-            </div>
-            <DashboardCharts basePath={pathname} branchRevenue={branchRevenue} branches={branches} orders={orders} products={products} selectedBranchId={selectedBranch.id} />
+            <SectionHeader subtitle="Cómo vienen las ventas, el stock y los pedidos de la sucursal activa" title="Dashboard" />
+            <DashboardOverview
+              basePath={pathname}
+              branches={branches}
+              lowStockCount={lowStockPresentations}
+              orders={orders}
+              pendingCount={pendingOrders.length}
+              selectedBranch={selectedBranch}
+              zeroStockCount={zeroStockPresentations.length}
+            />
           </>
         )}
 
@@ -3558,42 +3820,49 @@ export function AdminConsole({
                 <Search size={18} />
                 <input className="field" onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar productos por nombre o categoría..." value={productQuery} />
               </label>
-              <label className="admin-point-field">
-                <span>Categoría</span>
-                <select
-                  className="field"
-                  value={productCategoryFilter}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setProductCategoryFilter(next);
-                    setProductSubcategoryFilter("");
-                  }}
-                >
-                  <option value="">Todas</option>
-                  <option value={UNCATEGORIZED_CATEGORY_VALUE}>Sin categoría</option>
-                  {selectableProductCategories.map((category) => <option key={category.id} value={category.slug}>{category.parentCategoryName ? `${category.parentCategoryName} / ${category.name}` : category.name}</option>)}
-                </select>
-              </label>
-              <label className="admin-point-field">
-                <span>Subcategoría</span>
-                <select className="field" disabled={!productCategoryFilter} value={productSubcategoryFilter} onChange={(event) => setProductSubcategoryFilter(event.target.value)}>
-                  <option value="">{productCategoryFilter ? "Todas" : "Primero elegí una categoría"}</option>
-                  {productCategoryFilter ? <option value={UNCATEGORIZED_SUBCATEGORY_SLUG}>Sin subcategoría</option> : null}
-                  {availableProductSubcategories.map((subcategory) => <option key={subcategory.slug} value={subcategory.slug}>{subcategory.name}</option>)}
-                </select>
-              </label>
-              <label className="admin-point-field">
-                <span>Estado tienda</span>
-                <select className="field" value={productStatusFilter} onChange={(event) => setProductStatusFilter(event.target.value as "all" | "active" | "inactive")}>
-                  <option value="all">Todos</option>
-                  <option value="active">Activos</option>
-                  <option value="inactive">Desactivados</option>
-                </select>
-              </label>
+              <Select
+                ariaLabel="Categoría"
+                onChange={(next) => {
+                  setProductCategoryFilter(next);
+                  setProductSubcategoryFilter("");
+                }}
+                options={[
+                  { value: "", label: "Todas las categorías" },
+                  { value: UNCATEGORIZED_CATEGORY_VALUE, label: "Sin categoría" },
+                  ...selectableProductCategories.map((category) => ({
+                    value: category.slug,
+                    label: category.name,
+                    path: category.parentCategoryName ? `${category.parentCategoryName} / ${category.name}` : undefined,
+                    depth: category.parentCategoryName ? 1 : 0,
+                  })),
+                ]}
+                value={productCategoryFilter}
+              />
+              <Select
+                ariaLabel="Subcategoría"
+                disabled={!productCategoryFilter}
+                onChange={setProductSubcategoryFilter}
+                options={[
+                  { value: "", label: productCategoryFilter ? "Todas las subcategorías" : "Subcategoría: elegí una categoría" },
+                  ...(productCategoryFilter ? [{ value: UNCATEGORIZED_SUBCATEGORY_SLUG, label: "Sin subcategoría" }] : []),
+                  ...availableProductSubcategories.map((subcategory) => ({ value: subcategory.slug, label: subcategory.name })),
+                ]}
+                value={productSubcategoryFilter}
+              />
+              <Select
+                ariaLabel="Estado en la tienda"
+                onChange={(next) => setProductStatusFilter(next as "all" | "active" | "inactive")}
+                options={[
+                  { value: "all", label: "Todos los estados" },
+                  { value: "active", label: "Activos en tienda" },
+                  { value: "inactive", label: "Desactivados" },
+                ]}
+                value={productStatusFilter}
+              />
             </div>
             <div className="card admin-panel admin-table-wrap">
               <div className="admin-table-head">
-                <span>Nombre</span><span>Categoría</span><span>Subcategoría</span><span>Precio</span><span>Stock</span><span>Acciones</span>
+                <span>Producto</span><span>Categoría</span><span>Precio</span><span>Stock</span><span>Tienda y acciones</span>
               </div>
               <div className="admin-product-list">
                 {visibleProducts.map((product) => {
@@ -3604,22 +3873,29 @@ export function AdminConsole({
                     <div className="admin-table-row" key={product.id}>
                       <div className="admin-product-cell">
                         {product.imageUrl ? (
-                          <Image alt="" className="admin-product-thumb" height={48} loading="lazy" src={product.imageUrl} unoptimized width={48} />
+                          <Image alt="" className="admin-product-thumb" height={40} loading="lazy" src={product.imageUrl} unoptimized width={40} />
                         ) : (
                           <span aria-hidden="true" className="admin-product-thumb is-empty" style={{ background: product.color }} />
                         )}
-                        <div>
-                          <strong>{product.brand} {product.name}</strong>
-                          {!product.active ? <span className="admin-status-badge muted">Desactivado en tienda</span> : null}
-                          <small>{product.description}</small>
+                        <div className="admin-product-copy">
+                          <strong title={`${product.brand} ${product.name}`}>{product.name}</strong>
+                          <small>
+                            {product.brand}
+                            {product.variants.length ? ` · ${product.variants.map((variant) => variant.label).join(", ")}` : ""}
+                            {!product.active ? <span className="admin-status-badge muted">Desactivado</span> : null}
+                          </small>
                         </div>
                       </div>
-                      <span>{product.category}</span>
-                      <span>{product.subcategory}</span>
-                      <strong>{formatPrice(mainVariant?.priceCents ?? 0)}</strong>
-                      <span className={`admin-stock-pill admin-stock-pill-wide ${!product.active ? "muted" : mainVariant && mainVariant.totalStock <= 3 ? "danger" : ""}`}>
-                        <strong>{mainVariant?.totalStock ?? 0} unidades</strong>
-                        <small>{product.active ? `${stockIndependencia} Ind. | ${stockBelgrano} Belgrano` : "Stock sin alerta"}</small>
+                      <span className="admin-product-category">
+                        {product.category}
+                        {product.subcategory ? <><span aria-hidden="true"> › </span><span className="admin-product-sub">{product.subcategory}</span></> : null}
+                      </span>
+                      <strong className="admin-product-price">{formatPrice(mainVariant?.priceCents ?? 0)}</strong>
+                      <span
+                        className={`admin-stock-pill admin-stock-compact ${!product.active ? "muted" : mainVariant && mainVariant.totalStock <= 3 ? "danger" : ""}`}
+                        title={`${mainVariant?.totalStock ?? 0} unidades: ${stockIndependencia} en Independencia y ${stockBelgrano} en Belgrano`}
+                      >
+                        {stockIndependencia} Ind · {stockBelgrano} Bel
                       </span>
                       <div className="admin-row-actions">
                         <form action={updateProductActiveAction}>

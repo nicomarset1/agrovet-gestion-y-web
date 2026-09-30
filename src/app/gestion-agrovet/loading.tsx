@@ -1,4 +1,5 @@
-// Esqueleto del panel mientras carga: misma grilla que el panel real para que no salte el layout.
+// Esqueleto del panel mientras carga: misma grilla y proporciones que el dashboard real
+// (período, ventas + stock + pedidos, y las tarjetas de abajo) para que no salte el layout.
 export default function AdminLoading() {
   return (
     <div className="admin-shell admin-skeleton" role="status" aria-live="polite">
@@ -27,21 +28,30 @@ export default function AdminLoading() {
             <div className="admin-skeleton-stack">
               <span className="admin-skeleton-line short" style={{ width: 110 }} />
               <span className="admin-skeleton-line title" />
-              <span className="admin-skeleton-line" style={{ width: 240 }} />
+              <span className="admin-skeleton-line" style={{ width: 280 }} />
             </div>
-            <div className="admin-stat-grid">
-              {Array.from({ length: 3 }, (_, index) => (
-                <div className="card admin-stat admin-skeleton-stack" key={index}>
-                  <span className="admin-skeleton-line short" style={{ width: "55%" }} />
+            <div className="admin-dashboard-bar">
+              <span className="admin-skeleton-line period" />
+              <span className="admin-skeleton-line short" style={{ width: 240 }} />
+            </div>
+            <div className="admin-dash-top">
+              {["admin-dash-sales", "", ""].map((extra, index) => (
+                <div className={`card admin-dash-card admin-skeleton-card ${extra}`} key={index}>
+                  <span className="admin-skeleton-line short" style={{ width: "45%" }} />
                   <span className="admin-skeleton-line value" />
-                  <span className="admin-skeleton-line short" style={{ width: "75%" }} />
+                  <span className="admin-skeleton-line short" style={{ width: "70%" }} />
                 </div>
               ))}
             </div>
-            <div className="card admin-panel admin-skeleton-stack">
-              <span className="admin-skeleton-line" style={{ width: "32%" }} />
-              {Array.from({ length: 5 }, (_, index) => (
-                <span className="admin-skeleton-line row" key={index} />
+            <div className="admin-dash-grid">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div className="card admin-panel admin-dash-card admin-skeleton-stack" key={index}>
+                  <span className="admin-skeleton-line" style={{ width: "40%" }} />
+                  <span className="admin-skeleton-line short" style={{ width: "60%" }} />
+                  {Array.from({ length: 4 }, (_, row) => (
+                    <span className="admin-skeleton-line row" key={row} />
+                  ))}
+                </div>
               ))}
             </div>
           </div>
