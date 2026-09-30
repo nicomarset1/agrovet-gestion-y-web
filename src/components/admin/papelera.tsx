@@ -5,6 +5,7 @@
 import { Search, Trash2, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatPrice } from "@/lib/format";
+import { Select } from "@/components/ui/select";
 import type { TrashItem } from "@/lib/types";
 import { restoreTrashItemAction, emptyTrashAction } from "@/app/gestion-agrovet/actions";
 import { AdminModal, SectionHeader, StatCard, formatAdminDateTime, trashDaysUntilPurge, trashTypeLabel, trashTypeSingular } from "@/components/admin/shared";
@@ -154,17 +155,19 @@ export function PapeleraSection({
           <Search size={18} />
           <input className="field" onChange={(event) => setTrashQuery(event.target.value)} placeholder="Buscar en papelera..." value={trashQuery} />
         </label>
-        <label className="admin-point-field">
-          <span>Tipo</span>
-          <select className="field" onChange={(event) => setTrashTypeFilter(event.target.value as TrashItem["type"] | "all")} value={trashTypeFilter}>
-            <option value="all">Todo</option>
-            <option value="order">Pedidos</option>
-            <option value="product">Productos</option>
-            <option value="category">Categorías</option>
-            <option value="subcategory">Subcategorías</option>
-            <option value="client">Clientes</option>
-          </select>
-        </label>
+        <Select
+          ariaLabel="Tipo de elemento"
+          onChange={(next) => setTrashTypeFilter(next as TrashItem["type"] | "all")}
+          options={[
+            { value: "all", label: "Todos los tipos" },
+            { value: "order", label: "Pedidos" },
+            { value: "product", label: "Productos" },
+            { value: "category", label: "Categorías" },
+            { value: "subcategory", label: "Subcategorías" },
+            { value: "client", label: "Clientes" },
+          ]}
+          value={trashTypeFilter}
+        />
       </div>
       <div className="admin-product-list admin-trash-list">
         {filteredTrashItems.length ? filteredTrashItems.map((item) => {

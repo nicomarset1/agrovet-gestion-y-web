@@ -66,29 +66,31 @@ export function catalogContext(categories: Category[], searchIds: number[] | nul
   };
 }
 
-/** Mismo criterio que getProducts. `skip` deja afuera el filtro de un grupo (para contar sus opciones). */
-export function productMatches(product: Product, filters: FacetFilters, context: CatalogContext, skip?: Group) {
+/** Mismo criterio que getProducts. `skip` deja afuera el filtro de uno o más grupos (para contar sus opciones). */
+export function productMatches(product: Product, filters: FacetFilters, context: CatalogContext, skipGroups?: Group | Group[]) {
+  const skipped = new Set(Array.isArray(skipGroups) ? skipGroups : skipGroups ? [skipGroups] : []);
+  const skip = (group: Group) => skipped.has(group);
   if (context.searchIds && !context.searchIds.has(product.id)) return false;
   const categories = values(filters.category);
-  if (skip !== "category" && categories.length) {
+  if (!skip("category") && categories.length) {
     const parent = context.parentOf.get(product.categorySlug) ?? null;
     if (!categories.includes(product.categorySlug) && !(parent && categories.includes(parent))) return false;
   }
   const subcategories = values(filters.subcategory);
-  if (skip !== "subcategory" && subcategories.length && !subcategories.includes(product.subcategorySlug)) return false;
-  if (skip !== "pet" && filters.pet && filters.pet !== "todos" && product.species !== filters.pet && product.species !== "perro-gato") return false;
+  if (!skip("subcategory") && subcategories.length && !subcategories.includes(product.subcategorySlug)) return false;
+  if (!skip("pet") && filters.pet && filters.pet !== "todos" && product.species !== filters.pet && product.species !== "perro-gato") return false;
   const brands = values(filters.brand);
-  if (skip !== "brand" && brands.length && !brands.includes(product.brand)) return false;
+  if (!skip("brand") && brands.length && !brands.includes(product.brand)) return false;
   const stages = values(filters.stage);
-  if (skip !== "stage" && stages.length && !stages.includes(product.lifeStage)) return false;
+  if (!skip("stage") && stages.length && !stages.includes(product.lifeStage)) return false;
   const sizes = values(filters.size);
-  if (skip !== "size" && sizes.length && !sizes.includes(product.size) && product.size !== "todos") return false;
+  if (!skip("size") && sizes.length && !sizes.includes(product.size) && product.size !== "todos") return false;
   const needs = values(filters.need);
-  if (skip !== "need" && needs.length && !needs.includes(product.need)) return false;
+  if (!skip("need") && needs.length && !needs.includes(product.need)) return false;
   const presentations = values(filters.presentation).map((item) => item.toLowerCase());
-  if (skip !== "presentation" && presentations.length
+  if (!skip("presentation") && presentations.length
     && !product.variants.some((variant) => presentations.some((item) => variant.label.toLowerCase().includes(item)))) return false;
-  if (skip !== "price") {
+  if (!skip("price")) {
     const min = cents(filters.minPrice);
     const max = cents(filters.maxPrice);
     if ((min !== null || max !== null)
@@ -105,17 +107,20 @@ function tally(items: string[]) {
 }
 
 export function contextualFacets(catalog: Product[], filters: FacetFilters, categories: Category[], context: CatalogContext): ContextualFacets {
-  const base = (skip: Group) => catalog.filter((product) => productMatches(product, filters, context, skip));
+  const base = (skip: Group | Group[]) => catalog.filter((product) => productMatches(product, filters, context, skip));
   const categoryName = new Map(categories.map((category) => [category.slug, category.name]));
 
-  // Categoría: cada producto suma a su categoría y a la categoría padre (el filtro las incluye a las dos).
+  // Categoría y subcategoría forman un solo filtro (el árbol): se cuentan sin ninguno de los dos, así todos
+  // los niveles muestran cuántos productos da cada opción con el resto de los filtros.
+  // Cada producto suma a su categoría y a la categoría padre (el filtro las incluye a las dos).
+  const treeBase = base(["category", "subcategory"]);
   const categoryCounts = new Map<string, number>();
-  for (const product of base("category")) {
+  for (const product of treeBase) {
     const slugs = new Set([product.categorySlug, context.parentOf.get(product.categorySlug) ?? ""]);
     for (const slug of slugs) if (slug && !isSpecialCategorySlug(slug)) categoryCounts.set(slug, (categoryCounts.get(slug) ?? 0) + 1);
   }
   const subcategoryCounts = new Map<string, FacetCount & { slug: string; categorySlug: string }>();
-  for (const product of base("subcategory")) {
+  for (const product of treeBase) {
     if (product.subcategorySlug === uncategorizedSubcategorySlug) continue;
     const current = subcategoryCounts.get(product.subcategorySlug);
     if (current) current.count += 1;
@@ -155,4 +160,78 @@ export function contextualFacets(catalog: Product[], filters: FacetFilters, cate
     presentations,
     priceRange: prices.length ? { min: Math.min(...prices), max: Math.max(...prices) } : { min: 0, max: 0 },
   };
+}
+
+/*
+ * Árbol de categorías del panel de gestión para el filtro: principal › categorías internas › subcategorías.
+ * Mismo origen y orden que el menú del header (getCategories: principales, sus internas por nombre; las
+ * categorías especiales quedan afuera). Las subcategorías salen de getSubcategories (orden por nombre) y de los
+ * productos, así una categoría o subcategoría nueva con productos aparece sola. Contadores contextuales; se ocultan
+ * las ramas sin productos salvo lo que el cliente ya eligió.
+ */
+export type CategoryTreeNode = {
+  kind: "category" | "subcategory";
+  slug: string;
+  name: string;
+  count: number;
+  selected: boolean;
+  children: CategoryTreeNode[];
+};
+
+export function buildCategoryTree(
+  categories: Category[],
+  subcategories: { slug: string; name: string; categorySlug: string | null }[],
+  facets: ContextualFacets,
+  selected: { categories: string[]; subcategories: string[] },
+): CategoryTreeNode[] {
+  const categoryCount = new Map(facets.categories.map((item) => [item.slug, item.count]));
+  const subcategoryCount = new Map(facets.subcategories.map((item) => [item.slug, item.count]));
+  const visible = (node: CategoryTreeNode) => node.count > 0 || node.selected || node.children.length > 0;
+
+  const subcategoryNodes = (categorySlug: string): CategoryTreeNode[] => {
+    const known = subcategories.filter((item) => item.categorySlug === categorySlug);
+    // Subcategorías que solo existen en los productos (cargadas a mano) también cuentan.
+    const fromProducts = facets.subcategories
+      .filter((item) => item.categorySlug === categorySlug && !known.some((sub) => sub.slug === item.slug))
+      .map((item) => ({ slug: item.slug, name: item.name, categorySlug }));
+    return [...known, ...fromProducts]
+      .map((item) => ({
+        kind: "subcategory" as const,
+        slug: item.slug,
+        name: item.name,
+        count: subcategoryCount.get(item.slug) ?? 0,
+        selected: selected.subcategories.includes(item.slug),
+        children: [],
+      }))
+      .filter(visible);
+  };
+
+  const categoryNode = (category: Category): CategoryTreeNode => {
+    const internal = categories
+      .filter((child) => child.parentCategorySlug === category.slug && !isSpecialCategorySlug(child.slug))
+      .map(categoryNode);
+    return {
+      kind: "category",
+      slug: category.slug,
+      name: category.name,
+      count: categoryCount.get(category.slug) ?? 0,
+      selected: selected.categories.includes(category.slug),
+      children: [...internal, ...subcategoryNodes(category.slug)].filter(visible),
+    };
+  };
+
+  return categories
+    .filter((category) => !category.parentCategorySlug && !isSpecialCategorySlug(category.slug))
+    .map(categoryNode)
+    .filter(visible);
+}
+
+/** Camino desde la raíz hasta el nodo buscado (para la ruta "Tienda › Categoría › Subcategoría"). */
+export function categoryTreePath(nodes: CategoryTreeNode[], match: (node: CategoryTreeNode) => boolean): CategoryTreeNode[] {
+  for (const node of nodes) {
+    if (match(node)) return [node];
+    const inner = categoryTreePath(node.children, match);
+    if (inner.length) return [node, ...inner];
+  }
+  return [];
 }

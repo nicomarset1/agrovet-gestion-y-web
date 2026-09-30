@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
+import { installmentsLabel } from "@/lib/format";
 import { panelPath } from "@/lib/panel-path";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import {
@@ -196,8 +197,8 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
   if (!parsed.success) return { ok: false, error: "Revisá los productos y el medio de pago de la venta." };
   const { branchId, paymentMethod, installments, items } = parsed.data;
   if (paymentMethod === "Tarjeta" && !installments) return { ok: false, error: "Elegí la cantidad de cuotas." };
-  // Mismo formato que usan isCashOrder, el cierre del día y el reporte: "Caja / Tarjeta (3 cuotas)".
-  const source = `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installments} cuotas)` : ""}`;
+  // Mismo formato que usan isCashOrder, el cierre del día y el reporte: "Caja / Tarjeta (3 cuotas)" o "(1 cuota)".
+  const source = `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments ?? "1")})` : ""}`;
   try {
     const order = await createOrder({
       name: "Venta mostrador",
@@ -369,6 +370,8 @@ const productBaseSchema = z.object({
   featured: z.enum(["on"]).optional(),
   requiresAdvice: z.enum(["on"]).optional(),
   active: z.enum(["on"]).optional(),
+  // "1" cuando el panel no tocó una categoría que está en la papelera: se conserva (ver updateProduct).
+  keepCategory: z.enum(["1"]).optional(),
   returnTo: z.string().trim().min(1),
 });
 
@@ -593,6 +596,7 @@ export async function updateProductAction(formData: FormData) {
     active: parsed.data.active === "on",
     color: parsed.data.color,
     imageUrl: productImageInput(parsed.data.imageUrl),
+    keepCategory: parsed.data.keepCategory === "1",
     variants: variants.map((variant) => ({
       id: variant.id,
       label: variant.label,

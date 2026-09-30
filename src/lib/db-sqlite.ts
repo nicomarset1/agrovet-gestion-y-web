@@ -476,6 +476,7 @@ type ProductRow = {
   subcategory: string; subcategorySlug: string; species: Product["species"]; lifeStage: string; size: string; need: string;
   description: string; featured: number; requiresAdvice: number; active: number; color: string; imageUrl: string;
   imageSample?: string;
+  deletedCategoryName?: string;
 };
 
 type VariantRow = {
@@ -528,10 +529,11 @@ function productImageFromRow(row: ProductRow) {
 }
 
 function toProduct(row: ProductRow, variants: Variant[]): Product {
-  const { imageSample: _imageSample, ...product } = row;
+  const { imageSample: _imageSample, deletedCategoryName, ...product } = row;
   void _imageSample;
   return {
     ...product,
+    ...(deletedCategoryName ? { deletedCategoryName } : {}),
     imageUrl: productImageFromRow(row),
     featured: Boolean(row.featured),
     requiresAdvice: Boolean(row.requiresAdvice),
@@ -605,10 +607,12 @@ const baseSelect = `
     CASE WHEN p.image_url LIKE 'data:image/%' THEN '' ELSE p.image_url END AS imageUrl,
     CASE WHEN p.image_url LIKE 'data:image/%'
       THEN length(p.image_url) || ':' || substr(p.image_url, 1, 96) || ':' || substr(p.image_url, -96)
-      ELSE '' END AS imageSample
+      ELSE '' END AS imageSample,
+    COALESCE(dc.name, '') AS deletedCategoryName
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at = ''
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at = ''
+  LEFT JOIN categories dc ON dc.id = p.category_id AND dc.deleted_at != ''
 `;
 
 // Devuelve el stock de un pedido según sus asignaciones por sucursal (o la sucursal del pedido si no tiene).
@@ -787,7 +791,7 @@ export function getSubcategories() {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS categoryId, c.slug AS categorySlug, c.name AS categoryName, COUNT(p.id) AS count
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at = ''
     LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at = '' AND p.purged_at = ''
     WHERE s.deleted_at = ''
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
@@ -800,7 +804,7 @@ export function getSubcategoryBySlug(slug: string) {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS categoryId, c.slug AS categorySlug, c.name AS categoryName
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at = ''
     WHERE s.slug = ? AND s.deleted_at = ''
   `).get(slug) as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null } | undefined;
 }
@@ -1212,6 +1216,13 @@ function assertProductCategory(categoryId: number | null) {
   if (isSpecialCategorySlug(category.slug)) throw new Error("Las páginas fijas no pueden usarse como categoría de producto.");
 }
 
+/** true si la categoría actual del producto existe y está en la papelera (borrado lógico). */
+function keepsTrashedCategory(productId: number) {
+  const row = db.prepare("SELECT c.deleted_at AS deletedAt FROM products p JOIN categories c ON c.id = p.category_id WHERE p.id = ?")
+    .get(productId) as { deletedAt: string } | undefined;
+  return Boolean(row?.deletedAt);
+}
+
 function resolveProductCategory(input: { categoryId: number | null; subcategorySlug: string }) {
   if (!input.categoryId) {
     return {
@@ -1331,22 +1342,20 @@ export function updateProduct(input: {
   active: boolean;
   color: string;
   imageUrl?: string;
+  /** El panel no tocó la categoría: si la actual está en la papelera, se conserva (ver keepsTrashedCategory). */
+  keepCategory?: boolean;
   variants: ProductVariantInput[];
 }) {
   return db.transaction(() => {
-    const placement = resolveProductCategory(input);
     db.prepare(`
       UPDATE products SET
-        name = ?, brand = ?, category_id = ?, species = ?, subcategory_slug = ?, subcategory_name = ?,
+        name = ?, brand = ?, species = ?,
         life_stage = ?, size = ?, need = ?, description = ?, featured = ?, requires_advice = ?, active = ?, color = ?, image_url = COALESCE(?, image_url)
       WHERE id = ?
     `).run(
       input.name.trim(),
       input.brand.trim(),
-      placement.categoryId,
       input.species,
-      placement.subcategorySlug,
-      placement.subcategoryName,
       input.lifeStage ?? "",
       input.size ?? "",
       input.need ?? "",
@@ -1359,6 +1368,13 @@ export function updateProduct(input: {
       input.imageUrl ?? null,
       input.id,
     );
+    // La categoría se conserva tal cual si está en la papelera y el panel no la cambió: así, al
+    // restaurarla, el producto vuelve a quedar adentro. En cualquier otro caso se guarda la elegida.
+    if (!(input.keepCategory && keepsTrashedCategory(input.id))) {
+      const placement = resolveProductCategory(input);
+      db.prepare("UPDATE products SET category_id = ?, subcategory_slug = ?, subcategory_name = ? WHERE id = ?")
+        .run(placement.categoryId, placement.subcategorySlug, placement.subcategoryName, input.id);
+    }
     const insertVariant = db.prepare("INSERT INTO variants (product_id, label, sku, barcode, price_cents) VALUES (?, ?, ?, ?, ?)");
     const updateVariant = db.prepare("UPDATE variants SET label = ?, sku = ?, barcode = ?, price_cents = ? WHERE id = ?");
     const insertInventory = db.prepare("INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (?, ?, ?) ON CONFLICT(variant_id, branch_id) DO UPDATE SET quantity = excluded.quantity, updated_at = CURRENT_TIMESTAMP");
@@ -2206,7 +2222,21 @@ export function restoreTrashItem(input: { type: TrashItem["type"]; id: string | 
     if (input.type === "product") {
       db.prepare("UPDATE products SET archived_at = '' WHERE id = ?").run(Number(input.id));
     } else if (input.type === "category") {
-      db.prepare("UPDATE categories SET deleted_at = '' WHERE id = ?").run(Number(input.id));
+      // Borrar apaga show_in_menu; al restaurar, una principal vuelve al menú. Una interna cuyo padre
+      // sigue en la papelera vuelve como principal (sin padre) para no quedar colgada.
+      db.prepare(`
+        UPDATE categories SET
+          deleted_at = '',
+          parent_category_id = CASE
+            WHEN parent_category_id IS NOT NULL AND EXISTS (SELECT 1 FROM categories parent WHERE parent.id = categories.parent_category_id AND parent.deleted_at = '')
+              THEN parent_category_id
+            ELSE NULL END,
+          show_in_menu = CASE
+            WHEN parent_category_id IS NOT NULL AND EXISTS (SELECT 1 FROM categories parent WHERE parent.id = categories.parent_category_id AND parent.deleted_at = '')
+              THEN show_in_menu
+            ELSE 1 END
+        WHERE id = ?
+      `).run(Number(input.id));
     } else if (input.type === "subcategory") {
       db.prepare("UPDATE subcategories SET deleted_at = '' WHERE slug = ?").run(String(input.id));
     } else if (input.type === "client") {

@@ -7,7 +7,9 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { formatPrice } from "@/lib/format";
+import { fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
+import { Select } from "@/components/ui/select";
+import { NumberInput } from "@/components/ui/form-controls";
 import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
@@ -309,7 +311,7 @@ function getOrderBranchBuckets(order: OrderRecord) {
   return [...buckets.values()].sort((a, b) => a.branchId - b.branchId);
 }
 
-function getOrderBranchName(order: OrderRecord) {
+export function getOrderBranchName(order: OrderRecord) {
   const buckets = getOrderBranchBuckets(order);
   if (!buckets.length) return order.branchName;
   if (buckets.length === 1) return buckets[0].branchName;
@@ -421,6 +423,10 @@ export function leafCategories(categories: Category[]) {
   return categories.filter((category) => !isSpecialCategorySlug(category.slug));
 }
 
+// Opciones de medio de pago y cuotas de la Caja (las mismas que acepta closePosSaleAction).
+export const PAYMENT_OPTIONS = ["Efectivo", "Tarjeta", "Transferencia", "QR"].map((value) => ({ value, label: value }));
+export const INSTALLMENT_OPTIONS = ["1", "2", "3", "6", "12"].map((value) => ({ value, label: installmentsLabel(value) }));
+
 export function OrderModal({
   returnTo,
   onClose,
@@ -432,14 +438,15 @@ export function OrderModal({
   onRequestDelete: (order: OrderRecord) => void;
   order: OrderRecord;
 }) {
-  const sourceMatch = /Caja \/ ([^(]+)(?: \((\d+) cuotas\))?/i.exec(order.source);
+  // El medio termina en letra: así el espacio antes de "(3 cuotas)" no queda adentro y las cuotas sí se leen.
+  const sourceMatch = /Caja \/ ([^(]*[^(\s])(?:\s*\((\d+) cuotas?\))?/i.exec(order.source);
   const initialPaymentMethod = sourceMatch?.[1]?.trim() ?? (order.source.toLowerCase().includes("tarjeta") ? "Tarjeta" : "Efectivo");
   const initialInstallments = sourceMatch?.[2] ?? "1";
   const [paymentMethod, setPaymentMethod] = useState(initialPaymentMethod);
   const [installments, setInstallments] = useState(initialInstallments);
   const [itemQuantities, setItemQuantities] = useState(() => order.items.map((item) => String(item.quantity)));
   const sourceValue = isCashOrder(order)
-    ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installments} cuotas)` : ""}`
+    ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments)})` : ""}`
     : order.source;
   const itemTotalCents = order.items.reduce((sum, item, index) => {
     const quantity = Math.max(1, Number(itemQuantities[index]) || item.quantity);
@@ -462,26 +469,15 @@ export function OrderModal({
         <input name="id" type="hidden" value={order.id} />
         {isCashOrder(order) ? (
           <>
-            <label className="admin-field">
-              <span>Canal / medio de pago</span>
-              <select className="field" onChange={(event) => setPaymentMethod(event.target.value)} value={paymentMethod}>
-                <option>Efectivo</option>
-                <option>Tarjeta</option>
-                <option>Transferencia</option>
-                <option>QR</option>
-              </select>
-            </label>
+            <div className="admin-field">
+              <span id={`order-${order.id}-payment`}>Canal / medio de pago</span>
+              <Select ariaLabelledBy={`order-${order.id}-payment`} onChange={setPaymentMethod} options={PAYMENT_OPTIONS} value={paymentMethod} />
+            </div>
             {paymentMethod === "Tarjeta" ? (
-              <label className="admin-field">
-                <span>Cuotas</span>
-                <select className="field" onChange={(event) => setInstallments(event.target.value)} value={installments}>
-                  <option value="1">1 cuota</option>
-                  <option value="2">2 cuotas</option>
-                  <option value="3">3 cuotas</option>
-                  <option value="6">6 cuotas</option>
-                  <option value="12">12 cuotas</option>
-                </select>
-              </label>
+              <div className="admin-field">
+                <span id={`order-${order.id}-installments`}>Cuotas</span>
+                <Select ariaLabelledBy={`order-${order.id}-installments`} onChange={setInstallments} options={INSTALLMENT_OPTIONS} value={installments} />
+              </div>
             ) : null}
           </>
         ) : null}
@@ -499,7 +495,7 @@ export function OrderModal({
           <strong>Datos del cliente</strong>
           <span>{customerSummary}</span>
           <small>
-            {order.fulfillment} | {order.source} | {order.paymentMethod || "Sin medio de pago"} | {order.status}
+            {order.fulfillment} | {fixInstallmentsText(order.source)} | {fixInstallmentsText(order.paymentMethod || "Sin medio de pago")} | {order.status}
           </small>
         </div>
         <div className="admin-span-2 admin-order-items">
@@ -521,17 +517,14 @@ export function OrderModal({
               </div>
               <label className="admin-order-qty">
                 <span>Unidades</span>
-                <input
-                  className="field"
-                  min="1"
+                <NumberInput
+                  min={1}
                   name="itemQuantity"
-                  step="1"
-                  type="number"
-                  value={itemQuantities[index] ?? String(item.quantity)}
-                  onChange={(event) => {
-                    const value = event.target.value;
+                  onChange={(next) => {
+                    const value = next === "" ? "" : String(next);
                     setItemQuantities((current) => current.map((entry, entryIndex) => (entryIndex === index ? value : entry)));
                   }}
+                  value={(itemQuantities[index] ?? String(item.quantity)) === "" ? "" : Number(itemQuantities[index] ?? item.quantity)}
                 />
               </label>
               <input name="itemVariantId" type="hidden" value={item.variantId} />
@@ -691,13 +684,15 @@ export function WebOrderStatusModal({
   returnTo: string;
   status: WebOrderStatus;
 }) {
-  const paymentMatch = /^(Tarjeta)(?: \((\d+) cuotas\))?/i.exec(order.paymentMethod);
+  const paymentMatch = /^(Tarjeta)(?: \((\d+) cuotas?\))?/i.exec(order.paymentMethod);
   const [paymentMethod, setPaymentMethod] = useState(paymentMatch?.[1] ?? (order.paymentMethod || "Efectivo"));
   const [installments, setInstallments] = useState(paymentMatch?.[2] ?? "1");
   const [submitting, setSubmitting] = useState(false);
   const isCancellation = status === "Cancelado";
   const needsRefundRecord = isCancellation && order.paidCents > 0 && /mercado pago/i.test(order.paymentMethod);
-  const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installments} cuotas)` : paymentMethod;
+  const [refundMethod, setRefundMethod] = useState("");
+  const [refundMissing, setRefundMissing] = useState(false);
+  const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installmentsLabel(installments)})` : paymentMethod;
   return (
     <AdminModal
       dismissible={!submitting}
@@ -708,7 +703,14 @@ export function WebOrderStatusModal({
       <form
         action={updateOrderAction}
         className="admin-modal-form"
-        onSubmit={() => setSubmitting(true)}
+        onSubmit={(event) => {
+          if (needsRefundRecord && !refundMethod) {
+            event.preventDefault();
+            setRefundMissing(true);
+            return;
+          }
+          setSubmitting(true);
+        }}
       >
         <input name="id" type="hidden" value={order.id} />
         <input name="customerName" type="hidden" value={order.customerName} />
@@ -735,47 +737,45 @@ export function WebOrderStatusModal({
             </p>
             {needsRefundRecord ? (
               <div className="admin-span-2 admin-confirm-refund">
-                <label>Devolución al cliente</label>
-                <select className="field" name="refundMethod" required defaultValue="">
-                  <option value="" disabled>Seleccionar cómo se devolvió</option>
-                  <option value="Devuelto por Mercado Pago">Devuelto por Mercado Pago</option>
-                  <option value="Transferencia bancaria">Transferencia bancaria</option>
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Queda pendiente de devolución">Queda pendiente de devolución</option>
-                  <option value="Otro acuerdo con el cliente">Otro acuerdo con el cliente</option>
-                </select>
+                <label id={`refund-${order.id}`}>Devolución al cliente</label>
+                <Select
+                  ariaLabelledBy={`refund-${order.id}`}
+                  invalid={refundMissing && !refundMethod}
+                  name="refundMethod"
+                  onChange={(next) => { setRefundMethod(next); setRefundMissing(false); }}
+                  options={[
+                    "Devuelto por Mercado Pago",
+                    "Transferencia bancaria",
+                    "Efectivo",
+                    "Queda pendiente de devolución",
+                    "Otro acuerdo con el cliente",
+                  ].map((value) => ({ value, label: value }))}
+                  placeholder="Seleccionar cómo se devolvió"
+                  required
+                  value={refundMethod}
+                />
+                {refundMissing && !refundMethod ? <p className="notice error" role="alert">Elegí cómo se devolvió el dinero.</p> : null}
                 <textarea className="field" maxLength={240} name="refundNote" placeholder="Detalle opcional: número de operación, alias, fecha o aclaración para el local." />
               </div>
             ) : null}
           </>
         ) : (
           <>
-            <label className="admin-field admin-span-2">
-              <span>Medio de pago</span>
-              <select className="field" onChange={(event) => setPaymentMethod(event.target.value)} value={paymentMethod}>
-                <option>Efectivo</option>
-                <option>Tarjeta</option>
-                <option>Transferencia</option>
-                <option>QR</option>
-              </select>
-            </label>
+            <div className="admin-field admin-span-2">
+              <span id={`web-order-${order.id}-payment`}>Medio de pago</span>
+              <Select ariaLabelledBy={`web-order-${order.id}-payment`} onChange={setPaymentMethod} options={PAYMENT_OPTIONS} value={paymentMethod} />
+            </div>
             {paymentMethod === "Tarjeta" ? (
-              <label className="admin-field admin-span-2">
-                <span>Cuotas</span>
-                <select className="field" onChange={(event) => setInstallments(event.target.value)} value={installments}>
-                  <option value="1">1 cuota</option>
-                  <option value="2">2 cuotas</option>
-                  <option value="3">3 cuotas</option>
-                  <option value="6">6 cuotas</option>
-                  <option value="12">12 cuotas</option>
-                </select>
-              </label>
+              <div className="admin-field admin-span-2">
+                <span id={`web-order-${order.id}-installments`}>Cuotas</span>
+                <Select ariaLabelledBy={`web-order-${order.id}-installments`} onChange={setInstallments} options={INSTALLMENT_OPTIONS} value={installments} />
+              </div>
             ) : null}
           </>
         )}
         <div className="admin-detail-summary compact admin-span-2">
           <strong>{order.code}</strong>
-          <span>{order.customerName} | {formatPrice(order.totalCents)} | {isCancellation ? order.paymentMethod : paymentMethodValue}</span>
+          <span>{order.customerName} | {formatPrice(order.totalCents)} | {isCancellation ? fixInstallmentsText(order.paymentMethod) : paymentMethodValue}</span>
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light" disabled={submitting} onClick={onClose} type="button">Cancelar</button>
@@ -853,19 +853,17 @@ export function WebOrderDistributionModal({
                   : `No hay stock en ${validation[index]?.branchName}`}
               </small>
             </div>
-            <label className="admin-field">
-              <span>Sucursal</span>
-              <select
-                className="field"
-                onChange={(event) => {
-                  const value = event.target.value;
+            <div className="admin-field">
+              <span id={`assign-${order.id}-${index}`}>Sucursal</span>
+              <Select
+                ariaLabelledBy={`assign-${order.id}-${index}`}
+                onChange={(value) => {
                   setAssignments((current) => current.map((entry, entryIndex) => entryIndex === index ? value : entry));
                 }}
+                options={branches.map((branch) => ({ value: String(branch.id), label: branch.name }))}
                 value={assignments[index] ?? String(order.branchId)}
-              >
-                {branches.map((branch) => <option key={branch.id} value={String(branch.id)}>{branch.name}</option>)}
-              </select>
-            </label>
+              />
+            </div>
             <input name="allocationVariantId" type="hidden" value={item.variantId} />
             <input name="allocationBranchId" type="hidden" value={assignments[index] ?? String(order.branchId)} />
             <input name="allocationQuantity" type="hidden" value={item.quantity} />
@@ -918,17 +916,7 @@ export function StockEditModal({
         <input name="returnTo" type="hidden" value={returnTo} />
         <label className="admin-field admin-span-2">
           <span>Unidades a agregar</span>
-          <input
-            autoFocus
-            className="field"
-            defaultValue={0}
-            inputMode="numeric"
-            min="0"
-            name="quantity"
-            step="1"
-            type="number"
-            required
-          />
+          <NumberInput autoFocus defaultValue={0} min={0} name="quantity" required />
           <small className="description">Se suma únicamente al stock de {branch.name}. Usa teclado o flechas.</small>
         </label>
         <div className="admin-modal-actions admin-span-2 admin-modal-actions-sticky">

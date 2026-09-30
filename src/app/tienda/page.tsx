@@ -6,8 +6,8 @@ import { cardPriceCents, filterLabel, groupFacetValues, type FacetGroup } from "
 import { ProductCard } from "@/components/product-card";
 import { StoreFilterDrawer } from "@/components/store-filter-drawer";
 import { StoreSortSelect } from "@/components/store-sort-select";
-import { catalogContext, contextualFacets, productMatches, type FacetCount } from "@/lib/catalog-facets";
-import { getBranches, getCategories, getProducts } from "@/lib/db";
+import { buildCategoryTree, catalogContext, categoryTreePath, contextualFacets, productMatches, type FacetCount } from "@/lib/catalog-facets";
+import { getBranches, getCategories, getProducts, getSubcategories } from "@/lib/db";
 import { formatPrice } from "@/lib/format";
 import { productToSearchable, searchIds } from "@/lib/search";
 import type { Category, Product } from "@/lib/types";
@@ -146,22 +146,31 @@ export async function generateMetadata({ searchParams }: { searchParams: Search 
 export default async function StorePage({ searchParams }: { searchParams: Search }) {
   const filters = await searchParams;
   // Un solo catálogo completo sirve para la búsqueda, las facetas y las sugerencias (antes lo traía getCatalogFacets).
-  const [catalog, allCategories, branches] = await Promise.all([getProducts(), getCategories(), getBranches()]);
+  const [catalog, allCategories, allSubcategories, branches] = await Promise.all([getProducts(), getCategories(), getSubcategories(), getBranches()]);
   const { products, correctedQuery, searchIds: foundIds } = findProducts(filters, catalog, allCategories);
   const context = catalogContext(allCategories, foundIds);
   const facets = contextualFacets(catalog, filters, allCategories, context);
   const selectedCategories = list(filters.category);
   const selectedCategory = selectedCategories[0];
   const currentCategory = allCategories.find((item) => item.slug === selectedCategory);
-  const selectedSubcategory = list(filters.subcategory)[0];
+  const selectedSubcategories = list(filters.subcategory);
+  const selectedSubcategory = selectedSubcategories[0];
+  // Árbol del panel de gestión (principal › interna › subcategorías) con contadores contextuales.
+  const categoryTree = buildCategoryTree(allCategories, allSubcategories, facets, { categories: selectedCategories, subcategories: selectedSubcategories });
+  // Ruta hasta lo elegido: la subcategoría si hay una, si no la categoría.
+  const treePath = selectedSubcategory
+    ? categoryTreePath(categoryTree, (node) => node.kind === "subcategory" && node.slug === selectedSubcategory)
+    : selectedCategory ? categoryTreePath(categoryTree, (node) => node.kind === "category" && node.slug === selectedCategory) : [];
   const subcategoryProduct = selectedSubcategory ? catalog.find((product) => product.subcategorySlug === selectedSubcategory) : undefined;
-  const currentSubcategory = subcategoryProduct ? { slug: subcategoryProduct.subcategorySlug, name: subcategoryProduct.subcategory } : undefined;
-  const subcategoryParent = subcategoryProduct ? { slug: subcategoryProduct.categorySlug, name: subcategoryProduct.category } : undefined;
+  const currentSubcategory = selectedSubcategory
+    ? treePath.at(-1)?.kind === "subcategory" ? treePath.at(-1) : subcategoryProduct ? { slug: subcategoryProduct.subcategorySlug, name: subcategoryProduct.subcategory } : undefined
+    : undefined;
   const query = filters.q?.trim();
   const petTitle = filters.pet === "perro" ? "Productos para perros" : filters.pet === "gato" ? "Productos para gatos" : undefined;
   const title = currentSubcategory?.name ?? currentCategory?.name ?? (query ? `Resultados para “${correctedQuery ?? query}”` : petTitle ?? "Todos los productos");
   const showCorrection = Boolean(query && correctedQuery && !currentSubcategory && !currentCategory);
-  const trailCategory = currentSubcategory ? subcategoryParent : undefined;
+  // Ancestros del título, como links: "Tienda online › Perros › Alimento seco".
+  const trail = treePath.slice(0, -1).filter((node) => node.kind === "category");
 
   // Filtros activos, cada uno con su link para quitarlo.
   const brandGroups = groupFacetValues(withSelected(facets.brands, list(filters.brand)));
@@ -170,7 +179,8 @@ export default async function StorePage({ searchParams }: { searchParams: Search
     .map((group) => ({ ...group, count: group.count + facets.sizeAllCount }));
   const needGroups = groupFacetValues(withSelected(facets.needs, list(filters.need)), filterLabel);
   const categoryName = (slug: string) => allCategories.find((item) => item.slug === slug)?.name ?? filterLabel(slug);
-  const subcategoryName = (slug: string) => catalog.find((product) => product.subcategorySlug === slug)?.subcategory ?? filterLabel(slug);
+  const subcategoryName = (slug: string) => allSubcategories.find((item) => item.slug === slug)?.name
+    ?? catalog.find((product) => product.subcategorySlug === slug)?.subcategory ?? filterLabel(slug);
   const prices = facets.priceRange ?? { min: 0, max: 0 };
   const minPrice = Number(filters.minPrice);
   const maxPrice = Number(filters.maxPrice);
@@ -210,11 +220,12 @@ export default async function StorePage({ searchParams }: { searchParams: Search
       .slice(0, 3)
     : [];
 
-  const selectedCategoryItems = selectedCategories
-    .filter((slug) => !facets.categories.some((item) => item.slug === slug))
-    .map((slug) => ({ slug, name: categoryName(slug), count: 0 }));
+  // Lo elegido que no quedó en el árbol (por ejemplo una categoría borrada) se conserva al aplicar el panel.
+  const inTree = (kind: "category" | "subcategory", slug: string) => categoryTreePath(categoryTree, (node) => node.kind === kind && node.slug === slug).length > 0;
   const drawerFacets = {
-    categories: [...facets.categories, ...selectedCategoryItems],
+    categoryTree,
+    hiddenCategories: selectedCategories.filter((slug) => !inTree("category", slug)),
+    hiddenSubcategories: selectedSubcategories.filter((slug) => !inTree("subcategory", slug)),
     species: facets.species,
     brands: brandGroups,
     lifeStages: stageGroups,
@@ -245,12 +256,12 @@ export default async function StorePage({ searchParams }: { searchParams: Search
             <div className="store-hero-copy">
               <p className="eyebrow store-trail">
                 <Link href="/tienda">Tienda online</Link>
-                {trailCategory && (
-                  <>
+                {trail.map((node) => (
+                  <span className="store-trail-step" key={node.slug}>
                     <ChevronRight aria-hidden="true" size={13} />
-                    <Link href={`/tienda?category=${trailCategory.slug}`}>{trailCategory.name}</Link>
-                  </>
-                )}
+                    <Link href={`/tienda?category=${node.slug}`}>{node.name}</Link>
+                  </span>
+                ))}
               </p>
               <h1 className="display shop-title">{title}</h1>
               {showCorrection && <p className="store-correction">Buscaste “{query}”. Te mostramos resultados para “{correctedQuery}”.</p>}

@@ -159,7 +159,6 @@ export function AdminConsole({
   }).length;
   const pendingOrders = orders.filter((order) => belongsToDashboardBranch(order, selectedBranch.id) && isPendingWebOrder(order));
   const sectionHref = (target: Section) => buildAdminHref(pathname, { section: target, detail: null, order: null, branch: String(selectedBranch.id) });
-  const detailHref = (target: DashboardDetail["type"]) => buildAdminHref(pathname, { section: "resumen", detail: target, order: null, branch: String(selectedBranch.id) });
   const detailCloseHref = buildAdminHref(pathname, { section: "resumen", detail: null, order: null, branch: String(selectedBranch.id) });
   const currentDetailHref = detail ? buildAdminHref(pathname, { section: "resumen", detail: detail.type, order: null, branch: String(selectedBranch.id) }) : detailCloseHref;
   const branchHref = (branchId: number) => buildAdminHref(pathname, { section, detail: null, order: null, branch: String(branchId) });
@@ -292,6 +291,7 @@ export function AdminConsole({
             categories={categories}
             categoryDeletionImpactById={categoryDeletionImpactById}
             openModal={setModal}
+            products={products}
             returnTo={sectionHref("categorias")}
             subcategories={subcategories}
           />
@@ -320,11 +320,9 @@ export function AdminConsole({
         {section === "ventas" && (
           <VentasSection
             branches={branches}
-            detailHref={detailHref}
             onDeleteOrder={requestDeleteOrder}
             onEditOrder={setOrderToEdit}
             orders={orders}
-            pendingCount={pendingOrders.length}
             selectedBranch={selectedBranch}
           />
         )}

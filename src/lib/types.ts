@@ -43,6 +43,8 @@ export type Product = {
   active: boolean;
   color: string;
   imageUrl: string;
+  /** Solo si la categoría del producto está en la papelera: su nombre, para mostrarla en el panel. */
+  deletedCategoryName?: string;
   variants: Variant[];
 };
 

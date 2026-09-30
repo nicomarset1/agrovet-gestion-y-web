@@ -166,7 +166,7 @@ export function WholesaleClientsPanel({
   }, [clientQuery, clients]);
   const wholesaleOrders = orders.filter((order) => /^Mayorista\b/i.test(order.source));
   const pendingAccountOrders = wholesaleOrders.filter((order) => order.paymentMethod === "Cuenta corriente" && order.paidCents < order.totalCents);
-  const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installments} cuotas)` : paymentMethod;
+  const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installments} ${installments === "1" ? "cuota" : "cuotas"})` : paymentMethod;
   const parsedPaidAmount = Math.max(0, Number(paidAmount) || 0);
   const addVariant = (entry: (typeof variants)[number]) => {
     setLines((current) => {
