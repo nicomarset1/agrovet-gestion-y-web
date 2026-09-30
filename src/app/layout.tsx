@@ -5,7 +5,6 @@ import { Header } from "@/components/header";
 import { StoreChrome } from "@/components/store-chrome";
 import { CartProvider } from "@/components/cart-provider";
 import { LiveSync } from "@/components/live-sync";
-import { NavigationProgress } from "@/components/navigation-progress";
 import { ToastProvider } from "@/components/toast-provider";
 import { WhatsappFloat } from "@/components/whatsapp-float";
 import { getSyncVersion } from "@/lib/db";
@@ -95,7 +94,6 @@ export default async function RootLayout({
         <ToastProvider>
           <CartProvider>
             <LiveSync initialVersion={syncVersion} />
-            <NavigationProgress />
             <a className="skip-link" href="#contenido">Saltar al contenido</a>
             <StoreChrome><Header /></StoreChrome>
             <main id="contenido" tabIndex={-1}>{children}</main>
