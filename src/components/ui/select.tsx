@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { portalTargetFor, usePopoverPosition } from "./use-popover-position";
 
@@ -53,6 +53,7 @@ export function Select({
   searchable,
   searchPlaceholder = "Buscar…",
   emptyText = "Sin resultados",
+  icon,
   className,
 }: {
   id?: string;
@@ -70,6 +71,8 @@ export function Select({
   searchable?: boolean;
   searchPlaceholder?: string;
   emptyText?: string;
+  /** Ícono a la izquierda del valor (por ejemplo, el de ordenar). */
+  icon?: ReactNode;
   className?: string;
 }) {
   const listId = useId();
@@ -211,6 +214,7 @@ export function Select({
         role="combobox"
         type="button"
       >
+        {icon ? <span aria-hidden="true" className="ui-trigger-icon">{icon}</span> : null}
         <span className={triggerText ? "ui-trigger-value" : "ui-trigger-placeholder"}>{triggerText || placeholder}</span>
         <ChevronDown aria-hidden="true" className="ui-trigger-chevron" size={17} />
       </button>
