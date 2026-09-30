@@ -1026,3 +1026,357 @@
 .admin-shell > .login {
   margin-block: 0;
 }
+
+/* ===== Dashboard: período, ventas, stock, pedidos y gráficos ===== */
+.admin-shell .admin-dashboard-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.admin-shell .admin-dashboard-scope {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.admin-shell .admin-dashboard-scope strong {
+  color: var(--ink);
+}
+
+.admin-shell .admin-dash-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-shell .admin-dash-card {
+  min-width: 0;
+}
+
+.admin-shell a.admin-dash-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 18px 20px;
+  color: inherit;
+  text-decoration: none;
+  background: linear-gradient(180deg, #fff 0%, #fcf9ff 100%);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+
+.admin-shell a.admin-dash-card:hover {
+  transform: translateY(-2px);
+  border-color: #d9c4f2;
+  box-shadow: var(--shadow-md);
+}
+
+.admin-shell a.admin-dash-card:active {
+  transform: translateY(0) scale(.99);
+}
+
+.admin-shell .admin-dash-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.admin-shell a.admin-dash-card > strong {
+  color: var(--ink);
+  font-size: 26px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-dash-sales > strong {
+  font-size: 30px;
+}
+
+.admin-shell a.admin-dash-card > strong em {
+  color: var(--muted);
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.admin-shell a.admin-dash-card > span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.admin-shell .admin-dash-sales-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-dash-change {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f4f0f8;
+  color: var(--muted) !important;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-dash-change.is-up {
+  background: #e9f6ee;
+  color: #1f7a45 !important;
+}
+
+.admin-shell .admin-dash-change.is-down {
+  background: #fff0ee;
+  color: #a4232b !important;
+}
+
+.admin-shell .admin-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.admin-shell .admin-dash-card-head {
+  margin-bottom: 12px;
+}
+
+.admin-shell .admin-dash-card-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.admin-shell .admin-dash-card-head p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-shell .admin-dash-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed #dccbef;
+  border-radius: var(--radius-sm);
+  background: #fcf9ff;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.admin-shell .admin-dash-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  color: var(--forest);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Barras por día con el monto escrito; los días sin ventas no tienen barra. */
+.admin-shell .admin-day-bars {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-shell .admin-day-bars li {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+}
+
+.admin-shell .admin-day-bars.is-dense li {
+  min-height: 20px;
+  gap: 8px;
+}
+
+.admin-shell .admin-day-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.admin-shell .admin-day-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #f4eefa;
+  overflow: hidden;
+}
+
+.admin-shell .admin-day-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--forest) 0%, #a78bfa 100%);
+  transform-origin: left center;
+}
+
+.admin-shell .admin-day-bars strong {
+  min-width: 78px;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-day-bars strong.is-zero {
+  color: #a898b8;
+  font-weight: 600;
+}
+
+/* Participación (canal, medio de pago, sucursales). */
+.admin-shell .admin-share {
+  display: grid;
+  gap: 16px;
+  align-items: center;
+}
+
+.admin-shell .admin-share.has-donut {
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+.admin-shell .admin-share-donut {
+  width: 120px;
+  border-width: 8px;
+}
+
+.admin-shell .admin-share-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-shell .admin-share-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.admin-shell .admin-share-list li:last-child {
+  border-bottom: 0;
+}
+
+.admin-shell .admin-share-list li.is-current .admin-share-name {
+  font-weight: 800;
+}
+
+.admin-shell .admin-share-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.admin-shell .admin-share-list strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-share-list small {
+  color: var(--muted);
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1120px) {
+  .admin-shell .admin-dash-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .admin-shell .admin-dash-top {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-shell .admin-dash-sales {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell .admin-dashboard-bar .admin-period-toggle {
+    width: 100%;
+  }
+
+  .admin-shell .admin-dashboard-bar .admin-period-toggle .button {
+    flex: 1 1 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-shell .admin-share.has-donut {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .admin-shell .admin-share-donut {
+    width: 96px;
+  }
+
+  .admin-shell .admin-day-bars li {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+  }
+
+  .admin-shell .admin-day-bars strong {
+    min-width: 64px;
+  }
+}
+
+/* Mes: la tarjeta ocupa el ancho y los días van en tres columnas. */
+@media (min-width: 821px) {
+  .admin-shell .admin-dash-days.is-month {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell .admin-dash-days.is-month .admin-day-bars {
+    grid-auto-flow: column;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(var(--day-rows, 10), auto);
+    column-gap: 28px;
+  }
+}
+
+.admin-shell .admin-day-bars.is-dense li {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+}
+
+.admin-shell .admin-day-bars.is-dense .admin-day-label,
+.admin-shell .admin-day-bars.is-dense strong {
+  font-size: 12px;
+}
+
+.admin-shell .admin-day-bars.is-dense strong {
+  min-width: 64px;
+}
+
+/* Donas de participación: anillo simple, sin el borde doble del gráfico viejo. */
+.admin-shell .admin-share-donut {
+  border: 0;
+  box-shadow: none;
+}
+
+.admin-shell .admin-share-donut::after {
+  inset: 26%;
+  box-shadow: none;
+}
