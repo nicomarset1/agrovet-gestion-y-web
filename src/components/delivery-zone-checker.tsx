@@ -95,7 +95,7 @@ export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: {
       <div className="zone-content">
         <p className="eyebrow">Zona de envío</p>
         <Heading className="zone-title">Consultá si llegamos a tu dirección</Heading>
-        <p>Envíos gratis de lunes a sábados según zona, dentro de 3 km de la sucursal de Av. Independencia y Alberti y con compra mínima de $ 50.000.</p>
+        <p>Envíos gratis de lunes a sábados según zona, dentro de 3 km de Alberti 3213 y con compra mínima de $ 50.000.</p>
         <form className="zone-form" onSubmit={checkZone}>
           <input aria-label="Tu dirección en Mar del Plata" autoComplete="street-address" className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tu dirección en Mar del Plata" />
           <button aria-busy={pending} className="mini-button" disabled={pending}>{pending ? <span className="loader-dot" aria-hidden="true" /> : <Search size={15} />} {pending ? "Buscando" : "Verificar"}</button>

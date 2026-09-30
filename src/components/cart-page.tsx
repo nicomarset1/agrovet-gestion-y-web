@@ -159,7 +159,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (fulfillment === "envio" && (!address.trim() || !zone || !zone.deliveryAvailable)) {
-      setMessage({ text: "Para envío gratis necesitamos una dirección dentro de 3 km de la sucursal de Av. Independencia y Alberti.", error: true });
+      setMessage({ text: "Para envío gratis necesitamos una dirección dentro de 3 km de Alberti 3213.", error: true });
       return;
     }
     if (fulfillment === "envio" && belowDeliveryMinimum) {
@@ -403,7 +403,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             {fulfillment === "envio" && (
               <div className="fulfillment-info">
                 <strong>Envío en Mar del Plata</strong>
-                <p>Gratis de lunes a sábados según zona, con compra mínima de {formatPrice(deliveryMinimumCents)} y dentro de 3 km de la sucursal de Av. Independencia y Alberti.</p>
+                <p>Gratis de lunes a sábados según zona, con compra mínima de {formatPrice(deliveryMinimumCents)} y dentro de 3 km de Alberti 3213.</p>
               </div>
             )}
             {unavailable.length > 0 && <p className="notice error">Sin unidades suficientes en este local: {unavailable.map((item) => item.name).join(", ")}.</p>}

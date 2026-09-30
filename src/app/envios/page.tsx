@@ -6,7 +6,7 @@ import { getSpecialPageDescription } from "@/lib/special-page-content";
 export const metadata = infoPageMetadata({
   title: "Envíos",
   path: "/envios",
-  description: "Envíos gratis en Mar del Plata dentro de 3 km de la sucursal de Av. Independencia y Alberti, con compra mínima de $ 50.000. Verificá tu dirección y conocé cómo coordinamos la entrega.",
+  description: "Envíos gratis en Mar del Plata dentro de 3 km de Alberti 3213, con compra mínima de $ 50.000. Verificá tu dirección y conocé cómo coordinamos la entrega.",
 });
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,7 @@ export default async function EnviosPage() {
               <div>
                 <p className="eyebrow">Zona de reparto</p>
                 <h2>Envío gratis</h2>
-                <p>Disponible dentro de 3 km de la sucursal de Av. Independencia y Alberti, con compra mínima desde $ 50.000.</p>
+                <p>Disponible dentro de 3 km de Alberti 3213, con compra mínima desde $ 50.000.</p>
               </div>
             </article>
             <article className="card envios-card">
