@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/format";
 import type { Branch, OrderRecord } from "@/lib/types";
-import { PendingOrderCard, SectionHeader, StatCard, isAwaitingOnlinePayment, isCancelledOrder, isCancelledWebOrder, isCompletedWebOrder, isDeliveryWebOrder, isPendingWebOrder, isPickupWebOrder, isWebOrder, orderHasBranch, periodBounds, toDate } from "@/components/admin/shared";
+import { PendingOrderCard, SectionHeader, StatCard, isReservedWebOrder, isAwaitingOnlinePayment, isCancelledOrder, isCancelledWebOrder, isCompletedWebOrder, isDeliveryWebOrder, isPendingWebOrder, isPickupWebOrder, isWebOrder, orderHasBranch, periodBounds, toDate } from "@/components/admin/shared";
 import type { Period, WebOrderStatus } from "@/components/admin/shared";
 
 const WEB_PERIOD_STORAGE_KEY = "agrovet-web-period";
@@ -41,6 +41,9 @@ export function VentasWebSection({
   const webOrdersPending = webPeriodOrders.filter((order) => isPendingWebOrder(order));
   const webOrdersCompleted = webPeriodBillableOrders.filter((order) => isCompletedWebOrder(order));
   const webOpenOrders = webOrders.filter((order) => isPendingWebOrder(order));
+  // Reservados de todas las fechas (duran como mucho 12 h), del más próximo a vencer al más nuevo.
+  const webReservedOrders = webOrders.filter((order) => isReservedWebOrder(order))
+    .sort((a, b) => (a.reservedUntil ?? a.createdAt).localeCompare(b.reservedUntil ?? b.createdAt));
   const webPickupOrders = webOpenOrders.filter((order) => isPickupWebOrder(order));
   const webDeliveryOrders = webOpenOrders.filter((order) => isDeliveryWebOrder(order));
   const webHistoryOrders = [...webPeriodOrders].filter((order) => {
@@ -116,6 +119,27 @@ export function VentasWebSection({
       <StatCard label="Cerrados" value={String(webOrdersCompleted.length)} note="Retirados o entregados" />
     </div>
     <div className="admin-web-queue-grid">
+      {webReservedOrders.length ? (
+        <section className="card admin-panel admin-span-2 admin-reserved-panel" aria-labelledby="admin-reserved-title">
+          <div className="admin-reserved-head">
+            <h2 id="admin-reserved-title">Reservados (esperando pago)</h2>
+            <span className="admin-reserved-count">{webReservedOrders.length}</span>
+          </div>
+          <p className="description">Pagos con Mercado Pago en curso. El stock ya está descontado mientras el cliente paga; si no paga en 12 h, vuelve solo. Todavía no suman a ingresos.</p>
+          <div className="admin-web-history-list">
+            {webReservedOrders.map((order) => (
+              <PendingOrderCard
+                key={order.id}
+                onCancelOrder={(nextOrder) => onStatusTarget({ order: nextOrder, status: "Cancelado" })}
+                onSelectOrder={onEditOrder}
+                order={order}
+                returnTo={returnTo}
+                showStatusActions
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="card admin-panel">
         <h2>Retiros en sucursal</h2>
         <p className="description">Pedidos web pendientes para retirar. Al cerrar uno, elegí el medio de pago.</p>

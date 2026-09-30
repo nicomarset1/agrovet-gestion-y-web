@@ -2265,3 +2265,49 @@
 .admin-shell .admin-day-bars strong.is-zero {
   color: var(--muted);
 }
+
+/* =====================================================================
+   Ventas web: pedidos reservados de Mercado Pago (nicol-a6).
+   ===================================================================== */
+.admin-shell .admin-reserved-panel {
+  border-color: #f1d9a6;
+  background: linear-gradient(180deg, #fffbf2 0%, #ffffff 60%);
+}
+
+.admin-shell .admin-reserved-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-shell .admin-reserved-head h2 {
+  margin: 0;
+}
+
+.admin-shell .admin-reserved-count {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #fff0cc;
+  color: #8a5200;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-reserved-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff0cc;
+  color: #8a5200;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  vertical-align: middle;
+}

@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot } from "@/lib/db";
+import { reservedStatus } from "@/lib/reservation";
 
 function ascii(value: string) {
   return value
@@ -224,6 +225,8 @@ export async function GET(request: Request) {
   const payment = url.searchParams.get("payment") || "all";
   const orders = snapshot.orders.filter((order) => {
     if (isCancelledOrder(order)) return false;
+    // Reservados de Mercado Pago: todavía no están pagos, no son ventas.
+    if (order.status === reservedStatus) return false;
     const orderMonth = order.createdAt.slice(0, 7);
     if (orderMonth !== month) return false;
     if (branch !== "all" && !orderHasBranch(order, branch)) return false;
