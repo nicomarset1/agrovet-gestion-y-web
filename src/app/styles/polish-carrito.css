@@ -297,32 +297,3 @@
 @media (max-width: 640px) {
   .delivery-zone-card.compact .zone-content .zone-title { font-size: 25px; }
 }
-
-/* ===== Mapa real de la zona de envío (Leaflet + OpenStreetMap) ===== */
-/* El esquema queda debajo como placeholder (mismo alto) y como respaldo si el mapa no carga. */
-.zone-map-schematic { position: absolute; inset: 0; }
-.zone-map-live { position: absolute; inset: 0; opacity: 0; transition: opacity var(--dur-slow) var(--ease-out); }
-.zone-map.is-live .zone-map-live { opacity: 1; }
-.zone-map.is-live .zone-map-schematic { visibility: hidden; }
-.zone-live, .zone-live-map { position: absolute; inset: 0; }
-.zone-live-map { border-radius: inherit; background: #f4ecff; font-family: inherit; z-index: 0; }
-.zone-live-map .leaflet-control-attribution { font-size: 10px; }
-.zone-live-map .leaflet-control-zoom a { color: var(--forest); }
-.zone-live-store { background: transparent; border: 0; }
-.zone-live-store-mark {
-  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; overflow: hidden;
-  background: var(--forest); border: 3px solid white; box-shadow: 0 0 0 5px rgba(91, 15, 115, .18), var(--shadow-md);
-}
-.zone-live-store-mark img { width: 26px; height: 26px; object-fit: contain; }
-.zone-live-address { background: transparent; border: 0; }
-.zone-live-address span {
-  display: block; width: 26px; height: 26px; border-radius: 50%; border: 4px solid white;
-  box-shadow: var(--shadow-md); animation: ui-scale-in var(--dur-slow) var(--ease-spring) both;
-}
-.zone-live-address.inside span { background: #16a34a; }
-.zone-live-address.outside span { background: var(--danger); }
-.zone-live-hint {
-  position: absolute; left: 50%; top: 10px; z-index: 500; transform: translateX(-50%);
-  padding: 6px 12px; border-radius: 999px; background: rgba(31, 21, 21, .72); color: white;
-  font-size: 12px; font-weight: 700; white-space: nowrap; pointer-events: none;
-}
