@@ -17,6 +17,16 @@ export function applyCashDiscount(cents: number) {
   return Math.round(cents * 0.9);
 }
 
+// Cuotas en singular o plural: "1 cuota", "3 cuotas". Es lo que se guarda desde ahora en ventas nuevas.
+export function installmentsLabel(installments: string | number) {
+  return String(installments) === "1" ? "1 cuota" : `${installments} cuotas`;
+}
+
+// Las ventas viejas quedaron guardadas como "(1 cuotas)": se corrige solo al mostrarlas.
+export function fixInstallmentsText(value: string) {
+  return value.replace(/\(1 cuotas\)/gi, "(1 cuota)");
+}
+
 export function initials(value: string) {
   return value
     .split(" ")

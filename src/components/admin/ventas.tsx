@@ -5,7 +5,7 @@
 
 import { ArrowDown, ArrowUp, Download, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { formatPrice } from "@/lib/format";
+import { fixInstallmentsText, formatPrice } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { formatRange, startOfMonth, toIsoDate } from "@/components/ui/date-utils";
@@ -39,7 +39,7 @@ const PAYMENT_FILTERS = [
 ];
 
 function paymentKey(order: OrderRecord) {
-  const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas\))?/i.exec(order.source);
+  const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas?\))?/i.exec(order.source);
   if (match) return match[1].trim().toLowerCase();
   if (order.source.toLowerCase().includes("mayorista")) return "mayorista";
   return order.source.toLowerCase().includes("tienda online") ? "web" : "otro";
@@ -47,9 +47,9 @@ function paymentKey(order: OrderRecord) {
 
 function paymentLabel(order: OrderRecord) {
   const cash = /Caja \/ (.+)$/i.exec(order.source);
-  if (cash) return cash[1].trim();
-  if (/^Mayorista\b/i.test(order.source)) return order.paymentMethod || "Mayorista";
-  return order.paymentMethod || "Tienda online";
+  if (cash) return fixInstallmentsText(cash[1].trim());
+  if (/^Mayorista\b/i.test(order.source)) return fixInstallmentsText(order.paymentMethod || "Mayorista");
+  return fixInstallmentsText(order.paymentMethod || "Tienda online");
 }
 
 function channelOf(order: OrderRecord): Exclude<SalesChannel, "all"> {
@@ -122,7 +122,7 @@ export function VentasSection({
   const averageCents = filtered.length ? Math.round(totalCents / filtered.length) : 0;
   const byPayment = new Map<string, number>();
   for (const order of filtered) {
-    const label = paymentLabel(order).replace(/ \(\d+ cuotas\)$/, "");
+    const label = paymentLabel(order).replace(/ \(\d+ cuotas?\)$/, "");
     byPayment.set(label, (byPayment.get(label) ?? 0) + amountFor(order));
   }
   const paymentBreakdown = [...byPayment.entries()].sort((a, b) => b[1] - a[1]);

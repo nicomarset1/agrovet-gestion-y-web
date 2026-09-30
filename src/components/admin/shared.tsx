@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { formatPrice } from "@/lib/format";
+import { fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { NumberInput } from "@/components/ui/form-controls";
 import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
@@ -425,7 +425,7 @@ export function leafCategories(categories: Category[]) {
 
 // Opciones de medio de pago y cuotas de la Caja (las mismas que acepta closePosSaleAction).
 export const PAYMENT_OPTIONS = ["Efectivo", "Tarjeta", "Transferencia", "QR"].map((value) => ({ value, label: value }));
-export const INSTALLMENT_OPTIONS = ["1", "2", "3", "6", "12"].map((value) => ({ value, label: value === "1" ? "1 cuota" : `${value} cuotas` }));
+export const INSTALLMENT_OPTIONS = ["1", "2", "3", "6", "12"].map((value) => ({ value, label: installmentsLabel(value) }));
 
 export function OrderModal({
   returnTo,
@@ -438,14 +438,15 @@ export function OrderModal({
   onRequestDelete: (order: OrderRecord) => void;
   order: OrderRecord;
 }) {
-  const sourceMatch = /Caja \/ ([^(]+)(?: \((\d+) cuotas\))?/i.exec(order.source);
+  // El medio termina en letra: así el espacio antes de "(3 cuotas)" no queda adentro y las cuotas sí se leen.
+  const sourceMatch = /Caja \/ ([^(]*[^(\s])(?:\s*\((\d+) cuotas?\))?/i.exec(order.source);
   const initialPaymentMethod = sourceMatch?.[1]?.trim() ?? (order.source.toLowerCase().includes("tarjeta") ? "Tarjeta" : "Efectivo");
   const initialInstallments = sourceMatch?.[2] ?? "1";
   const [paymentMethod, setPaymentMethod] = useState(initialPaymentMethod);
   const [installments, setInstallments] = useState(initialInstallments);
   const [itemQuantities, setItemQuantities] = useState(() => order.items.map((item) => String(item.quantity)));
   const sourceValue = isCashOrder(order)
-    ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installments} cuotas)` : ""}`
+    ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments)})` : ""}`
     : order.source;
   const itemTotalCents = order.items.reduce((sum, item, index) => {
     const quantity = Math.max(1, Number(itemQuantities[index]) || item.quantity);
@@ -494,7 +495,7 @@ export function OrderModal({
           <strong>Datos del cliente</strong>
           <span>{customerSummary}</span>
           <small>
-            {order.fulfillment} | {order.source} | {order.paymentMethod || "Sin medio de pago"} | {order.status}
+            {order.fulfillment} | {fixInstallmentsText(order.source)} | {fixInstallmentsText(order.paymentMethod || "Sin medio de pago")} | {order.status}
           </small>
         </div>
         <div className="admin-span-2 admin-order-items">
@@ -683,7 +684,7 @@ export function WebOrderStatusModal({
   returnTo: string;
   status: WebOrderStatus;
 }) {
-  const paymentMatch = /^(Tarjeta)(?: \((\d+) cuotas\))?/i.exec(order.paymentMethod);
+  const paymentMatch = /^(Tarjeta)(?: \((\d+) cuotas?\))?/i.exec(order.paymentMethod);
   const [paymentMethod, setPaymentMethod] = useState(paymentMatch?.[1] ?? (order.paymentMethod || "Efectivo"));
   const [installments, setInstallments] = useState(paymentMatch?.[2] ?? "1");
   const [submitting, setSubmitting] = useState(false);
@@ -691,7 +692,7 @@ export function WebOrderStatusModal({
   const needsRefundRecord = isCancellation && order.paidCents > 0 && /mercado pago/i.test(order.paymentMethod);
   const [refundMethod, setRefundMethod] = useState("");
   const [refundMissing, setRefundMissing] = useState(false);
-  const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installments} cuotas)` : paymentMethod;
+  const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installmentsLabel(installments)})` : paymentMethod;
   return (
     <AdminModal
       dismissible={!submitting}
@@ -774,7 +775,7 @@ export function WebOrderStatusModal({
         )}
         <div className="admin-detail-summary compact admin-span-2">
           <strong>{order.code}</strong>
-          <span>{order.customerName} | {formatPrice(order.totalCents)} | {isCancellation ? order.paymentMethod : paymentMethodValue}</span>
+          <span>{order.customerName} | {formatPrice(order.totalCents)} | {isCancellation ? fixInstallmentsText(order.paymentMethod) : paymentMethodValue}</span>
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light" disabled={submitting} onClick={onClose} type="button">Cancelar</button>
