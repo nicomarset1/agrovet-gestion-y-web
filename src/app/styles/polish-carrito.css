@@ -332,3 +332,6 @@
 @media (max-width: 640px) {
   .delivery-zone-card .zone-result { scroll-margin-bottom: 76px; }
 }
+
+/* Aviso de la reserva de 12 h junto al pago con Mercado Pago. */
+.checkout .checkout-reservation-note { border-color: #e7dcff; background: #faf7ff; color: var(--forest); font-weight: 600; }

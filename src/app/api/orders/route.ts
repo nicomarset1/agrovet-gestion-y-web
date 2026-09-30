@@ -53,6 +53,7 @@ export async function POST(request: Request) {
         const preference = await createMercadoPagoPreference({
           code: order.code,
           totalCents: order.totalCents,
+          reservedUntil: "reservedUntil" in order ? order.reservedUntil : undefined,
           payer: {
             name: result.data.name,
             email: result.data.email,

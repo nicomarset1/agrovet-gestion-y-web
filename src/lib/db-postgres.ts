@@ -11,6 +11,7 @@ import {
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
+import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
@@ -589,8 +590,57 @@ function addInClause(clauses: string[], params: unknown[], expression: string, i
   clauses.push(`${expression} IN (${selected.map((item) => pushParam(params, item)).join(", ")})`);
 }
 
+// Devuelve el stock de un pedido según sus asignaciones por sucursal (o la sucursal del pedido si no tiene).
+async function restoreOrderStock(tx: Db, orderId: number, fallbackBranchId: number) {
+  const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${orderId}` as unknown as Array<{ variantId: number; quantity: number }>;
+  const allocations = await getAllocationBuckets(orderId, tx);
+  for (const item of items) {
+    const buckets = allocations.get(item.variantId);
+    const targets = buckets?.length ? buckets : [{ branchId: fallbackBranchId, quantity: item.quantity }];
+    for (const target of targets) {
+      await tx`UPDATE inventory SET quantity = quantity + ${target.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${item.variantId} AND branch_id = ${target.branchId}`;
+    }
+  }
+}
+
+// Reservas de Mercado Pago vencidas (más de 12 h sin pago): pasan a "Cancelado (reserva vencida)" y
+// devuelven el stock. Idempotente: SKIP LOCKED evita pisarse con un pago que se está acreditando.
+async function releaseExpiredReservationsIn(tx: Db) {
+  const released = await tx`
+    UPDATE orders SET status = ${reservationExpiredStatus}
+    WHERE id IN (
+      SELECT id FROM orders
+      WHERE status = ${reservedStatus} AND deleted_at IS NULL AND paid_cents = 0
+        AND created_at < NOW() - make_interval(hours => ${mercadoPagoReservationHours})
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, branch_id AS "branchId"
+  ` as unknown as Array<{ id: number; branchId: number }>;
+  for (const order of released) await restoreOrderStock(tx, Number(order.id), Number(order.branchId));
+  if (released.length) await bumpSyncVersion(tx);
+  return released.length;
+}
+
+// En lecturas (tienda, ficha, panel) se revisa como mucho una vez por minuto por instancia, y solo
+// escribe si hay algo vencido. createOrder y los pagos la corren siempre dentro de su transacción.
+let lastReservationSweep = 0;
+export async function releaseExpiredReservations(options: { force?: boolean } = {}) {
+  await ensureSchema();
+  if (!options.force && Date.now() - lastReservationSweep < 60_000) return 0;
+  lastReservationSweep = Date.now();
+  const [pending] = await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM orders WHERE status = ${reservedStatus} AND deleted_at IS NULL AND paid_cents = 0
+        AND created_at < NOW() - make_interval(hours => ${mercadoPagoReservationHours})
+    ) AS "any"
+  ` as unknown as { any: boolean }[];
+  if (!pending?.any) return 0;
+  return sql.begin((tx) => releaseExpiredReservationsIn(tx));
+}
+
 export async function getProducts(filters: CatalogFilters = {}) {
   await ensureSchema();
+  await releaseExpiredReservations();
   const clauses: string[] = ["p.archived_at IS NULL", "p.purged_at IS NULL"];
   const params: unknown[] = [];
   if (filters.status === "inactive") {
@@ -652,6 +702,7 @@ export async function getProducts(filters: CatalogFilters = {}) {
 
 export async function getProduct(slug: string) {
   await ensureSchema();
+  await releaseExpiredReservations();
   const rows = await sql.unsafe(`${baseSelect} WHERE p.slug = $1 AND p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL`, [slug] as never[]) as unknown as ProductRow[];
   return rows[0] ? hydrateProduct(rows[0]) : undefined;
 }
@@ -851,7 +902,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     WHERE o.deleted_at IS NULL
     ORDER BY o.created_at DESC, o.id DESC
   ` as unknown as Array<Omit<OrderRecord, "itemCount" | "items" | "createdAt"> & { createdAt: unknown }>;
-  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(order.status)));
+  const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(order.status)));
   if (!visibleOrders.length) return [];
   const items = await sql`
     SELECT oi.order_id AS "orderId", oi.variant_id AS "variantId", p.name AS "productName", p.brand,
@@ -899,6 +950,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     totalCents: Number(order.totalCents),
     paidCents: Number(order.paidCents ?? order.totalCents),
     createdAt: toIso(order.createdAt),
+    ...(order.status === reservedStatus ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}),
     itemCount: itemsByOrder.get(order.id)?.reduce((sum, item) => sum + item.quantity, 0) ?? 0,
     items: itemsByOrder.get(order.id) ?? [],
   }));
@@ -906,6 +958,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
 
 export async function getAdminSnapshot() {
   await ensureSchema();
+  await releaseExpiredReservations();
   const [products, branches, orders, wholesaleClients] = await Promise.all([getProducts({ status: "all" }), getBranches(), mapAdminOrders(), getWholesaleClients()]);
   return { products, branches, orders, wholesaleClients };
 }
@@ -1449,13 +1502,16 @@ export async function createOrder(input: {
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
+    // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
+    await releaseExpiredReservationsIn(tx);
     const deliveryPlan = input.fulfillment === "envio" ? await resolveDeliveryAllocationPlan(input.items, tx) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
     if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new Error("Sucursal inválida.");
     // Solo la venta de Caja (server action con sesión de admin) manda cashSale; la tienda nunca.
     const source = input.cashSale ? input.cashSale.source : "Tienda online";
     const isMercadoPago = !input.cashSale && input.paymentMethod === "mercado_pago";
-    const status = input.cashSale ? "Cerrado" : isMercadoPago ? "Esperando pago" : input.fulfillment === "envio" ? "Pendiente de envío" : "Pendiente de retiro";
+    // Mercado Pago: el stock queda reservado 12 h ("Reservado") hasta que se acredite el pago.
+    const status = input.cashSale ? "Cerrado" : isMercadoPago ? reservedStatus : input.fulfillment === "envio" ? "Pendiente de envío" : "Pendiente de retiro";
     const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
     let totalCents = 0;
     const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
@@ -1478,7 +1534,7 @@ export async function createOrder(input: {
     }
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     let code = "";
-    let order: { id: number } | undefined;
+    let order: { id: number; createdAt: unknown } | undefined;
     for (let attempt = 0; !order; attempt++) {
       code = newOrderCode(attempt);
       try {
@@ -1486,8 +1542,8 @@ export async function createOrder(input: {
         [order] = await tx.savepoint((sp) => sp`
           INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
           VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isMercadoPago ? 0 : totalCents})
-          RETURNING id
-        `) as unknown as { id: number }[];
+          RETURNING id, created_at AS "createdAt"
+        `) as unknown as { id: number; createdAt: unknown }[];
       } catch (error) {
         if (attempt >= 2 || !isOrderCodeConflict(error)) throw error;
       }
@@ -1495,15 +1551,14 @@ export async function createOrder(input: {
     for (const line of lines) {
       await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice})`;
       for (const allocation of line.allocations) {
-        if (!isMercadoPago) {
-          const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
-          if (!result.count) throw new Error("No hay stock suficiente para reservar.");
-        }
+        // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
+        const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
+        if (!result.count) throw new Error("No hay stock suficiente para reservar.");
         await insertOrderAllocation(tx, Number(order.id), line.variantId, allocation.branchId, allocation.quantity);
       }
     }
     await bumpSyncVersion(tx);
-    return { code, totalCents };
+    return { code, totalCents, ...(isMercadoPago ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}) };
   });
 }
 
@@ -1512,10 +1567,11 @@ export type PaymentReconciliation = "paid" | "review" | "missing";
 const paymentReviewStatus = "Pago recibido - revisar";
 const stockRaceError = "No hay stock suficiente para acreditar el pago.";
 
-// Estados de un pedido web de Mercado Pago que todavía espera el cobro (no tomaron stock).
-// "Cancelado (pago no completado)" se incluye para que un pago aprobado después lo reactive normalmente.
+// Pedidos de Mercado Pago sin cobro que NO tienen stock tomado: los "Esperando pago" anteriores a la
+// reserva y los cancelados sin pago (reserva vencida o pago no completado, ya devolvieron el stock).
+// Si después llega un pago aprobado, markOrderPaidByCode los reactiva descontando el stock de nuevo.
 function isAwaitingPaymentStatus(status: string) {
-  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\))$/i.test(status.trim());
+  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(status.trim());
 }
 
 export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): Promise<PaymentReconciliation> {
@@ -1536,15 +1592,30 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
     const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
     const amountMatches = validAmount && amountCents === Number(order.totalCents);
     const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
+    const reserved = !deleted && order.status === reservedStatus;
 
     // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
-    if (!deleted && !awaitingPayment && Number(order.paidCents) >= Number(order.totalCents)) {
+    if (!deleted && !awaitingPayment && !reserved && Number(order.paidCents) >= Number(order.totalCents)) {
       return /revisar/i.test(order.status) ? "review" : "paid";
     }
 
+    // Reserva vigente (aunque ya pasaron las 12 h, si todavía no se liberó): el stock ya está descontado.
+    if (reserved && amountMatches) {
+      await tx`
+        UPDATE orders
+        SET paid_cents = total_cents,
+            payment_method = ${method},
+            status = CASE WHEN fulfillment = 'envio' THEN 'Pendiente de envío' ELSE 'Pendiente de retiro' END
+        WHERE id = ${order.id}
+      `;
+      await bumpSyncVersion(tx);
+      return "paid";
+    }
+
     // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
-    // queda visible en el panel para revisar, con lo realmente cobrado y sin mover stock.
+    // queda visible en el panel para revisar, con lo realmente cobrado y sin stock tomado.
     if (!awaitingPayment || !amountMatches) {
+      if (reserved) await restoreOrderStock(tx, order.id, order.branchId);
       await tx`
         UPDATE orders
         SET paid_cents = ${validAmount ? amountCents : 0}, payment_method = ${method}, status = ${paymentReviewStatus}, deleted_at = NULL
@@ -1615,32 +1686,46 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
   });
 }
 
-// Pago de Mercado Pago rechazado, cancelado o vencido: el pedido que seguía esperando el cobro se marca cancelado.
-// No mueve stock (nunca lo tomó) y, si después llega un pago aprobado, markOrderPaidByCode lo reactiva.
+// Pago de Mercado Pago que no se va a completar (cancelado o vencido en MP, o el cliente volvió al sitio
+// sin pagar): el pedido pasa a "Cancelado (pago no completado)" y, si tenía reserva, devuelve el stock.
+// Si después llega un pago aprobado, markOrderPaidByCode lo reactiva.
 export async function markOrderPaymentFailedByCode(code: string) {
   await ensureSchema();
   return sql.begin(async (tx) => {
-    const result = await tx`
-      UPDATE orders
-      SET status = 'Cancelado (pago no completado)'
-      WHERE code = ${code} AND deleted_at IS NULL AND paid_cents = 0 AND status IN ('Esperando pago', 'Pendiente de pago')
-    `;
-    if (result.count) await bumpSyncVersion(tx);
-    return result.count > 0;
+    const [order] = await tx`
+      SELECT id, branch_id AS "branchId", status FROM orders
+      WHERE code = ${code} AND deleted_at IS NULL AND paid_cents = 0 AND status IN (${reservedStatus}, 'Esperando pago', 'Pendiente de pago')
+      FOR UPDATE
+    ` as unknown as { id: number; branchId: number; status: string }[];
+    if (!order) return false;
+    if (order.status === reservedStatus) await restoreOrderStock(tx, order.id, order.branchId);
+    await tx`UPDATE orders SET status = ${paymentFailedStatus} WHERE id = ${order.id}`;
+    await bumpSyncVersion(tx);
+    return true;
   });
 }
 
-// Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia).
-// Solo aplica si sigue esperando el pago y sin cobro: esos pedidos nunca tomaron stock.
+// Solo lectura: hasta cuándo sigue reservado un pedido (para el mensaje de pago pendiente).
+export async function getOrderReservation(code: string) {
+  await ensureSchema();
+  const [order] = await sql`SELECT status, created_at AS "createdAt" FROM orders WHERE code = ${code} AND deleted_at IS NULL` as unknown as { status: string; createdAt: unknown }[];
+  return order?.status === reservedStatus ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : null;
+}
+
+// Manda a la papelera un pedido de Mercado Pago que no llegó a abrir el checkout (falló la preferencia)
+// y devuelve el stock que había reservado. Solo aplica si sigue sin cobro.
 export async function discardUnpaidOrder(code: string) {
   await ensureSchema();
   await sql.begin(async (tx) => {
-    const result = await tx`
-      UPDATE orders
-      SET deleted_at = CURRENT_TIMESTAMP
-      WHERE code = ${code} AND deleted_at IS NULL AND paid_cents = 0 AND status = 'Esperando pago'
-    `;
-    if (result.count) await bumpSyncVersion(tx);
+    const [order] = await tx`
+      SELECT id, branch_id AS "branchId", status FROM orders
+      WHERE code = ${code} AND deleted_at IS NULL AND paid_cents = 0 AND status IN (${reservedStatus}, 'Esperando pago')
+      FOR UPDATE
+    ` as unknown as { id: number; branchId: number; status: string }[];
+    if (!order) return;
+    if (order.status === reservedStatus) await restoreOrderStock(tx, order.id, order.branchId);
+    await tx`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ${order.id}`;
+    await bumpSyncVersion(tx);
   });
 }
 

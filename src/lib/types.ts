@@ -181,6 +181,8 @@ export type OrderRecord = {
   paymentMethod: string;
   paidCents: number;
   createdAt: string;
+  // Solo en pedidos "Reservado" (Mercado Pago con stock reservado): cuándo vence la reserva (ISO 8601).
+  reservedUntil?: string;
   itemCount: number;
   items: OrderItemRecord[];
 };
