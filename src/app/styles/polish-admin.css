@@ -1987,11 +1987,6 @@
   line-height: 1.2;
 }
 
-.admin-shell .ui-select-trigger {
-  min-height: 38px;
-  font-size: 14px;
-}
-
 @media (min-width: 1121px) {
   .admin-shell {
     padding: 0;
@@ -2264,6 +2259,35 @@
 /* Días sin ventas: gris con contraste suficiente (antes 2,67:1). */
 .admin-shell .admin-day-bars strong.is-zero {
   color: var(--muted);
+}
+
+/* "Elegir fechas" dentro del selector de período del dashboard: mismo tamaño que los botones. */
+.admin-shell .admin-dashboard-period .admin-dashboard-range {
+  width: auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border-color: var(--line);
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--forest);
+}
+
+.admin-shell .admin-dashboard-period .admin-dashboard-range.is-active {
+  border-color: #e9dfff;
+  background: #f4ecff;
+}
+
+@media (max-width: 820px) {
+  .admin-shell .admin-dashboard-period {
+    flex-wrap: wrap;
+  }
+
+  .admin-shell .admin-dashboard-period .admin-dashboard-range {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
 }
 
 /* =====================================================================

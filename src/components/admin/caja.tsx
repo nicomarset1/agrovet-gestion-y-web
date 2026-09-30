@@ -6,10 +6,13 @@ import { useRouter } from "next/navigation";
 import { Grid2x2, PackagePlus, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatPrice } from "@/lib/format";
+import { Select } from "@/components/ui/select";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { formatRange } from "@/components/ui/date-utils";
 import type { Branch, OrderRecord, Product } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import { closePosSaleAction } from "@/app/gestion-agrovet/actions";
-import { SectionHeader, dateKey, formatAdminDateTime, isCancelledOrder, isCashOrder, toDate } from "@/components/admin/shared";
+import { INSTALLMENT_OPTIONS, PAYMENT_OPTIONS, SectionHeader, dateKey, formatAdminDateTime, isCancelledOrder, isCashOrder, toDate } from "@/components/admin/shared";
 
 function PointOfSalePanel({
   branch,
@@ -44,7 +47,17 @@ function PointOfSalePanel({
     priceCents: variant.priceCents,
     stock: variant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0,
   }))), [branch.id, products]);
-  const todaySales = useMemo(() => orders.filter((order) => !isCancelledOrder(order) && isCashOrder(order) && order.branchId === branch.id && dateKey(toDate(order.createdAt)) === dateKey(new Date())), [branch.id, orders]);
+  // Ventas del día por defecto; se puede elegir otro día o un rango.
+  const todayKey = dateKey(new Date());
+  const [salesRange, setSalesRange] = useState<{ from: string; to: string } | null>(null);
+  const salesFrom = salesRange?.from ?? todayKey;
+  const salesTo = salesRange?.to ?? todayKey;
+  const isTodayRange = salesFrom === todayKey && salesTo === todayKey;
+  const todaySales = useMemo(() => orders.filter((order) => {
+    if (isCancelledOrder(order) || !isCashOrder(order) || order.branchId !== branch.id) return false;
+    const key = dateKey(toDate(order.createdAt));
+    return key >= salesFrom && key <= salesTo;
+  }), [branch.id, orders, salesFrom, salesTo]);
   const totalCents = cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
   const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0);
   function pushVariant(rawValue: string) {
@@ -139,24 +152,13 @@ function PointOfSalePanel({
         </div>
         <div className="admin-point-inline">
           <label>
-            <span>Medio de pago</span>
-            <select className="field" onChange={(event) => setPaymentMethod(event.target.value)} value={paymentMethod}>
-              <option>Efectivo</option>
-              <option>Tarjeta</option>
-              <option>Transferencia</option>
-              <option>QR</option>
-            </select>
+            <span id="caja-medio-de-pago">Medio de pago</span>
+            <Select ariaLabelledBy="caja-medio-de-pago" onChange={setPaymentMethod} options={PAYMENT_OPTIONS} value={paymentMethod} />
           </label>
           {paymentMethod === "Tarjeta" ? (
             <label>
-              <span>Cuotas</span>
-              <select className="field" onChange={(event) => setInstallments(event.target.value)} value={installments}>
-                <option value="1">1 cuota</option>
-                <option value="2">2 cuotas</option>
-                <option value="3">3 cuotas</option>
-                <option value="6">6 cuotas</option>
-                <option value="12">12 cuotas</option>
-              </select>
+              <span id="caja-cuotas">Cuotas</span>
+              <Select ariaLabelledBy="caja-cuotas" onChange={setInstallments} options={INSTALLMENT_OPTIONS} value={installments} />
             </label>
           ) : null}
         </div>
@@ -199,8 +201,18 @@ function PointOfSalePanel({
           <button className="button button-light" onClick={() => setShowDaySales((current) => !current)} type="button">
             {showDaySales ? "Ocultar ventas del día" : "Ver ventas del día"}
           </button>
-          <small>{todaySales.length} ventas hoy</small>
+          <small>{todaySales.length} {todaySales.length === 1 ? "venta" : "ventas"} {isTodayRange ? "hoy" : formatRange(salesFrom, salesTo)}</small>
         </div>
+        {showDaySales ? (
+          <DateRangePicker
+            ariaLabel="Día o rango de ventas de caja"
+            className="admin-caja-range"
+            from={salesFrom}
+            max={todayKey}
+            onChange={(from, to) => setSalesRange(from && to ? { from, to } : null)}
+            to={salesTo}
+          />
+        ) : null}
         {showDaySales ? (
           <div className="admin-sale-list admin-sale-list-compact">
             {todaySales.length ? todaySales.map((order) => (
