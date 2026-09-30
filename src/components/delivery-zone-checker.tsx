@@ -3,10 +3,12 @@
 import { CircleAlert, MapPin, MapPinCheck, MapPinX, Search } from "lucide-react";
 import type { CSSProperties, FormEvent } from "react";
 import { useMemo, useState } from "react";
+import { deliveryOrigin } from "@/lib/delivery-zone";
+import { DeliveryZoneMap } from "./delivery-zone-map";
 
 type Zone = { distanceKm: number; deliveryAvailable: boolean; lat?: number; lon?: number; error?: string };
 
-const origin = { lat: -38.0033, lon: -57.5596 };
+const origin = deliveryOrigin;
 
 function toBearingDegrees(lat: number, lon: number) {
   const startLat = origin.lat * Math.PI / 180;
@@ -77,11 +79,19 @@ export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: {
 
   return (
     <div className={`delivery-zone-card card${variant === "compact" ? " compact" : ""}`}>
-      {variant === "default" ? <div className="zone-map" aria-label="Zona de envío gratis" role="img">
-        <span className="zone-circle" />
-        <span className="zone-store"><MapPin size={18} /></span>
-        {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} key={`${zone.lat}-${zone.lon}`} style={markerStyle} />}
-      </div> : null}
+      {variant === "default" ? (
+        <DeliveryZoneMap
+          label="Zona de envío gratis: 3 km alrededor de Av. Independencia y Alberti"
+          point={zone && !zone.error && typeof zone.lat === "number" && typeof zone.lon === "number" ? { lat: zone.lat, lon: zone.lon, inside: zone.deliveryAvailable } : null}
+          schematic={(
+            <>
+              <span className="zone-circle" />
+              <span className="zone-store"><MapPin size={18} /></span>
+              {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} key={`${zone.lat}-${zone.lon}`} style={markerStyle} />}
+            </>
+          )}
+        />
+      ) : null}
       <div className="zone-content">
         <p className="eyebrow">Zona de envío</p>
         <Heading className="zone-title">Consultá si llegamos a tu dirección</Heading>
