@@ -1120,10 +1120,16 @@
   color: var(--ink);
 }
 
+/* Misma grilla que las tarjetas de abajo: Ventas ocupa la mitad (2 de 4 columnas) y
+   Stock + Pedidos la otra mitad, así los bordes de arriba y de abajo quedan alineados. */
 .admin-shell .admin-dash-top {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.admin-shell .admin-dash-top > .admin-dash-sales {
+  grid-column: span 2;
 }
 
 .admin-shell .admin-dash-card {
@@ -1213,7 +1219,24 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
+}
+
+/* Tarjetas de una misma fila con igual alto: el vacío o el link quedan abajo de todo. */
+.admin-shell .admin-dash-grid > .admin-dash-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-shell .admin-dash-grid > .admin-dash-card > .admin-dash-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+}
+
+.admin-shell .admin-dash-grid > .admin-dash-card > .admin-dash-link {
+  margin-top: auto;
+  padding-top: 12px;
 }
 
 .admin-shell .admin-dash-card-head {
@@ -1380,12 +1403,20 @@
   }
 }
 
+/* Mes: "Ventas por día" ocupa toda la fila y quedan 3 tarjetas; la última va a lo ancho
+   para que no quede un hueco al lado. */
+@media (min-width: 1121px) {
+  .admin-shell .admin-dash-days.is-month ~ .admin-dash-card:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 820px) {
   .admin-shell .admin-dash-top {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .admin-shell .admin-dash-sales {
+  .admin-shell .admin-dash-top > .admin-dash-sales {
     grid-column: 1 / -1;
   }
 
