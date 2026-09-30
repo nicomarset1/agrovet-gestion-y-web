@@ -1,3 +1,5 @@
+import type { TrashImpact } from "./trash-impact";
+
 export type Branch = {
   id: number;
   slug: string;
@@ -59,7 +61,7 @@ export type Category = {
   parentCategoryName: string | null;
 };
 
-export type TrashItem =
+export type TrashItem = (
   | {
       type: "order";
       id: number;
@@ -111,7 +113,10 @@ export type TrashItem =
       deletedAt: string;
       status: string;
       source: string;
-    };
+    }) & {
+  /** Qué pasa al restaurarlo (y, en categorías y subcategorías, al purgarlo). Solo lectura. */
+  impact?: TrashImpact;
+};
 
 export type CatalogFilters = {
   q?: string;
