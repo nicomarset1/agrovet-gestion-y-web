@@ -5,6 +5,11 @@ import { siteUrl } from "@/lib/site";
 // Páginas informativas públicas. /carrito, el panel de gestión y /api quedan afuera a propósito.
 const infoPages = ["/envios", "/contacto", "/preguntas-frecuentes", "/promociones-bancarias", "/servicios"];
 
+// Se arma al pedirlo y no al compilar: estático, el deploy dependía de la base (falló el 30/09 con Neon
+// sin cuota) y la lista de productos quedaba congelada hasta el próximo deploy. Lo piden solo los
+// buscadores, así que no suma carga.
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // getSearchIndex solo devuelve datos de texto (sin fotos) de los productos activos, no archivados ni purgados.
   const [products, facets] = await Promise.all([getSearchIndex(), getCatalogFacets()]);
