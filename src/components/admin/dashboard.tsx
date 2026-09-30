@@ -7,6 +7,8 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { formatPrice } from "@/lib/format";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { formatRange, parseIsoDate, toIsoDate } from "@/components/ui/date-utils";
 import type { Branch, OrderRecord, Product } from "@/lib/types";
 import { AdminModal, CountUp, PendingOrderCard, SectionHeader, buildAdminHref, dateKey, formatAdminDateTime, formatDayLabel, getOrderBranchRevenueCents, isCancelledOrder, isCashOrder, isPendingWebOrder, isWholesaleOrder, monthKey, startOfDay, startOfMonth, toDate, weekKey } from "@/components/admin/shared";
 import type { DashboardDetail, WebOrderStatus } from "@/components/admin/shared";
@@ -325,7 +327,8 @@ export function DashboardDetailModal({
   );
 }
 
-type DashboardPeriod = "today" | "7d" | "month";
+type DashboardPeriod = "today" | "7d" | "month" | "custom";
+type DashboardCustomRange = { from: string; to: string };
 
 const DASHBOARD_PERIOD_STORAGE_KEY = "agrovet-dashboard-period";
 
@@ -344,8 +347,24 @@ function addDays(value: Date, days: number) {
 }
 
 // Período actual y el anterior equivalente, en hora local (igual que el resto del panel).
-function dashboardRanges(period: DashboardPeriod, now: Date) {
+function dashboardRanges(period: DashboardPeriod, now: Date, custom: DashboardCustomRange | null) {
   const today = startOfDay(now);
+  const customStart = custom ? parseIsoDate(custom.from) : null;
+  const customEnd = custom ? parseIsoDate(custom.to) : null;
+  if (period === "custom" && custom && customStart && customEnd) {
+    // Rango elegido: el anterior es un tramo del mismo largo que termina justo antes.
+    const start = startOfDay(customStart);
+    const end = addDays(startOfDay(customEnd), 1);
+    const length = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+    const label = formatRange(custom.from, custom.to);
+    return {
+      current: { start, end },
+      previous: { start: addDays(start, -length), end: start },
+      compareLabel: length === 1 ? "vs el día anterior" : `vs los ${length} días anteriores`,
+      previousName: length === 1 ? "El día anterior" : `Los ${length} días anteriores`,
+      periodLabel: label,
+    };
+  }
   if (period === "today") {
     return {
       current: { start: today, end: addDays(today, 1) },
@@ -472,12 +491,22 @@ function DashboardOverview({
   pendingCount: number;
 }) {
   const [period, setPeriod] = useState<DashboardPeriod>("today");
+  const [customRange, setCustomRange] = useState<DashboardCustomRange | null>(null);
   const [periodChanges, setPeriodChanges] = useState(0);
   const periodStorageReady = useRef(false);
   const choosePeriod = (next: DashboardPeriod) => {
-    if (next === period) return;
+    if (next === period && next !== "custom") return;
     setPeriod(next);
     setPeriodChanges((count) => count + 1);
+  };
+  const chooseCustomRange = (from: string, to: string) => {
+    if (!from || !to) {
+      setCustomRange(null);
+      choosePeriod("today");
+      return;
+    }
+    setCustomRange({ from, to });
+    choosePeriod("custom");
   };
   const animateKey = `${period}:${periodChanges}`;
   useEffect(() => {
@@ -493,7 +522,7 @@ function DashboardOverview({
     });
   }, []);
   useEffect(() => {
-    if (!periodStorageReady.current) return;
+    if (!periodStorageReady.current || period === "custom") return;
     try {
       window.localStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, period);
     } catch {
@@ -507,8 +536,9 @@ function DashboardOverview({
     order: null,
     section: "resumen",
   });
-  const ranges = dashboardRanges(period, new Date());
-  const periodName = DASHBOARD_PERIODS.find((item) => item.id === period)?.label ?? "Hoy";
+  const ranges = dashboardRanges(period, new Date(), customRange);
+  const isCustom = period === "custom" && customRange !== null;
+  const periodName = isCustom ? ranges.periodLabel : DASHBOARD_PERIODS.find((item) => item.id === period)?.label ?? "Hoy";
 
   // Pedidos que suman dinero a la sucursal activa (sin cancelados ni pagos online pendientes).
   const salesIn = (range: { start: Date; end: Date }, branchId: number) => orders
@@ -522,7 +552,7 @@ function DashboardOverview({
   const change = previousCents > 0 ? Math.round(((totalCents - previousCents) / previousCents) * 100) : null;
 
   const days = (() => {
-    const first = period === "month" ? ranges.current.start : addDays(startOfDay(new Date()), -6);
+    const first = period === "month" || isCustom ? ranges.current.start : addDays(startOfDay(new Date()), -6);
     const list: { key: string; label: string; cents: number }[] = [];
     for (let day = new Date(first); day < ranges.current.end; day = addDays(day, 1)) {
       list.push({ key: dateKey(day), label: formatDayLabel(day), cents: 0 });
@@ -552,7 +582,9 @@ function DashboardOverview({
     cents: salesIn(ranges.current, branch.id).reduce((sum, entry) => sum + entry.cents, 0),
   }));
   const branchTotal = branchRows.reduce((sum, row) => sum + row.cents, 0);
-  const emptyText = period === "today" ? "Todavía no hay ventas hoy." : period === "7d" ? "No hubo ventas en los últimos 7 días." : "Todavía no hay ventas este mes.";
+  const emptyText = isCustom
+    ? "No hubo ventas entre esas fechas."
+    : period === "today" ? "Todavía no hay ventas hoy." : period === "7d" ? "No hubo ventas en los últimos 7 días." : "Todavía no hay ventas este mes.";
 
   return (
     <>
@@ -569,6 +601,15 @@ function DashboardOverview({
               {item.label}
             </button>
           ))}
+          <DateRangePicker
+            ariaLabel="Elegir fechas del dashboard"
+            className={`admin-dashboard-range${isCustom ? " is-active" : ""}`}
+            from={isCustom ? customRange.from : ""}
+            max={toIsoDate(new Date())}
+            onChange={chooseCustomRange}
+            placeholder="Elegir fechas"
+            to={isCustom ? customRange.to : ""}
+          />
         </div>
         <p className="admin-dashboard-scope">Sucursal: <strong>{selectedBranch.name}</strong> · Período: <strong>{periodName}</strong></p>
       </div>
@@ -599,10 +640,10 @@ function DashboardOverview({
       </div>
 
       <div className={`admin-dash-grid${periodChanges ? " is-period-swap" : ""}`} key={`grid-${animateKey}`}>
-        <section className={`card admin-panel admin-dash-card admin-dash-days${period === "month" ? " is-month" : ""}`}>
+        <section className={`card admin-panel admin-dash-card admin-dash-days${days.length > 10 ? " is-month" : ""}`}>
           <header className="admin-dash-card-head">
             <h2>Ventas por día</h2>
-            <p>{period === "month" ? "Días de este mes" : "Últimos 7 días"} · {selectedBranch.name}</p>
+            <p>{isCustom ? ranges.periodLabel : period === "month" ? "Días de este mes" : "Últimos 7 días"} · {selectedBranch.name}</p>
           </header>
           <ul className={`admin-day-bars${days.length > 10 ? " is-dense" : ""}`} style={{ "--day-rows": Math.ceil(days.length / 3) } as CSSProperties}>
             {days.map((day) => (
