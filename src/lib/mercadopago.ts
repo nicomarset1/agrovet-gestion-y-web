@@ -1,8 +1,12 @@
 import "server-only";
 
+import { excludeCashTickets, mercadoPagoDate } from "./reservation";
+
 type PreferenceInput = {
   code: string;
   totalCents: number;
+  // Vencimiento de la reserva de stock: el link de pago (y un ticket, si se permitieran) vence a esa hora.
+  reservedUntil?: string;
   payer: {
     name: string;
     email: string;
@@ -61,6 +65,20 @@ export async function createMercadoPagoPreference(input: PreferenceInput) {
     },
     external_reference: input.code,
     statement_descriptor: "AGROVET MDP",
+    ...(input.reservedUntil ? {
+      expires: true,
+      expiration_date_from: mercadoPagoDate(new Date()),
+      expiration_date_to: mercadoPagoDate(new Date(input.reservedUntil)),
+      date_of_expiration: mercadoPagoDate(new Date(input.reservedUntil)),
+    } : {}),
+    // Pagos en efectivo diferidos (tickets como Rapipago y Pago Fácil, y cajeros): pueden acreditarse después
+    // de que vence la reserva. Decisión del negocio: el efectivo se paga en la sucursal.
+    ...(excludeCashTickets ? {
+      payment_methods: {
+        excluded_payment_types: [{ id: "ticket" }, { id: "atm" }],
+        excluded_payment_methods: [{ id: "rapipago" }, { id: "pagofacil" }],
+      },
+    } : {}),
     metadata: {
       order_code: input.code,
     },

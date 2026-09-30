@@ -2,11 +2,13 @@
 
 import { CircleAlert, MapPin, MapPinCheck, MapPinX, Search } from "lucide-react";
 import type { CSSProperties, FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { deliveryOrigin } from "@/lib/delivery-zone";
+import { DeliveryZoneMap } from "./delivery-zone-map";
 
 type Zone = { distanceKm: number; deliveryAvailable: boolean; lat?: number; lon?: number; error?: string };
 
-const origin = { lat: -38.0033, lon: -57.5596 };
+const origin = deliveryOrigin;
 
 function toBearingDegrees(lat: number, lon: number) {
   const startLat = origin.lat * Math.PI / 180;
@@ -27,6 +29,12 @@ export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: {
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<Zone | null>(null);
   const [pending, setPending] = useState(false);
+  // El resultado se trae a la vista con aire abajo (scroll-margin-bottom) para que no lo tape el botón flotante de WhatsApp.
+  const revealResult = useCallback((node: HTMLParagraphElement | null) => {
+    if (!node) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    node.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }, []);
   const markerStyle = useMemo<CSSProperties | undefined>(() => {
     if (!zone || zone.error || typeof zone.lat !== "number" || typeof zone.lon !== "number") return undefined;
     const bearing = toBearingDegrees(zone.lat, zone.lon);
@@ -77,22 +85,30 @@ export function DeliveryZoneChecker({ variant = "default", headingLevel = 3 }: {
 
   return (
     <div className={`delivery-zone-card card${variant === "compact" ? " compact" : ""}`}>
-      {variant === "default" ? <div className="zone-map" aria-label="Zona de envío gratis" role="img">
-        <span className="zone-circle" />
-        <span className="zone-store"><MapPin size={18} /></span>
-        {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} key={`${zone.lat}-${zone.lon}`} style={markerStyle} />}
-      </div> : null}
+      {variant === "default" ? (
+        <DeliveryZoneMap
+          label="Zona de envío gratis: 3 km alrededor de Av. Independencia y Alberti"
+          point={zone && !zone.error && typeof zone.lat === "number" && typeof zone.lon === "number" ? { lat: zone.lat, lon: zone.lon, inside: zone.deliveryAvailable } : null}
+          schematic={(
+            <>
+              <span className="zone-circle" />
+              <span className="zone-store"><MapPin size={18} /></span>
+              {zone && !zone.error && <span className={`zone-address ${zone.deliveryAvailable ? "inside" : "outside"}`} key={`${zone.lat}-${zone.lon}`} style={markerStyle} />}
+            </>
+          )}
+        />
+      ) : null}
       <div className="zone-content">
         <p className="eyebrow">Zona de envío</p>
         <Heading className="zone-title">Consultá si llegamos a tu dirección</Heading>
-        <p>Envíos gratis de lunes a sábados según zona, dentro de 3 km de Alberti 3213 y con compra mínima de $ 50.000.</p>
+        <p>Envíos gratis de lunes a sábados según zona, dentro de 3 km de la sucursal de Av. Independencia y Alberti y con compra mínima de $ 50.000.</p>
         <form className="zone-form" onSubmit={checkZone}>
           <input aria-label="Tu dirección en Mar del Plata" autoComplete="street-address" className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tu dirección en Mar del Plata" />
           <button aria-busy={pending} className="mini-button" disabled={pending}>{pending ? <span className="loader-dot" aria-hidden="true" /> : <Search size={15} />} {pending ? "Buscando" : "Verificar"}</button>
         </form>
-        {zone?.error && <p className="notice error zone-result" role="alert"><CircleAlert size={17} aria-hidden="true" /><span>{zone.error}</span></p>}
+        {zone?.error && <p className="notice error zone-result" key={`error-${zone.error}`} ref={revealResult} role="alert"><CircleAlert size={17} aria-hidden="true" /><span>{zone.error}</span></p>}
         {zone && !zone.error && (
-          <p className={`notice zone-result ${zone.deliveryAvailable ? "is-inside" : "error"}`} role="status">
+          <p className={`notice zone-result ${zone.deliveryAvailable ? "is-inside" : "error"}`} key={`ok-${zone.lat}-${zone.lon}`} ref={revealResult} role="status">
             {zone.deliveryAvailable ? <MapPinCheck size={17} aria-hidden="true" /> : <MapPinX size={17} aria-hidden="true" />}
             <span>{zone.deliveryAvailable ? "Tu dirección está dentro de la zona de envío gratis." : "Tu dirección queda fuera de la zona de envío gratis."} Distancia estimada: {zone.distanceKm} km.</span>
           </p>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Lock, MessageCircle, Minus, PawPrint, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyCashDiscount, deliveryMinimumCents, formatPrice } from "@/lib/format";
+import { formatReservationTime, mercadoPagoReservationHours } from "@/lib/reservation";
 import type { Branch } from "@/lib/types";
 import { cartItemStockLimit, useCart } from "./cart-provider";
 
@@ -96,14 +97,18 @@ export function CartPage({ branches }: { branches: Branch[] }) {
         });
       } else if (payment === "pending") {
         clear({ silent: true });
+        const until = formatReservationTime(params.get("until") ?? "");
+        const reservation = until
+          ? ` Reservamos tu pedido hasta las ${until}: si el pago no se completa en ese plazo, se libera el stock.`
+          : ` Reservamos tu pedido por ${mercadoPagoReservationHours} horas: si el pago no se completa en ese plazo, se libera el stock.`;
         setMessage({
           code: order,
           final: true,
           finalStatus: "pending",
           title: "Pedido recibido",
-          text: order
+          text: (order
             ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
-            : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.",
+            : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.") + reservation,
         });
       } else if (payment === "review") {
         clear({ silent: true });
@@ -159,7 +164,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (fulfillment === "envio" && (!address.trim() || !zone || !zone.deliveryAvailable)) {
-      setMessage({ text: "Para envío gratis necesitamos una dirección dentro de 3 km de Alberti 3213.", error: true });
+      setMessage({ text: "Para envío gratis necesitamos una dirección dentro de 3 km de la sucursal de Av. Independencia y Alberti.", error: true });
       return;
     }
     if (fulfillment === "envio" && belowDeliveryMinimum) {
@@ -403,7 +408,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
             {fulfillment === "envio" && (
               <div className="fulfillment-info">
                 <strong>Envío en Mar del Plata</strong>
-                <p>Gratis de lunes a sábados según zona, con compra mínima de {formatPrice(deliveryMinimumCents)} y dentro de 3 km de Alberti 3213.</p>
+                <p>Gratis de lunes a sábados según zona, con compra mínima de {formatPrice(deliveryMinimumCents)} y dentro de 3 km de la sucursal de Av. Independencia y Alberti.</p>
               </div>
             )}
             {unavailable.length > 0 && <p className="notice error">Sin unidades suficientes en este local: {unavailable.map((item) => item.name).join(", ")}.</p>}
@@ -413,6 +418,9 @@ export function CartPage({ branches }: { branches: Branch[] }) {
               {pending ? <span className="loader-dot" aria-hidden="true" /> : effectivePaymentMethod === "mercado_pago" ? <Lock size={16} /> : <Check size={17} />}
               {pending ? "Procesando..." : effectivePaymentMethod === "mercado_pago" ? "Pagar con Mercado Pago" : "Reservar pedido"}
             </button>
+            {effectivePaymentMethod === "mercado_pago" ? (
+              <p className="notice checkout-reservation-note">Reservamos tu pedido por {mercadoPagoReservationHours} horas. Si no se completa el pago en ese plazo, se libera el stock.</p>
+            ) : null}
             <Link className="button button-light" href="/tienda">Seguir comprando</Link>
             <p className="notice checkout-footnote">Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
           </form>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { markOrderPaidByCode } from "@/lib/db";
+import { getOrderReservation, markOrderPaidByCode, markOrderPaymentFailedByCode } from "@/lib/db";
 import { getMercadoPagoPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
 
 function cartUrl(request: Request, params: Record<string, string>) {
@@ -18,6 +18,8 @@ export async function GET(request: Request) {
   // Si el cliente vuelve con "Volver al sitio" sin pagar, Mercado Pago manda payment_id=null (texto).
   // Cualquier id vacío o no numérico se trata como abandono: el carrito queda intacto.
   if (!/^\d+$/.test(paymentId)) {
+    // Vuelve al carrito para reintentar: se libera la reserva de este intento, así no reserva dos veces.
+    if (returnedOrder) await markOrderPaymentFailedByCode(returnedOrder).catch(() => false);
     redirect(cartUrl(request, {
       payment: "failure",
       order: returnedOrder,
@@ -44,9 +46,12 @@ export async function GET(request: Request) {
     }
 
     if (payment.status === "pending" || payment.status === "in_process" || payment.status === "authorized") {
-      redirect(cartUrl(request, { payment: "pending", order }));
+      const reservation = await getOrderReservation(order).catch(() => null);
+      redirect(cartUrl(request, { payment: "pending", order, until: reservation?.reservedUntil ?? "" }));
     }
 
+    // Rechazado y de vuelta en el sitio: desde el carrito va a iniciar un pedido nuevo, así que se libera esta reserva.
+    await markOrderPaymentFailedByCode(order);
     redirect(cartUrl(request, {
       payment: "failure",
       order,

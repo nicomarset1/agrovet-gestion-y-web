@@ -196,6 +196,14 @@ export async function markOrderPaymentFailedByCode(code: string) {
   return (await getDriver()).markOrderPaymentFailedByCode(code);
 }
 
+export async function releaseExpiredReservations(options: { force?: boolean } = {}) {
+  return (await getDriver()).releaseExpiredReservations(options);
+}
+
+export async function getOrderReservation(code: string) {
+  return (await getDriver()).getOrderReservation(code);
+}
+
 export async function discardUnpaidOrder(code: string) {
   return (await getDriver()).discardUnpaidOrder(code);
 }
