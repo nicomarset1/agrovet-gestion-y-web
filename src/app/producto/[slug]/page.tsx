@@ -37,10 +37,19 @@ async function relatedProducts(product: Product, count = 4) {
   return candidates.sort((a, b) => hasStock(b) - hasStock(a)).slice(0, count);
 }
 
+// Dónde "vive" el producto en la tienda. Sin categoría (por ejemplo, porque la suya está en la papelera),
+// la ruta y los datos para buscadores apuntan a su especie en vez de a una categoría vacía.
+function placementOf(product: Product) {
+  if (product.categorySlug) return { name: product.category, href: `/tienda?category=${product.categorySlug}`, description: `${product.category} para mascotas` };
+  if (product.species === "perro") return { name: "Productos para perros", href: "/tienda?pet=perro", description: "Productos para perros" };
+  if (product.species === "gato") return { name: "Productos para gatos", href: "/tienda?pet=gato", description: "Productos para gatos" };
+  return { name: "Productos para perros y gatos", href: "/tienda", description: "Productos para perros y gatos" };
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const product = await getProduct((await params).slug);
   if (!product) return { title: "Producto" };
-  const description = `${product.brand} - ${product.name}. ${product.category} para mascotas en Agrovet Mar del Plata. Stock por sucursal y compra online.`;
+  const description = `${product.brand} - ${product.name}. ${placementOf(product).description} en Agrovet Mar del Plata. Stock por sucursal y compra online.`;
   const canonical = `/producto/${product.slug}`;
   return {
     title: product.name,
@@ -63,6 +72,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   const product = await getProduct(slug);
   const backHref = back?.startsWith("/tienda") ? back : "/tienda";
   if (!product) notFound();
+  const placement = placementOf(product);
   const related = await relatedProducts(product);
 
   const totalStock = product.variants.reduce((sum, variant) => sum + variant.totalStock, 0);
@@ -73,7 +83,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     name: product.name,
     description: product.description,
     brand: { "@type": "Brand", name: product.brand },
-    category: product.category,
+    category: placement.name,
     image: publicImageUrl(product) ? [publicImageUrl(product)] : undefined,
     sku: product.variants[0]?.sku,
     offers: {
@@ -90,7 +100,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Tienda", item: absoluteUrl("/tienda") },
-      { "@type": "ListItem", position: 2, name: product.category, item: absoluteUrl(`/tienda?category=${product.categorySlug}`) },
+      { "@type": "ListItem", position: 2, name: placement.name, item: absoluteUrl(placement.href) },
       { "@type": "ListItem", position: 3, name: product.name, item: absoluteUrl(`/producto/${product.slug}`) },
     ],
   };
@@ -102,7 +112,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
       <nav aria-label="Ruta de navegación" className="crumbs">
         <Link className="back-link" href={backHref}><ArrowLeft size={15} /> Volver a productos</Link>
         <span className="crumbs-trail">
-          <Link href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link>
+          <Link href={placement.href}>{placement.name}</Link>
           <ChevronRight aria-hidden="true" size={14} />
           <span aria-current="page">{product.name}</span>
         </span>
@@ -110,11 +120,13 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
       <div className="product-detail">
         <ProductArt detailed product={product} />
         <section className="detail">
-          <p className="eyebrow">{product.category} | {product.brand}</p>
+          <p className="eyebrow">{placement.name} | {product.brand}</p>
           <h1 className="display">{product.name}</h1>
           <div className="store-chips detail-tags">
-            <Link className="chip active" href={`/tienda?category=${product.categorySlug}`}>{product.category}</Link>
-            <Link className="chip" href={`/tienda?category=${product.categorySlug}&subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
+            <Link className="chip active" href={placement.href}>{placement.name}</Link>
+            {product.categorySlug && product.subcategorySlug !== "sin-subcategoria" && (
+              <Link className="chip" href={`/tienda?category=${product.categorySlug}&subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
+            )}
             {product.lifeStage && <span className="chip">{product.lifeStage}</span>}
             {product.size && product.size !== "todos" && <span className="chip">{product.size}</span>}
             {product.need && <span className="chip">{product.need}</span>}
