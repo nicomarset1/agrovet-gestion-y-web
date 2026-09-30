@@ -1,8 +1,7 @@
 import { z } from "zod";
+import { deliveryOrigin, deliveryRadiusKm, distanceKm } from "@/lib/delivery-zone";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { forbiddenMutationResponse, isSameOriginMutation, readBoundedJson } from "@/lib/request-security";
-
-const origin = { lat: -38.0033, lon: -57.5596 };
 
 const schema = z.object({
   address: z.string().trim().min(5).max(160),
@@ -10,16 +9,6 @@ const schema = z.object({
 
 function streetNumber(address: string) {
   return /\b\d{2,6}\b/.exec(address)?.[0] ?? "";
-}
-
-function distanceKm(a: typeof origin, b: typeof origin) {
-  const radius = 6371;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLon = (b.lon - a.lon) * Math.PI / 180;
-  const lat1 = a.lat * Math.PI / 180;
-  const lat2 = b.lat * Math.PI / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-  return 2 * radius * Math.asin(Math.sqrt(h));
 }
 
 export async function POST(request: Request) {
@@ -80,12 +69,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "La direccion encontrada no parece estar en Mar del Plata. Revisa calle y altura." }, { status: 404 });
   }
 
-  const distance = distanceKm(origin, { lat: Number(match.lat), lon: Number(match.lon) });
+  const distance = distanceKm(deliveryOrigin, { lat: Number(match.lat), lon: Number(match.lon) });
   return Response.json({
     address: match.display_name,
     lat: Number(match.lat),
     lon: Number(match.lon),
     distanceKm: Number(distance.toFixed(2)),
-    deliveryAvailable: distance <= 3,
+    deliveryAvailable: distance <= deliveryRadiusKm,
   });
 }
