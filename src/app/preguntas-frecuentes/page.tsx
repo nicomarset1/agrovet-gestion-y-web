@@ -30,7 +30,7 @@ export default async function PreguntasFrecuentesPage() {
     {
       icon: Truck,
       question: "¿Hacen envíos en Mar del Plata?",
-      answer: `Sí. El envío gratis está disponible para compras desde ${formatPrice(deliveryMinimumCents)}, dentro de la zona de reparto y hasta 3 km de Alberti 3213. En la página de envíos podés ingresar calle y altura para verificarlo antes de finalizar.`,
+      answer: `Sí. El envío gratis está disponible para compras desde ${formatPrice(deliveryMinimumCents)}, dentro de la zona de reparto y hasta 3 km de la sucursal de Av. Independencia y Alberti. En la página de envíos podés ingresar calle y altura para verificarlo antes de finalizar.`,
     },
     {
       icon: CreditCard,
