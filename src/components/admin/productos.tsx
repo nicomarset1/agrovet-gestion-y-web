@@ -171,6 +171,8 @@ const BRANCHES = [
 ] as const;
 // Mismo umbral que las alertas de stock del resumen.
 const LOW_STOCK = 5;
+// Valor del selector para "la categoría en papelera" (nunca viaja al servidor).
+const TRASHED_CATEGORY_VALUE = "__trashed";
 const PAGE_SIZE = 50;
 
 const SPECIES_OPTIONS: SelectOption[] = [
@@ -293,6 +295,11 @@ export function ProductModal({
     : selectableCategories[0]?.id ?? null;
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(initialCategoryId);
   const [selectedSubcategorySlug, setSelectedSubcategorySlug] = useState(product?.subcategorySlug || UNCATEGORIZED_SUBCATEGORY_SLUG);
+  // Categoría en la papelera: mientras no se toque el selector, se manda keepCategory=1 y el servidor conserva
+  // la categoría y la subcategoría guardadas (para que vuelvan solas al restaurarla).
+  const trashedCategoryName = mode === "edit" ? product?.deletedCategoryName : undefined;
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const keepTrashedCategory = Boolean(trashedCategoryName) && !categoryTouched;
   const [brandValue, setBrandValue] = useState(product?.brand ?? "");
   const [saveBrandAsFrequent, setSaveBrandAsFrequent] = useState(false);
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
@@ -362,6 +369,13 @@ export function ProductModal({
         {mode === "edit" && product ? <input name="id" type="hidden" value={product.id} /> : null}
         <input name="returnTo" type="hidden" value={returnTo} />
         <input name="color" type="hidden" value={product?.color ?? "#5b0f73"} />
+        {keepTrashedCategory ? (
+          <>
+            <input name="keepCategory" type="hidden" value="1" />
+            <input name="categoryId" type="hidden" value={UNCATEGORIZED_CATEGORY_VALUE} />
+            <input name="subcategorySlug" type="hidden" value={product?.subcategorySlug || UNCATEGORIZED_SUBCATEGORY_SLUG} />
+          </>
+        ) : null}
 
         <ModalSection title="Datos" hint="Nombre, marca y dónde aparece en la tienda.">
           <label className="admin-field product-form-wide">
@@ -439,8 +453,13 @@ export function ProductModal({
             <span id="product-category-label">Categoría</span>
             <Select
               ariaLabelledBy="product-category-label"
-              name="categoryId"
+              name={keepTrashedCategory ? undefined : "categoryId"}
               onChange={(next) => {
+                if (next === TRASHED_CATEGORY_VALUE) {
+                  setCategoryTouched(false);
+                  return;
+                }
+                setCategoryTouched(true);
                 if (next === UNCATEGORIZED_CATEGORY_VALUE) {
                   setSelectedCategoryId(null);
                   setSelectedSubcategorySlug(UNCATEGORIZED_SUBCATEGORY_SLUG);
@@ -453,24 +472,37 @@ export function ProductModal({
                 setSelectedSubcategorySlug(nextSubcategories[0]?.slug ?? UNCATEGORIZED_SUBCATEGORY_SLUG);
               }}
               options={[
+                ...(trashedCategoryName ? [{ value: TRASHED_CATEGORY_VALUE, label: `${trashedCategoryName} (en papelera)`, hint: "Se conserva si no la cambiás" }] : []),
                 { value: UNCATEGORIZED_CATEGORY_VALUE, label: "Sin categoría" },
                 ...categoryOptions(categories, (category) => String(category.id)),
               ]}
-              value={selectedCategoryId ? String(selectedCategoryId) : UNCATEGORIZED_CATEGORY_VALUE}
+              value={keepTrashedCategory ? TRASHED_CATEGORY_VALUE : selectedCategoryId ? String(selectedCategoryId) : UNCATEGORIZED_CATEGORY_VALUE}
             />
+            {keepTrashedCategory ? (
+              <small className="product-trashed-note">La categoría «{trashedCategoryName}» está en la papelera. Si no la cambiás, se conserva para cuando la restaures.</small>
+            ) : null}
           </div>
           <div className="admin-field">
             <span id="product-subcategory-label">Subcategoría</span>
-            <Select
-              ariaLabelledBy="product-subcategory-label"
-              name="subcategorySlug"
-              onChange={setSelectedSubcategorySlug}
-              options={[
-                { value: UNCATEGORIZED_SUBCATEGORY_SLUG, label: "Sin subcategoría" },
-                ...availableSubcategories.map((subcategory) => ({ value: subcategory.slug, label: subcategory.name })),
-              ]}
-              value={resolvedSubcategorySlug}
-            />
+            {keepTrashedCategory ? (
+              <Select
+                ariaLabelledBy="product-subcategory-label"
+                disabled
+                options={[{ value: "kept", label: product?.subcategorySlug && product.subcategorySlug !== UNCATEGORIZED_SUBCATEGORY_SLUG ? product.subcategory : "Sin subcategoría" }]}
+                value="kept"
+              />
+            ) : (
+              <Select
+                ariaLabelledBy="product-subcategory-label"
+                name="subcategorySlug"
+                onChange={setSelectedSubcategorySlug}
+                options={[
+                  { value: UNCATEGORIZED_SUBCATEGORY_SLUG, label: "Sin subcategoría" },
+                  ...availableSubcategories.map((subcategory) => ({ value: subcategory.slug, label: subcategory.name })),
+                ]}
+                value={resolvedSubcategorySlug}
+              />
+            )}
           </div>
           <div className="admin-field">
             <span id="product-species-label">Especie</span>
@@ -700,6 +732,7 @@ function QuickEdit({
       <input name="name" type="hidden" value={product.name} />
       <input name="brand" type="hidden" value={product.brand} />
       <input name="categoryId" type="hidden" value={categoryId} />
+      {product.deletedCategoryName ? <input name="keepCategory" type="hidden" value="1" /> : null}
       <input name="subcategorySlug" type="hidden" value={product.subcategorySlug || UNCATEGORIZED_SUBCATEGORY_SLUG} />
       <input name="species" type="hidden" value={product.species} />
       <input name="lifeStage" type="hidden" value={product.lifeStage} />
@@ -984,10 +1017,16 @@ export function ProductsSection({
                       </div>
                     </td>
                     <td className="products-col-category">
-                      <span className="products-category" title={`${product.category} › ${product.subcategory}`}>
-                        {product.category || "Sin categoría"}
-                        {product.subcategory ? <><span aria-hidden="true"> › </span><span className="products-sub">{product.subcategory}</span></> : null}
-                      </span>
+                      {product.deletedCategoryName ? (
+                        <span className="products-category is-trashed" title="La categoría está en la papelera: se conserva para cuando la restaures.">
+                          Categoría en papelera: {product.deletedCategoryName}
+                        </span>
+                      ) : (
+                        <span className="products-category" title={`${product.category} › ${product.subcategory}`}>
+                          {product.category || "Sin categoría"}
+                          {product.subcategory ? <><span aria-hidden="true"> › </span><span className="products-sub">{product.subcategory}</span></> : null}
+                        </span>
+                      )}
                     </td>
                     <td className="products-col-price"><strong>{priceLabel(product)}</strong></td>
                     <td className="products-col-stock">

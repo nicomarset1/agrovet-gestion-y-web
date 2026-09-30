@@ -56,6 +56,10 @@
 .products-col-category { width: 24%; }
 .products-category { display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 13px; }
 .products-sub { color: var(--muted); }
+.products-category.is-trashed {
+  display: inline-block; max-width: 100%; padding: 3px 9px; border-radius: 999px; background: #fff5e6; color: #8a5200; font-size: 12.5px; font-weight: 700;
+}
+.product-trashed-note { color: #8a5200; font-size: 12.5px; line-height: 1.4; }
 .products-col-price { width: 150px; white-space: nowrap; }
 .products-col-price strong { color: var(--forest); font-size: 14px; font-variant-numeric: tabular-nums; }
 .products-col-stock { width: 130px; }
