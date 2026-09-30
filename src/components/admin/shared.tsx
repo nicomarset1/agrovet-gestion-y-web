@@ -311,7 +311,7 @@ function getOrderBranchBuckets(order: OrderRecord) {
   return [...buckets.values()].sort((a, b) => a.branchId - b.branchId);
 }
 
-function getOrderBranchName(order: OrderRecord) {
+export function getOrderBranchName(order: OrderRecord) {
   const buckets = getOrderBranchBuckets(order);
   if (!buckets.length) return order.branchName;
   if (buckets.length === 1) return buckets[0].branchName;

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CategoryTreeNode } from "@/lib/catalog-facets";
 import { countSelectedGroups, groupSeparator, type FacetGroup } from "./catalog-labels";
 
 // Solo lo que el panel muestra: así viaja menos información al navegador.
@@ -12,7 +13,11 @@ import { countSelectedGroups, groupSeparator, type FacetGroup } from "./catalog-
 // salvo las que el cliente ya eligió, que se muestran para poder sacarlas.
 type FacetItem = { name: string; count: number };
 export type DrawerFacets = {
-  categories: (FacetItem & { slug: string })[];
+  /** Árbol del panel de gestión: principal › interna › subcategorías, con contadores contextuales. */
+  categoryTree: CategoryTreeNode[];
+  /** Lo elegido que no está en el árbol: se manda igual al aplicar para no perderlo. */
+  hiddenCategories: string[];
+  hiddenSubcategories: string[];
   species: FacetItem[];
   brands: FacetGroup[];
   lifeStages: FacetGroup[];
@@ -121,6 +126,41 @@ function GroupCheck({ group, name, selectedValues }: { group: FacetGroup; name: 
   );
 }
 
+const hasSelection = (node: CategoryTreeNode): boolean => node.selected || node.children.some(hasSelection);
+
+// Una rama del árbol de categorías: se despliega con el botón; la rama con algo elegido arranca abierta.
+function CategoryBranch({ node }: { node: CategoryTreeNode }) {
+  const [open, setOpen] = useState(() => node.children.some(hasSelection));
+  return (
+    <li className={`category-tree-item is-${node.kind}`}>
+      <div className="category-tree-row">
+        {node.children.length > 0 ? (
+          <button
+            aria-expanded={open}
+            aria-label={`${open ? "Cerrar" : "Abrir"} ${node.name}`}
+            className="category-tree-toggle"
+            onClick={() => setOpen((current) => !current)}
+            type="button"
+          >
+            <ChevronRight size={15} />
+          </button>
+        ) : <span aria-hidden="true" className="category-tree-spacer" />}
+        <label className={`category-tree-choice ${node.selected ? "active" : ""}`}>
+          <input defaultChecked={node.selected} name={node.kind} type="checkbox" value={node.slug} />
+          <span className="category-tree-box" aria-hidden="true" />
+          <span className="category-tree-name">{node.name}</span>
+          <ChoiceCount count={node.count} />
+        </label>
+      </div>
+      {node.children.length > 0 && (
+        <ul className="category-tree" hidden={!open}>
+          {node.children.map((child) => <CategoryBranch key={`${child.kind}-${child.slug}`} node={child} />)}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 function formatMoney(value: number) {
   return `$ ${new Intl.NumberFormat("es-AR").format(value)}`;
 }
@@ -147,7 +187,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
     setOpen(false);
     triggerRef.current?.focus({ preventScroll: true });
   }, []);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(() => selected(filters.category));
   const selectedBrands = selected(filters.brand);
   const selectedStages = selected(filters.stage);
   const selectedSizes = selected(filters.size);
@@ -185,11 +224,6 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
     + countSelectedGroups(facets.sizes, selectedSizes)
     + countSelectedGroups(facets.needs, selectedNeeds)
     + selectedPresentations.length;
-  const toggleCategory = (slug: string) => {
-    setSelectedCategories((current) => (
-      current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug]
-    ));
-  };
 
   const setHandle = useCallback((handle: "a" | "b", value: number) => {
     setActiveHandle(handle);
@@ -317,7 +351,7 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
     if (event.key !== "Tab" || !drawerRef.current) return;
     const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), [tabindex='0']")]
       // Fuera: lo que está dentro de una sección cerrada (inert).
-      .filter((element) => !element.closest("[inert]"));
+      .filter((element) => !element.closest("[inert], [hidden]"));
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -358,7 +392,8 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
         </div>
         <form action="/tienda" className="drawer-form" onSubmit={applyFilters}>
           {/* Lo que no se elige en el panel se conserva al aplicar. */}
-          {selected(filters.subcategory).map((value) => <input key={value} name="subcategory" type="hidden" value={value} />)}
+          {facets.hiddenCategories.map((value) => <input key={`c-${value}`} name="category" type="hidden" value={value} />)}
+          {facets.hiddenSubcategories.map((value) => <input key={`s-${value}`} name="subcategory" type="hidden" value={value} />)}
           {filters.sort && <input name="sort" type="hidden" value={filters.sort} />}
           <Section active={Boolean(filters.q?.trim())} title="Producto">
             <div className="filter-search">
@@ -373,20 +408,12 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
               {(petCounts.gato > 0 || filters.pet === "gato") && <ChoiceRadio checked={filters.pet === "gato"} count={petCounts.gato} label="Gato" name="pet" value="gato" />}
             </div>
           </Section>
-          <Section active={selected(filters.category).length > 0} title="Categoría">
-            <div className="filter-choice-grid">
-              {facets.categories.map((category) => (
-                <ChoiceCheck
-                  checked={selectedCategories.includes(category.slug)}
-                  count={category.count}
-                  key={category.slug}
-                  label={category.name}
-                  name="category"
-                  onChange={() => toggleCategory(category.slug)}
-                  value={category.slug}
-                />
-              ))}
-            </div>
+          <Section active={selected(filters.category).length + selected(filters.subcategory).length > 0} title="Categoría">
+            {facets.categoryTree.length ? (
+              <ul className="category-tree category-tree-root">
+                {facets.categoryTree.map((node) => <CategoryBranch key={`${node.kind}-${node.slug}`} node={node} />)}
+              </ul>
+            ) : <p className="filter-empty">No hay categorías con productos para esta búsqueda.</p>}
           </Section>
           <Section active={selectedBrands.length > 0} title="Marca">
             <div className="filter-choice-grid">
