@@ -24,8 +24,10 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
     const maxDelay = isAdmin ? adminDelay : publicMaxDelay;
     delayRef.current = baseDelay;
 
+    // En la tienda no hay consulta periódica: solo al cargar y al volver a la pestaña (focus, visible,
+    // online). Así cada visitante no suma consultas cada pocos segundos; el panel sí consulta cada 2 s.
     const schedule = () => {
-      if (!active) return;
+      if (!active || !isAdmin) return;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       const jitter = isAdmin ? 1 : 0.8 + Math.random() * 0.4;
       timerRef.current = window.setTimeout(poll, Math.round(delayRef.current * jitter));
