@@ -2182,7 +2182,8 @@ export function getTrashItems(): TrashItem[] {
 
 // Impacto de restaurar cada pedido de la papelera (solo lectura): unidades, sucursales y faltantes de hoy.
 function trashedOrderImpacts() {
-  const orders = db.prepare("SELECT id, branch_id AS branchId FROM orders WHERE deleted_at != ''").all() as Array<{ id: number; branchId: number }>;
+  const orders = (db.prepare("SELECT id, branch_id AS branchId, status FROM orders WHERE deleted_at != ''").all() as Array<{ id: number; branchId: number; status: string }>)
+    .map((order) => ({ id: order.id, branchId: order.branchId, holdsStock: holdsStock(order.status) }));
   if (!orders.length) return new Map();
   const ids = orders.map((order) => order.id);
   const marks = ids.map(() => "?").join(", ");
@@ -2288,7 +2289,8 @@ export function restoreTrashItem(input: { type: TrashItem["type"]; id: string | 
       const id = Number(input.id);
       const order = db.prepare("SELECT id, branch_id AS branchId, status, fulfillment, deleted_at AS deletedAt FROM orders WHERE id = ?").get(id) as { id: number; branchId: number; status: string; fulfillment: string; deletedAt: string } | undefined;
       if (!order?.deletedAt) return;
-      const items = db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }>;
+      // Solo vuelve a descontar si el pedido retiene stock: es lo mismo que devolvió deleteOrder al borrarlo.
+      const items = holdsStock(order.status) ? db.prepare("SELECT variant_id AS variantId, quantity FROM order_items WHERE order_id = ?").all(id) as Array<{ variantId: number; quantity: number }> : [];
       const allocations = getAllocationBuckets(id);
       const reserve = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
       for (const item of items) {

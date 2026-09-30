@@ -23,19 +23,24 @@ export type TrashImpact = {
 };
 
 export type OrderImpactInput = {
-  orders: Array<{ id: number; branchId: number }>;
+  /** holdsStock false: el pedido no retiene stock (cancelado, esperando pago…): restaurarlo no reserva nada. */
+  orders: Array<{ id: number; branchId: number; holdsStock?: boolean }>;
   items: Array<{ orderId: number; variantId: number; quantity: number; productName: string; variantLabel: string }>;
   allocations: Array<{ orderId: number; variantId: number; branchId: number; quantity: number }>;
   inventory: Array<{ variantId: number; branchId: number; quantity: number }>;
   branches: Array<{ id: number; name: string }>;
 };
 
-/** Misma regla que restoreTrashItem: cada ítem sale de sus asignaciones o, si no tiene, de la sucursal del pedido. */
+/** Misma regla que restoreTrashItem: solo reserva si el pedido retiene stock, y cada ítem sale de sus asignaciones o, si no tiene, de la sucursal del pedido. */
 export function buildOrderImpacts(input: OrderImpactInput): Map<number, TrashImpact> {
   const branchName = new Map(input.branches.map((branch) => [branch.id, branch.name]));
   const stock = new Map(input.inventory.map((row) => [`${row.variantId}:${row.branchId}`, row.quantity]));
   const result = new Map<number, TrashImpact>();
   for (const order of input.orders) {
+    if (order.holdsStock === false) {
+      result.set(order.id, { units: 0, branches: [], shortages: [] });
+      continue;
+    }
     const items = input.items.filter((item) => item.orderId === order.id);
     const branches = new Set<string>();
     const shortages: string[] = [];
