@@ -1,4 +1,4 @@
-/* Pulido 2026-09 · Panel /admin y login (nicol-a1).
+/* Pulido 2026-09 · Panel de gestión y su login (nicol-a1).
    Estilos NUEVOS de esta área van acá. Se cargan después de globals.css,
    así que pueden sobrescribir reglas existentes con la misma especificidad.
    Todo va prefijado con .admin-shell para no depender del orden de los chunks
@@ -917,7 +917,7 @@
   }
 }
 
-/* ===== Esqueleto de carga del panel (src/app/admin/loading.tsx) ===== */
+/* ===== Esqueleto de carga del panel (loading.tsx del panel) ===== */
 .admin-skeleton-sr {
   position: absolute;
   width: 1px;

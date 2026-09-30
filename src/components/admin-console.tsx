@@ -47,7 +47,7 @@ import {
   updateStockAction,
   restoreTrashItemAction,
   emptyTrashAction,
-} from "@/app/admin/actions";
+} from "@/app/gestion-agrovet/actions";
 
 type Subcategory = { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number };
 type Section = "resumen" | "productos" | "categorias" | "punto-venta" | "ventas" | "ventas-web" | "clientes" | "papelera";

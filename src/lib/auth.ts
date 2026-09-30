@@ -1,4 +1,5 @@
 import "server-only";
+import { panelLoginPath } from "./panel-path";
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
@@ -63,7 +64,7 @@ export async function isAdmin() {
 }
 
 export async function requireAdmin() {
-  if (!(await isAdmin())) redirect("/admin/login");
+  if (!(await isAdmin())) redirect(panelLoginPath);
 }
 
 export async function endAdminSession() {

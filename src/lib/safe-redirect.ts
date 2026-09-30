@@ -1,6 +1,7 @@
 import "server-only";
+import { panelPath } from "./panel-path";
 
-const adminFallback = "/admin";
+const adminFallback = panelPath;
 
 // Rechaza caracteres de control (0x00-0x1F y 0x7F): saltos de linea / CR que
 // podrian habilitar inyeccion de headers, sin escribir bytes de control en el fuente.

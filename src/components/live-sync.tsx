@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { isPanelPath } from "@/lib/panel-route";
 
 const adminDelay = 2000;
 const publicBaseDelay = 8000;
@@ -12,13 +13,13 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
   const pathname = usePathname();
   const versionRef = useRef(initialVersion);
   const timerRef = useRef<number | null>(null);
-  const delayRef = useRef(pathname.startsWith("/admin") ? adminDelay : publicBaseDelay);
+  const delayRef = useRef(isPanelPath(pathname) ? adminDelay : publicBaseDelay);
   const pollingRef = useRef(false);
   const pollAgainRef = useRef(false);
 
   useEffect(() => {
     let active = true;
-    const isAdmin = pathname.startsWith("/admin");
+    const isAdmin = isPanelPath(pathname);
     const baseDelay = isAdmin ? adminDelay : publicBaseDelay;
     const maxDelay = isAdmin ? adminDelay : publicMaxDelay;
     delayRef.current = baseDelay;

@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { getCatalogFacets, getSearchIndex } from "@/lib/db";
 import { siteUrl } from "@/lib/site";
 
-// Páginas informativas públicas. /carrito, /admin y /api quedan afuera a propósito.
+// Páginas informativas públicas. /carrito, el panel de gestión y /api quedan afuera a propósito.
 const infoPages = ["/envios", "/contacto", "/preguntas-frecuentes", "/promociones-bancarias", "/servicios"];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
