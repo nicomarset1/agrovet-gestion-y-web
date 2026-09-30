@@ -490,6 +490,7 @@ type ProductRow = {
   subcategory: string; subcategorySlug: string; species: Product["species"]; lifeStage: string; size: string; need: string;
   description: string; featured: boolean; requiresAdvice: boolean; active: boolean; color: string; imageUrl: string;
   imageSample?: string;
+  deletedCategoryName?: string;
 };
 
 type VariantRow = {
@@ -541,9 +542,9 @@ function productImageFromRow(row: ProductRow) {
 }
 
 function toProduct(row: ProductRow, variants: Variant[]): Product {
-  const { imageSample: _imageSample, ...product } = row;
+  const { imageSample: _imageSample, deletedCategoryName, ...product } = row;
   void _imageSample;
-  return { ...product, imageUrl: productImageFromRow(row), featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), active: Boolean(row.active), variants };
+  return { ...product, ...(deletedCategoryName ? { deletedCategoryName } : {}), imageUrl: productImageFromRow(row), featured: Boolean(row.featured), requiresAdvice: Boolean(row.requiresAdvice), active: Boolean(row.active), variants };
 }
 
 async function hydrateProducts(rows: ProductRow[], db: Db = sql): Promise<Product[]> {
@@ -569,10 +570,12 @@ const baseSelect = `
     CASE WHEN p.image_url ILIKE 'data:image/%' THEN '' ELSE p.image_url END AS "imageUrl",
     CASE WHEN p.image_url ILIKE 'data:image/%'
       THEN length(p.image_url) || ':' || left(p.image_url, 96) || ':' || right(p.image_url, 96)
-      ELSE '' END AS "imageSample"
+      ELSE '' END AS "imageSample",
+    COALESCE(dc.name, '') AS "deletedCategoryName"
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at IS NULL
   LEFT JOIN categories pc ON pc.id = c.parent_category_id AND pc.deleted_at IS NULL
+  LEFT JOIN categories dc ON dc.id = p.category_id AND dc.deleted_at IS NOT NULL
 `;
 
 function values(input?: string | string[]) {
@@ -785,7 +788,7 @@ export async function getSubcategories() {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS "categoryId", c.slug AS "categorySlug", c.name AS "categoryName", COUNT(p.id)::int AS count
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at IS NULL
     LEFT JOIN products p ON p.subcategory_slug = s.slug AND p.archived_at IS NULL AND p.purged_at IS NULL
     WHERE s.deleted_at IS NULL
     GROUP BY s.slug, s.name, s.description, c.id, c.slug, c.name
@@ -799,7 +802,7 @@ export async function getSubcategoryBySlug(slug: string, db: Db = sql) {
     SELECT s.slug AS slug, s.name AS name, s.description AS description,
       c.id AS "categoryId", c.slug AS "categorySlug", c.name AS "categoryName"
     FROM subcategories s
-    LEFT JOIN categories c ON c.id = s.category_id
+    LEFT JOIN categories c ON c.id = s.category_id AND c.deleted_at IS NULL
     WHERE s.slug = ${slug} AND s.deleted_at IS NULL
   ` as unknown as { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null }[];
   return row;
@@ -1225,6 +1228,14 @@ async function assertProductCategory(db: Db, categoryId: number | null) {
   if (isSpecialCategorySlug(category.slug)) throw new Error("Las páginas fijas no pueden usarse como categoría de producto.");
 }
 
+/** true si la categoría actual del producto existe y está en la papelera (borrado lógico). */
+async function keepsTrashedCategory(db: Db, productId: number) {
+  const [row] = await db`
+    SELECT c.deleted_at AS "deletedAt" FROM products p JOIN categories c ON c.id = p.category_id WHERE p.id = ${productId}
+  ` as unknown as { deletedAt: Date | null }[];
+  return Boolean(row?.deletedAt);
+}
+
 async function resolveProductCategory(db: Db, input: { categoryId: number | null; subcategorySlug: string }) {
   if (!input.categoryId) return { categoryId: null, subcategorySlug: uncategorizedSubcategorySlug, subcategoryName: uncategorizedSubcategoryName };
   if (input.subcategorySlug === uncategorizedSubcategorySlug) {
@@ -1335,19 +1346,29 @@ export async function updateProduct(input: {
   active: boolean;
   color: string;
   imageUrl?: string;
+  /** El panel no tocó la categoría: si la actual está en la papelera, se conserva (ver keepsTrashedCategory). */
+  keepCategory?: boolean;
   variants: ProductVariantInput[];
 }) {
   await ensureSchema();
   await sql.begin(async (tx) => {
-    const placement = await resolveProductCategory(tx, input);
     await tx`
       UPDATE products SET
-        name = ${input.name.trim()}, brand = ${input.brand.trim()}, category_id = ${placement.categoryId}, species = ${input.species},
-        subcategory_slug = ${placement.subcategorySlug}, subcategory_name = ${placement.subcategoryName}, life_stage = ${input.lifeStage ?? ""},
+        name = ${input.name.trim()}, brand = ${input.brand.trim()}, species = ${input.species},
+        life_stage = ${input.lifeStage ?? ""},
         size = ${input.size ?? ""}, need = ${input.need ?? ""}, description = ${input.description.trim()}, featured = ${input.featured},
         requires_advice = ${input.requiresAdvice}, active = ${input.active}, color = ${input.color}, image_url = COALESCE(${input.imageUrl ?? null}, image_url)
       WHERE id = ${input.id}
     `;
+    // La categoría se conserva tal cual si está en la papelera y el panel no la cambió: así, al
+    // restaurarla, el producto vuelve a quedar adentro. En cualquier otro caso se guarda la elegida.
+    if (!(input.keepCategory && await keepsTrashedCategory(tx, input.id))) {
+      const placement = await resolveProductCategory(tx, input);
+      await tx`
+        UPDATE products SET category_id = ${placement.categoryId}, subcategory_slug = ${placement.subcategorySlug}, subcategory_name = ${placement.subcategoryName}
+        WHERE id = ${input.id}
+      `;
+    }
     const takenSkus = new Set<string>();
     const takenBarcodes = new Set<string>();
     for (const variant of input.variants) {
@@ -2128,7 +2149,21 @@ export async function restoreTrashItem(input: { type: TrashItem["type"]; id: str
     if (input.type === "product") {
       await tx`UPDATE products SET archived_at = NULL WHERE id = ${Number(input.id)}`;
     } else if (input.type === "category") {
-      await tx`UPDATE categories SET deleted_at = NULL WHERE id = ${Number(input.id)}`;
+      // Borrar apaga show_in_menu; al restaurar, una principal vuelve al menú. Una interna cuyo padre
+      // sigue en la papelera vuelve como principal (sin padre) para no quedar colgada.
+      await tx`
+        UPDATE categories SET
+          deleted_at = NULL,
+          parent_category_id = CASE
+            WHEN parent_category_id IS NOT NULL AND EXISTS (SELECT 1 FROM categories parent WHERE parent.id = categories.parent_category_id AND parent.deleted_at IS NULL)
+              THEN parent_category_id
+            ELSE NULL END,
+          show_in_menu = CASE
+            WHEN parent_category_id IS NOT NULL AND EXISTS (SELECT 1 FROM categories parent WHERE parent.id = categories.parent_category_id AND parent.deleted_at IS NULL)
+              THEN show_in_menu
+            ELSE TRUE END
+        WHERE id = ${Number(input.id)}
+      `;
     } else if (input.type === "subcategory") {
       await tx`UPDATE subcategories SET deleted_at = NULL WHERE slug = ${String(input.id)}`;
     } else if (input.type === "client") {
