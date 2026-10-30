@@ -91,7 +91,7 @@ body { background: var(--sand); color: var(--ink); font-feature-settings: "ss01"
 @media (min-width: 1001px) {
   .navigation a { border-radius: 10px; }
   .nav-cart { border-color: var(--line-strong); border-radius: 12px; }
-  .cart-count { background: var(--maiz); color: var(--noche); box-shadow: 0 0 0 2px #fff; }
+
 }
 
 /* ===== Encabezado de la tienda: superficie noche con el rastro de huellas ===== */
@@ -436,3 +436,26 @@ html { background: var(--sand); }
 .pickup-info { background: var(--surface); }
 /* Con botones a la derecha, el rastro baja para no cruzarse con ellos. */
 :is(.promo-hero, .contact-hero, .special-hero, .faq-heading) .paw-trail { bottom: -64px; }
+
+/* ===== Carrito y checkout ===== */
+
+.cart-heading h1 { letter-spacing: -.03em; }
+.cart-line, .checkout { border-color: transparent; box-shadow: var(--ring), var(--shadow-sm); }
+.checkout { box-shadow: var(--ring), var(--shadow-md); }
+.cart-line-brand { font-size: 12.5px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.cart-line-price { font-family: var(--font-display), sans-serif; letter-spacing: -.02em; color: var(--ink); }
+.checkout h2 { letter-spacing: -.02em; }
+.checkout-step { color: var(--ink); font-size: 13.5px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.checkout .field { border-color: var(--line-strong); border-radius: 11px; }
+.checkout .field:focus { outline: none; border-color: var(--forest-light); box-shadow: var(--focus-ring); }
+.checkout .choice-card { border-color: var(--line-strong); }
+.checkout .choice-card:hover { transform: none; box-shadow: none; border-color: #c9b2e3; }
+.checkout .choice-card.active { background: var(--noche); border-color: var(--noche); }
+.checkout .choice-card.active::after { border-color: var(--maiz); box-shadow: inset 0 0 0 3px var(--noche), inset 0 0 0 8px var(--maiz); }
+.checkout .choice-card.active span { color: #cbbcdb; }
+.fulfillment-info { background: var(--sage); border-color: transparent; }
+.cart-page .checkout-total span:last-child { color: var(--ink); font-family: var(--font-display), sans-serif; font-size: 28px; letter-spacing: -.03em; }
+.checkout-submit { border-radius: 14px; min-height: 52px; }
+.qty-stepper { border-color: var(--line-strong); }
+.cart-heading-count { background: var(--sage); border-color: transparent; }
+.cart-count { background: var(--maiz); color: var(--noche); }
