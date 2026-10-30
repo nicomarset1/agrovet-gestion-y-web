@@ -99,6 +99,8 @@ export function AdminConsole({
   const [modal, setModal] = useState<AdminModalState>(null);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // La animación de contraer y expandir es solo para el botón: al cargar con la preferencia guardada, sin animar.
+  const [sidebarAnimated, setSidebarAnimated] = useState(false);
   useEffect(() => {
     let stored: string | null = null;
     try {
@@ -109,6 +111,7 @@ export function AdminConsole({
     if (stored === "1") queueMicrotask(() => setSidebarCollapsed(true));
   }, []);
   const toggleSidebar = () => {
+    setSidebarAnimated(true);
     setSidebarCollapsed((current) => {
       try {
         window.localStorage.setItem("agrovet-sidebar-collapsed", current ? "0" : "1");
@@ -214,7 +217,7 @@ export function AdminConsole({
   return (
     // "admin-section-swap" y no "admin-switch": esa clase es el interruptor viejo de globals.css (fondo
     // blanco, letra en 800, borde) y durante la animación le cambiaba el aspecto a todo el panel.
-    <div className={`admin-layout${panelMotion === "enter" ? " admin-enter" : panelMotion === "switch" ? " admin-section-swap" : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+    <div className={`admin-layout${panelMotion === "enter" ? " admin-enter" : panelMotion === "switch" ? " admin-section-swap" : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${sidebarAnimated ? " is-sidebar-animated" : ""}`}>
       <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />

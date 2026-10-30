@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PanelIntroHost } from "@/components/panel-intro";
 
 // El panel no se indexa. El layout raíz ya no le muestra header ni footer de la tienda (StoreChrome).
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <>
       <script dangerouslySetInnerHTML={{ __html: panelEntryScript }} />
       {children}
+      <PanelIntroHost />
     </>
   );
 }

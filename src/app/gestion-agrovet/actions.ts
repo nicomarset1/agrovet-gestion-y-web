@@ -1,12 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
 import { installmentsLabel } from "@/lib/format";
-import { PANEL_INTRO_COOKIE } from "@/lib/panel-intro";
 import { panelPath } from "@/lib/panel-path";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import {
@@ -33,7 +32,9 @@ import {
   updateWholesaleClient,
 } from "@/lib/db";
 
-export type LoginState = { error?: string };
+// "to": el login salió bien. El formulario arranca la animación de entrada y recién ahí navega,
+// así la carga del panel queda tapada por la animación.
+export type LoginState = { error?: string; to?: string };
 
 function loginIdentifier(headersList: Headers) {
   // No confiar en el x-forwarded-for mas a la izquierda: ese valor lo controla el cliente
@@ -66,9 +67,7 @@ export async function loginAction(_: LoginState, formData: FormData): Promise<Lo
   }
   await recordLoginAttempt(identifier, true);
   await startAdminSession();
-  // Marca de un solo uso: el panel muestra la animación de entrada y la borra al arrancar.
-  (await cookies()).set(PANEL_INTRO_COOKIE, "1", { path: panelPath, maxAge: 120, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
-  redirect(panelPath);
+  return { to: panelPath };
 }
 
 export async function logoutAction() {
