@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, SearchX, X } from "lucide-react";
 import { BranchesSection } from "@/components/branches-section";
+import { PawTrail } from "@/components/paw-trail";
 import { cardPriceCents, filterLabel, groupFacetValues, type FacetGroup } from "@/components/catalog-labels";
 import { ProductCard } from "@/components/product-card";
 import { StoreFilterDrawer } from "@/components/store-filter-drawer";
@@ -253,6 +254,7 @@ export default async function StorePage({ searchParams }: { searchParams: Search
       <div className="container shop-layout">
         <section>
           <div className="store-hero card">
+            <PawTrail />
             <div className="store-hero-copy">
               <p className="eyebrow store-trail">
                 <Link href="/tienda">Tienda online</Link>

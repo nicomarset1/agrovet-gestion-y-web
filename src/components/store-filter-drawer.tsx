@@ -6,6 +6,7 @@ import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CategoryTreeNode } from "@/lib/catalog-facets";
+import { packageKindLabel, packageSize, type PackageKind } from "@/lib/package-size";
 import { countSelectedGroups, groupSeparator, type FacetGroup } from "./catalog-labels";
 
 // Solo lo que el panel muestra: así viaja menos información al navegador.
@@ -50,7 +51,10 @@ function Section({ active = false, children, title }: { active?: boolean; childr
         <span>{title}{active && <span aria-label="con filtros activos" className="drawer-section-dot" />}</span>
         <ChevronRight size={16} />
       </button>
-      <div className="drawer-section-body" inert={!open}>{children}</div>
+      {/* El alto se anima con grid (0fr a 1fr): sin tope fijo, así una lista larga nunca queda cortada. */}
+      <div className="drawer-section-body" inert={!open}>
+        <div className="drawer-section-inner">{children}</div>
+      </div>
     </section>
   );
 }
@@ -124,6 +128,20 @@ function GroupCheck({ group, name, selectedValues }: { group: FacetGroup; name: 
       value={group.values.join(groupSeparator)}
     />
   );
+}
+
+// Tamaños agrupados por tipo de envase (bolsas, latas y pouches, líquidos); lo que no es un tamaño va al final.
+function presentationGroups(items: FacetItem[]) {
+  const order: (PackageKind | "otras")[] = ["kg", "g", "ml", "otras"];
+  const groups = new Map<PackageKind | "otras", FacetItem[]>();
+  for (const item of items) {
+    const kind = packageSize(item.name)?.kind ?? "otras";
+    groups.set(kind, [...(groups.get(kind) ?? []), item]);
+  }
+  return order.flatMap((kind) => {
+    const list = groups.get(kind);
+    return list?.length ? [{ kind, title: kind === "otras" ? "Otras" : packageKindLabel[kind], items: list }] : [];
+  });
 }
 
 const hasSelection = (node: CategoryTreeNode): boolean => node.selected || node.children.some(hasSelection);
@@ -506,9 +524,14 @@ export function StoreFilterDrawer({ facets, filters }: { facets: DrawerFacets; f
             </div>
           </Section>
           <Section active={selectedPresentations.length > 0} title="Presentación">
-            <div className="filter-choice-grid">
-              {facets.presentations.map((presentation) => <ChoiceCheck checked={selectedPresentations.includes(presentation.name)} count={presentation.count} key={presentation.name} label={presentation.name} name="presentation" value={presentation.name} />)}
-            </div>
+            {presentationGroups(facets.presentations).map((group) => (
+              <div className="filter-size-group" key={group.kind}>
+                <span className="filter-choice-title">{group.title}</span>
+                <div className="filter-choice-grid filter-size-grid">
+                  {group.items.map((presentation) => <ChoiceCheck checked={selectedPresentations.includes(presentation.name)} count={presentation.count} key={presentation.name} label={presentation.name} name="presentation" value={presentation.name} />)}
+                </div>
+              </div>
+            ))}
           </Section>
           <Section active={Boolean(filters.stock)} title="Stock">
             <label className={`filter-choice ${filters.stock === "disponible" ? "active" : ""}`}>

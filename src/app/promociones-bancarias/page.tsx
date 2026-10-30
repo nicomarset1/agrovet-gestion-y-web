@@ -2,6 +2,7 @@ import Link from "next/link";
 import { infoPageMetadata } from "@/lib/page-metadata";
 import { CalendarDays, CreditCard, Info, RefreshCcw } from "lucide-react";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
+import { PawTrail } from "@/components/paw-trail";
 
 export const metadata = infoPageMetadata({
   title: "Promociones bancarias",
@@ -44,6 +45,7 @@ export default async function PromocionesBancariasPage() {
     <div className="promo-page section">
       <div className="container">
         <section className="promo-hero">
+          <PawTrail />
           <div>
             <p className="eyebrow">Agrovet Mar del Plata</p>
             <h1>Promociones bancarias</h1>

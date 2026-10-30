@@ -1,3 +1,4 @@
+import { packageSize, presentationMatches } from "./package-size";
 import { isSpecialCategorySlug } from "./special-categories";
 import type { Category, Product } from "./types";
 
@@ -87,9 +88,9 @@ export function productMatches(product: Product, filters: FacetFilters, context:
   if (!skip("size") && sizes.length && !sizes.includes(product.size) && product.size !== "todos") return false;
   const needs = values(filters.need);
   if (!skip("need") && needs.length && !needs.includes(product.need)) return false;
-  const presentations = values(filters.presentation).map((item) => item.toLowerCase());
+  const presentations = values(filters.presentation);
   if (!skip("presentation") && presentations.length
-    && !product.variants.some((variant) => presentations.some((item) => variant.label.toLowerCase().includes(item)))) return false;
+    && !product.variants.some((variant) => presentations.some((item) => presentationMatches(variant.label, item)))) return false;
   if (!skip("price")) {
     const min = cents(filters.minPrice);
     const max = cents(filters.maxPrice);
@@ -133,13 +134,21 @@ export function contextualFacets(catalog: Product[], filters: FacetFilters, cate
   const sizeAllCount = sizeBase.filter((product) => product.size === "todos").length;
   const sizes = tally(sizeBase.map((product) => product.size)).filter((item) => item.name !== "todos");
 
-  // Presentación: el filtro busca el texto dentro de la etiqueta ("85 g" también encuentra "Pollo 85 g").
-  const presentationBase = base("presentation");
-  const labels = [...new Set(presentationBase.flatMap((product) => product.variants.map((variant) => variant.label)))];
-  const presentations = labels.map((label) => {
-    const needle = label.toLowerCase();
-    return { name: label, count: presentationBase.filter((product) => product.variants.some((variant) => variant.label.toLowerCase().includes(needle))).length };
-  });
+  // Presentación: solo el tamaño del envase ("Weight Care 85 g" cuenta como "85 g"), de menor a mayor.
+  // Cada producto suma una vez por tamaño aunque tenga varias presentaciones de ese tamaño.
+  const presentationCounts = new Map<string, { count: number; base: number }>();
+  for (const product of base("presentation")) {
+    const keys = new Map(product.variants.flatMap((variant) => {
+      const size = packageSize(variant.label);
+      return size ? [[size.key, size.base] as const] : [];
+    }));
+    for (const [key, sizeBase] of keys) {
+      presentationCounts.set(key, { count: (presentationCounts.get(key)?.count ?? 0) + 1, base: sizeBase });
+    }
+  }
+  const presentations = [...presentationCounts.entries()]
+    .sort((a, b) => a[1].base - b[1].base)
+    .map(([name, { count }]) => ({ name, count }));
 
   const priceBase = base("price");
   const prices = priceBase.flatMap((product) => product.variants.map((variant) => Math.round(variant.priceCents / 100)));

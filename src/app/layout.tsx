@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Fraunces } from "next/font/google";
+import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { StoreChrome } from "@/components/store-chrome";
@@ -15,15 +15,18 @@ import "./styles/polish-shell.css";
 import "./styles/polish-catalogo.css";
 import "./styles/polish-carrito.css";
 import "./styles/polish-admin.css";
+import "./styles/rediseno.css";
 
 const manrope = Manrope({
   variable: "--font-body",
   subsets: ["latin"],
 });
 
-const fraunces = Fraunces({
+// Títulos: grotesca con óptica variable, cálida y con carácter (antes Fraunces, una serif genérica).
+const bricolage = Bricolage_Grotesque({
   variable: "--font-display",
   subsets: ["latin"],
+  axes: ["opsz"],
 });
 
 const description = "Tienda online de Agrovet Mar del Plata. Alimentos, accesorios y farmacia para perros y gatos con stock por sucursal.";
@@ -86,7 +89,7 @@ export default async function RootLayout({
 }>) {
   const syncVersion = await getSyncVersion();
   return (
-    <html data-scroll-behavior="smooth" lang="es" className={`${manrope.variable} ${fraunces.variable} antialiased`}>
+    <html data-scroll-behavior="smooth" lang="es" className={`${manrope.variable} ${bricolage.variable} antialiased`}>
       <body>
         <script
           type="application/ld+json"

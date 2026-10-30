@@ -2,6 +2,7 @@ import { Clock, CreditCard, Store, Truck } from "lucide-react";
 import { infoPageMetadata } from "@/lib/page-metadata";
 import { DeliveryZoneChecker } from "@/components/delivery-zone-checker";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
+import { PawTrail } from "@/components/paw-trail";
 
 export const metadata = infoPageMetadata({
   title: "Envíos",
@@ -20,6 +21,7 @@ export default async function EnviosPage() {
     <div className="envios-page section">
       <div className="container">
         <section className="envios-hero">
+          <PawTrail />
           <div>
             <p className="eyebrow">Agrovet Mar del Plata</p>
             <h1>Envíos en Mar del Plata</h1>

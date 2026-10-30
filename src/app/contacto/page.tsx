@@ -3,6 +3,7 @@ import { infoPageMetadata } from "@/lib/page-metadata";
 import { AtSign, Clock, MapPin, MessageCircle, Phone, Share2, Store } from "lucide-react";
 import { getBranches } from "@/lib/db";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
+import { PawTrail } from "@/components/paw-trail";
 
 export const metadata = infoPageMetadata({
   title: "Contacto",
@@ -22,6 +23,7 @@ export default async function ContactoPage() {
     <div className="contact-page section">
       <div className="container">
         <section className="contact-hero">
+          <PawTrail />
           <div>
             <p className="eyebrow">Agrovet Mar del Plata</p>
             <h1>Contacto</h1>

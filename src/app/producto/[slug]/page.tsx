@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { filterLabel } from "@/components/catalog-labels";
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, Stethoscope } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -127,9 +128,9 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
             {product.categorySlug && product.subcategorySlug !== "sin-subcategoria" && (
               <Link className="chip" href={`/tienda?category=${product.categorySlug}&subcategory=${product.subcategorySlug}`}>{product.subcategory}</Link>
             )}
-            {product.lifeStage && <span className="chip">{product.lifeStage}</span>}
-            {product.size && product.size !== "todos" && <span className="chip">{product.size}</span>}
-            {product.need && <span className="chip">{product.need}</span>}
+            {product.lifeStage && <span className="chip">{filterLabel(product.lifeStage)}</span>}
+            {product.size && product.size !== "todos" && <span className="chip">{filterLabel(product.size)}</span>}
+            {product.need && <span className="chip">{filterLabel(product.need)}</span>}
           </div>
           <p className="description">{product.description}</p>
           {product.requiresAdvice && <div className="advice"><Stethoscope aria-hidden="true" size={18} /><p><strong>Producto veterinario.</strong> Consultá indicaciones, dosificación y contraindicaciones con un profesional antes de administrarlo.</p></div>}

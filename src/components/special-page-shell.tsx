@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PawTrail } from "@/components/paw-trail";
 
 export function SpecialPageShell({ title, description }: { title: string; description: string }) {
   const paragraphs = description.split(/\n+/).map((line) => line.trim()).filter(Boolean);
@@ -7,6 +8,7 @@ export function SpecialPageShell({ title, description }: { title: string; descri
     <div className="special-page section">
       <div className="container">
         <section className="special-hero">
+          <PawTrail />
           <div>
             <p className="eyebrow">Agrovet Mar del Plata</p>
             <h1>{title}</h1>

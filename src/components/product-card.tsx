@@ -19,7 +19,7 @@ export function ProductCard({ product }: { product: Product }) {
         <ProductArt product={product} />
       </ProductLink>
       <div className="product-body">
-        <div className="product-meta" title={`${product.category} / ${product.subcategory}`}>{product.category} / {product.subcategory}</div>
+        <div className="product-meta" title={`${product.brand}: ${product.category} / ${product.subcategory}`}>{product.brand}</div>
         <h3 title={product.name}><ProductLink slug={product.slug}>{product.name}</ProductLink></h3>
         <div className="price">
           <span className="price-main">{formatPrice(from)}</span>
@@ -29,11 +29,6 @@ export function ProductCard({ product }: { product: Product }) {
             {formatPrice(cashPrice)}
             <span className="price-cash-note">en efectivo en sucursal</span>
           </span>
-        </div>
-        <div className="product-flags">
-          <span>{product.brand}</span>
-          {product.lifeStage && <span>{product.lifeStage}</span>}
-          {product.size && product.size !== "todos" && <span>{product.size}</span>}
         </div>
         <div className="product-card-foot">
           {/* Sin foto ni descripción: el componente de cliente no las usa y así no viajan de nuevo en la página. */}

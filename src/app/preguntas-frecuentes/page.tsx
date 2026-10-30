@@ -4,6 +4,7 @@ import { CreditCard, HelpCircle, MapPin, MessageCircle, PackageCheck, ShieldChec
 import { getBranches } from "@/lib/db";
 import { getSpecialPageDescription } from "@/lib/special-page-content";
 import { formatPrice } from "@/lib/format";
+import { PawTrail } from "@/components/paw-trail";
 
 export const metadata = infoPageMetadata({
   title: "Preguntas frecuentes",
@@ -68,6 +69,7 @@ export default async function PreguntasFrecuentesPage() {
     <div className="faq-page section">
       <div className="container">
         <div className="section-heading faq-heading">
+          <PawTrail />
           <div>
             <p className="eyebrow">Agrovet Mar del Plata</p>
             <h1>Preguntas frecuentes</h1>
