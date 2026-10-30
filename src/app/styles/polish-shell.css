@@ -343,9 +343,11 @@
     position: relative; z-index: -1;
     transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-base) ease, visibility 0s linear 0s;
   }
+  /* Con z-index -1 la fila queda debajo de .header-main (posicionado), que se llevaba los clics
+     de Tienda, Locales y Carrito: el contenedor deja pasar el puntero y solo lo toman sus hijos. */
+  .header-main { pointer-events: none; }
+  .header-main > * { pointer-events: auto; }
   html[data-header-compact] .header:not(:has(.catalog-menu.open)) { pointer-events: none; }
-  html[data-header-compact] .header:not(:has(.catalog-menu.open)) .header-main > * { pointer-events: auto; }
-  html[data-header-compact] .header:not(:has(.catalog-menu.open)) .header-main { pointer-events: none; }
   html[data-header-compact] .header:not(:has(.catalog-menu.open))::before {
     transform: translateY(calc(var(--shell-nav-row) * -1));
     box-shadow: 0 8px 22px rgba(53, 12, 86, .09);
