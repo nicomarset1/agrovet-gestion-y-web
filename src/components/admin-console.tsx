@@ -15,7 +15,8 @@ import {
   RotateCcw,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import { logoutAction } from "@/app/gestion-agrovet/actions";
@@ -44,6 +45,10 @@ function AdminNavTail() {
 // Movimiento del panel. La cascada de entrada va solo la primera vez que se abre el panel en la
 // pestaña; al cambiar de sección hay un fundido corto y el live-sync no anima nada (no remonta).
 let panelEnteredThisSession = false;
+// Posición del resaltado del menú: sobrevive al remontado de cada sección para deslizarse desde ahí.
+let lastNavIndicator: { top: number; height: number } | null = null;
+let lastNavMove: { keyframes: Keyframe[]; to: number; startedAt: number } | null = null;
+const NAV_MOVE_MS = 320;
 
 const PANEL_ENTERED_STORAGE_KEY = "agrovet-panel-entered";
 
@@ -101,6 +106,43 @@ export function AdminConsole({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // La animación de contraer y expandir es solo para el botón: al cargar con la preferencia guardada, sin animar.
   const [sidebarAnimated, setSidebarAnimated] = useState(false);
+  // Sección elegida en el menú mientras llega del servidor: el contenido actual se va apagando y el
+  // resaltado ya se desliza hacia ella.
+  const [pendingSection, setPendingSection] = useState<Section | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const shownSection = pendingSection ?? section;
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>("a.active");
+    const indicator = nav?.querySelector<HTMLElement>(".admin-nav-indicator");
+    if (!nav || !active || !indicator) return;
+    const next = { top: active.offsetTop, height: active.offsetHeight };
+    const from = lastNavIndicator;
+    lastNavIndicator = next;
+    indicator.style.height = `${next.height}px`;
+    indicator.style.transform = `translateY(${next.top}px)`;
+    if (!from || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timing = { duration: NAV_MOVE_MS, easing: "cubic-bezier(.2, .8, .2, 1)" };
+    if (from.top === next.top) {
+      // La sección nueva remontó el menú con el deslizamiento a mitad de camino: sigue desde ahí.
+      const elapsed = lastNavMove && lastNavMove.to === next.top ? performance.now() - lastNavMove.startedAt : NAV_MOVE_MS;
+      if (lastNavMove && elapsed < NAV_MOVE_MS) indicator.animate(lastNavMove.keyframes, timing).currentTime = elapsed;
+      return;
+    }
+    const keyframes = [{ transform: `translateY(${from.top}px)`, height: `${from.height}px` }, { transform: `translateY(${next.top}px)`, height: `${next.height}px` }];
+    lastNavMove = { keyframes, to: next.top, startedAt: performance.now() };
+    indicator.animate(keyframes, timing);
+  }, [shownSection, sidebarCollapsed]);
+  useEffect(() => {
+    if (!pendingSection) return;
+    // Si la navegación no llega (sin conexión), el contenido no queda apagado.
+    const timer = window.setTimeout(() => setPendingSection(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [pendingSection]);
+  const goToSection = (target: Section) => (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (target !== section) setPendingSection(target);
+  };
   useEffect(() => {
     let stored: string | null = null;
     try {
@@ -217,7 +259,7 @@ export function AdminConsole({
   return (
     // "admin-section-swap" y no "admin-switch": esa clase es el interruptor viejo de globals.css (fondo
     // blanco, letra en 800, borde) y durante la animación le cambiaba el aspecto a todo el panel.
-    <div className={`admin-layout${panelMotion === "enter" ? " admin-enter" : panelMotion === "switch" ? " admin-section-swap" : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${sidebarAnimated ? " is-sidebar-animated" : ""}`}>
+    <div className={`admin-layout${panelMotion === "enter" ? " admin-enter" : panelMotion === "switch" ? " admin-section-swap" : ""}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${sidebarAnimated ? " is-sidebar-animated" : ""}${pendingSection ? " is-section-leaving" : ""}`}>
       <aside aria-label="Panel de gestión" className={`admin-sidebar card${adminMenuOpen ? " open" : ""}`}>
         <div className="admin-brand">
           <button className="admin-brand-mark" onClick={() => { setBranchPickerMandatory(false); setBranchPickerOpen(true); }} type="button" aria-label="Elegir sucursal" />
@@ -250,9 +292,10 @@ export function AdminConsole({
           </span>
         </button>
         <div className="admin-sidebar-body">
-          <nav aria-label="Secciones" className="admin-nav">
+          <nav aria-label="Secciones" className="admin-nav" ref={navRef}>
+            <span aria-hidden="true" className="admin-nav-indicator" />
             {options.map(({ id, href, label, icon: Icon }) => (
-              <Link className={section === id ? "active" : ""} href={href} key={id} title={sidebarCollapsed ? label : undefined}>
+              <Link aria-current={section === id ? "page" : undefined} className={shownSection === id ? "active" : ""} href={href} key={id} onClick={goToSection(id)} title={sidebarCollapsed ? label : undefined}>
                 <Icon size={18} />
                 <span>{label}</span>
                 <AdminNavTail />

@@ -501,9 +501,15 @@ div.admin-shell { background: var(--sand); }
 .admin-shell .admin-nav a:hover > svg:first-child { color: #e6d8f5; }
 .admin-shell .admin-nav-tail { color: rgb(255 255 255 / .22); }
 .admin-shell .admin-nav a:hover .admin-nav-tail { color: rgb(255 255 255 / .6); }
+/* El fondo y el filete del ítem activo son una sola pieza que se desliza entre secciones (admin-console.tsx). */
+.admin-shell .admin-nav { position: relative; }
+.admin-shell .admin-nav-indicator {
+  position: absolute; top: 0; left: 0; right: 0; height: 0; z-index: 0; pointer-events: none;
+  border-radius: var(--radius-sm); background: rgb(255 255 255 / .09); box-shadow: inset 2px 0 0 var(--maiz);
+}
+.admin-shell .admin-nav a { z-index: 1; }
 .admin-shell .admin-nav a.active {
-  background: rgb(255 255 255 / .09); border-color: transparent; color: #fff; font-weight: 700;
-  box-shadow: inset 2px 0 0 var(--maiz);
+  background: transparent; border-color: transparent; color: #fff; font-weight: 700; box-shadow: none;
 }
 .admin-shell .admin-nav a.active > svg:first-child, .admin-shell .admin-nav a.active .admin-nav-tail { color: var(--maiz); }
 .admin-shell .admin-nav-tail::after { border-color: rgb(255 255 255 / .2); border-top-color: var(--maiz); }
@@ -655,8 +661,25 @@ div.admin-shell.admin-login-shell {
 /* Mientras tanto el contenido espera: su cascada (y el selector de sucursal) arrancan cuando la noche se va. */
 body:has(.panel-intro) .admin-shell:not(.admin-skeleton) .admin-layout *:not(.admin-sidebar, .admin-sidebar *) { animation-play-state: paused; }
 
+/* Cambio de sección: lo que se deja se apaga y baja apenas mientras llega lo nuevo, que entra en cascada. */
+.admin-shell .admin-main { transition: opacity .18s ease, transform .18s var(--ease-out); }
+.admin-shell .is-section-leaving .admin-main { opacity: .35; transform: translateY(6px); pointer-events: none; }
+.admin-shell .admin-section-swap .admin-main { animation: none; }
+.admin-shell .admin-section-swap .admin-main > :not([id^="admin-section-"]),
+.admin-shell .admin-section-swap .admin-main > [id^="admin-section-"] > *,
+.admin-shell .admin-section-swap .admin-dash-top > *,
+.admin-shell .admin-section-swap .admin-dash-grid > * { animation: admin-rise .26s var(--ease-out) both; }
+.admin-shell .admin-section-swap .admin-main > [id^="admin-section-"] > :nth-child(2) { animation-delay: 40ms; }
+.admin-shell .admin-section-swap .admin-main > [id^="admin-section-"] > :nth-child(3) { animation-delay: 80ms; }
+.admin-shell .admin-section-swap .admin-main > [id^="admin-section-"] > :nth-child(n + 4) { animation-delay: 110ms; }
+.admin-shell .admin-section-swap .admin-dash-top > :nth-child(2), .admin-shell .admin-section-swap .admin-dash-grid > :nth-child(1) { animation-delay: 120ms; }
+.admin-shell .admin-section-swap .admin-dash-top > :nth-child(3), .admin-shell .admin-section-swap .admin-dash-grid > :nth-child(n + 2) { animation-delay: 150ms; }
+
 @media (prefers-reduced-motion: reduce) {
   .admin-shell .admin-section-head h1::after { animation: none; }
+  .admin-shell .admin-main { transition: none; }
+  .admin-shell .is-section-leaving .admin-main { transform: none; }
+  .admin-shell .admin-section-swap .admin-main * { animation: none !important; }
   .panel-intro-mark { animation: none; }
   .panel-intro-ring { display: none; }
 }
