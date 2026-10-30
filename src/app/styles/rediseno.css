@@ -515,6 +515,38 @@ div.admin-shell { background: var(--sand); }
 .admin-shell .admin-sidebar-collapse { color: #a693bd; }
 .admin-shell .admin-sidebar-collapse:hover { background: rgb(255 255 255 / .06); color: #fff; }
 
+/* Contraer y expandir con animación: la columna se angosta, los textos se desvanecen y los íconos
+   quedan quietos en su lugar. Antes los textos salían con display: none y todo cambiaba de golpe. */
+@media (min-width: 1121px) {
+  .admin-shell .admin-layout { transition: grid-template-columns .34s var(--ease-out); }
+  .admin-shell .admin-sidebar { overflow-x: hidden; }
+  .admin-shell :is(.admin-brand, .admin-branch-switch, .admin-nav a, .admin-sidebar-collapse) { overflow: hidden; white-space: nowrap; }
+  .admin-shell :is(.admin-brand-mark, .admin-branch-switch > svg, .admin-sidebar-collapse > svg) { flex-shrink: 0; }
+  .admin-shell :is(.admin-brand > div, .admin-branch-switch-copy, .admin-nav a > span, .admin-nav-tail, .admin-logout, .admin-sidebar-collapse span) {
+    transition: opacity .2s ease .14s, visibility 0s linear 0s;
+  }
+
+  .admin-shell .is-sidebar-collapsed .admin-sidebar { align-items: stretch; padding-inline: 12px; }
+  .admin-shell .is-sidebar-collapsed .admin-brand { justify-content: flex-start; padding-bottom: 12px; }
+  .admin-shell .is-sidebar-collapsed .admin-brand > div { display: block; }
+  .admin-shell .is-sidebar-collapsed .admin-branch-switch-copy { display: grid; }
+  .admin-shell .is-sidebar-collapsed .admin-nav a > span { display: block; }
+  .admin-shell .is-sidebar-collapsed .admin-nav-tail { display: grid; }
+  .admin-shell .is-sidebar-collapsed .admin-logout { display: block; }
+  .admin-shell .is-sidebar-collapsed .admin-sidebar-collapse span { display: inline; }
+  .admin-shell .is-sidebar-collapsed .admin-branch-switch { justify-content: flex-start; width: 100%; padding: 6px 10px; }
+  .admin-shell .is-sidebar-collapsed .admin-nav a { display: grid; justify-content: normal; width: auto; padding: 0 10px; }
+  .admin-shell .is-sidebar-collapsed .admin-sidebar-collapse { justify-content: flex-start; width: auto; padding: 0 10px; margin-top: 0; }
+  .admin-shell .is-sidebar-collapsed :is(.admin-brand > div, .admin-branch-switch-copy, .admin-nav a > span, .admin-nav-tail, .admin-logout, .admin-sidebar-collapse span) {
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .12s ease, visibility 0s linear .12s;
+  }
+}
+@media (min-width: 1121px) and (prefers-reduced-motion: reduce) {
+  .admin-shell .admin-layout,
+  .admin-shell :is(.admin-brand > div, .admin-branch-switch-copy, .admin-nav a > span, .admin-nav-tail, .admin-logout, .admin-sidebar-collapse span) { transition: none; }
+}
+
 /* Celular y tablet: el menú es una barra noche arriba que se despliega. */
 .admin-shell .admin-menu-toggle {
   border-color: rgb(255 255 255 / .14); background: rgb(255 255 255 / .07); color: #fff; box-shadow: none;
