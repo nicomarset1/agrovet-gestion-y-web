@@ -29,6 +29,7 @@ import { WholesaleClientModal, WholesaleClientsPanel } from "@/components/admin/
 import { CajaSection } from "@/components/admin/caja";
 import { VentasSection } from "@/components/admin/ventas";
 import { VentasWebSection } from "@/components/admin/ventas-web";
+import { PANEL_INTRO_END_EVENT } from "@/components/panel-intro";
 
 // Cola de cada ítem del menú: chevron y, mientras la sección carga, un indicador.
 function AdminNavTail() {
@@ -130,9 +131,15 @@ export function AdminConsole({
       // Sin sessionStorage, una recarga vuelve a mostrar la cascada: no rompe nada.
     }
     // Al terminar se saca la clase para que remontar partes (por ejemplo, al cambiar el período)
-    // no repita la cascada.
-    const timer = window.setTimeout(() => setPanelMotion(null), 700);
-    return () => window.clearTimeout(timer);
+    // no repita la cascada. Con la animación de entrada en pantalla, la cascada espera a que termine.
+    let timer = 0;
+    const start = () => { timer = window.setTimeout(() => setPanelMotion(null), 700); };
+    if (document.querySelector(".panel-intro")) window.addEventListener(PANEL_INTRO_END_EVENT, start, { once: true });
+    else start();
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(PANEL_INTRO_END_EVENT, start);
+    };
   }, [coveredByBranchPicker]);
   const adminMenuToggleRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {

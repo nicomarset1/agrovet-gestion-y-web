@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
 import { installmentsLabel } from "@/lib/format";
+import { PANEL_INTRO_COOKIE } from "@/lib/panel-intro";
 import { panelPath } from "@/lib/panel-path";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import {
@@ -65,6 +66,8 @@ export async function loginAction(_: LoginState, formData: FormData): Promise<Lo
   }
   await recordLoginAttempt(identifier, true);
   await startAdminSession();
+  // Marca de un solo uso: el panel muestra la animación de entrada y la borra al arrancar.
+  (await cookies()).set(PANEL_INTRO_COOKIE, "1", { path: panelPath, maxAge: 120, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
   redirect(panelPath);
 }
 
