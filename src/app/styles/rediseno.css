@@ -459,3 +459,142 @@ html { background: var(--sand); }
 .qty-stepper { border-color: var(--line-strong); }
 .cart-heading-count { background: var(--sage); border-color: transparent; }
 .cart-count { background: var(--maiz); color: var(--noche); }
+
+/* ===== Panel de gestión ===== */
+
+/* La columna del contenido no puede crecer con una tabla ancha: la tabla se desplaza adentro de su tarjeta. */
+div.admin-shell { background: var(--sand); }
+.admin-shell .admin-main { min-width: 0; }
+@media (max-width: 1120px) {
+  .admin-shell .admin-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Menú lateral en noche: la marca vive acá y el contenido queda claro. Lo activo lleva el filete maíz. */
+.admin-shell .admin-sidebar {
+  border-color: transparent; color: #d9cbe8;
+  background:
+    radial-gradient(120% 50% at 0% 0%, rgb(123 47 208 / .3), transparent 62%),
+    linear-gradient(180deg, var(--noche) 0%, #170622 100%);
+  box-shadow: 0 18px 40px -24px rgb(29 10 44 / .7);
+}
+@media (min-width: 1121px) {
+  .admin-shell .admin-sidebar { border-right: 0; box-shadow: none; }
+}
+.admin-shell .admin-brand { border-bottom-color: rgb(255 255 255 / .08); }
+.admin-shell .admin-sidebar.open .admin-brand { border-bottom-color: rgb(255 255 255 / .1); }
+.admin-shell .admin-brand-mark { box-shadow: 0 0 0 1px rgb(255 255 255 / .12), 0 8px 18px -8px rgb(0 0 0 / .6); }
+.admin-shell .admin-brand strong { color: #fff; font-family: var(--font-display), sans-serif; font-size: 16px; letter-spacing: -.015em; }
+.admin-shell .admin-brand span { color: #9f8cb6; font-size: 12px; letter-spacing: 0; text-transform: none; }
+
+.admin-shell .admin-branch-switch {
+  border-color: rgb(255 255 255 / .1); background: rgb(255 255 255 / .05); color: var(--maiz);
+}
+.admin-shell .admin-branch-switch:hover { border-color: rgb(255 255 255 / .18); background: rgb(255 255 255 / .09); }
+.admin-shell .admin-branch-switch-copy small { color: #a693bd; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.admin-shell .admin-branch-switch-copy strong { color: #fff; }
+
+.admin-shell .admin-nav a {
+  position: relative; border: 1px solid transparent; background: transparent; color: #cdbfe0; font-weight: 600;
+}
+.admin-shell .admin-nav a > svg:first-child { color: #8f7aa8; }
+.admin-shell .admin-nav a:hover { transform: none; background: rgb(255 255 255 / .06); border-color: transparent; box-shadow: none; color: #fff; }
+.admin-shell .admin-nav a:hover > svg:first-child { color: #e6d8f5; }
+.admin-shell .admin-nav-tail { color: rgb(255 255 255 / .22); }
+.admin-shell .admin-nav a:hover .admin-nav-tail { color: rgb(255 255 255 / .6); }
+.admin-shell .admin-nav a.active {
+  background: rgb(255 255 255 / .09); border-color: transparent; color: #fff; font-weight: 700;
+  box-shadow: inset 2px 0 0 var(--maiz);
+}
+.admin-shell .admin-nav a.active > svg:first-child, .admin-shell .admin-nav a.active .admin-nav-tail { color: var(--maiz); }
+.admin-shell .admin-nav-tail::after { border-color: rgb(255 255 255 / .2); border-top-color: var(--maiz); }
+
+.admin-shell .admin-logout .button {
+  background: transparent; border-color: rgb(255 255 255 / .16); color: #e6dbf3; box-shadow: none;
+}
+.admin-shell .admin-logout .button:hover { background: rgb(255 255 255 / .08); border-color: rgb(255 255 255 / .26); color: #fff; }
+.admin-shell .admin-sidebar-collapse { color: #a693bd; }
+.admin-shell .admin-sidebar-collapse:hover { background: rgb(255 255 255 / .06); color: #fff; }
+
+/* Celular y tablet: el menú es una barra noche arriba que se despliega. */
+.admin-shell .admin-menu-toggle {
+  border-color: rgb(255 255 255 / .14); background: rgb(255 255 255 / .07); color: #fff; box-shadow: none;
+}
+.admin-shell .admin-sidebar.open .admin-menu-toggle { border-color: var(--maiz); background: var(--maiz); color: var(--noche); box-shadow: none; }
+.admin-shell .admin-sidebar .admin-skeleton-line {
+  background: linear-gradient(90deg, rgb(255 255 255 / .06) 0%, rgb(255 255 255 / .13) 45%, rgb(255 255 255 / .06) 90%);
+  background-size: 200% 100%;
+}
+
+/* Encabezado de cada sección: título en display con el subrayado maíz de la tienda, en chico. */
+.admin-shell .admin-section-head h1 { font-family: var(--font-display), sans-serif; letter-spacing: -.025em; }
+.admin-shell .admin-section-head h1::after {
+  content: ""; display: block; width: 28px; height: 3px; margin-top: 8px; border-radius: 999px;
+  background: var(--maiz); transform-origin: left; animation: rd-underline .45s var(--ease-out) .1s both;
+}
+
+/* En columna (celular y tablet) el título quedaba centrado: align-items venía de la versión en fila. */
+@media (max-width: 820px) {
+  .admin-shell .admin-section-head { align-items: stretch; }
+}
+
+/* Indicadores: las ventas en una tarjeta noche (lo que más se mira), el resto en blanco. Cifras en display. */
+.admin-shell .admin-dash-card { border-color: transparent; box-shadow: var(--ring), var(--shadow-sm); }
+.admin-shell a.admin-dash-card:hover { border-color: transparent; box-shadow: 0 0 0 1px rgb(91 15 115 / .14), var(--shadow-md); }
+.admin-shell .admin-dash-card small { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.admin-shell a.admin-dash-card > strong { font-family: var(--font-display), sans-serif; font-size: 30px; font-weight: 700; letter-spacing: -.035em; }
+.admin-shell a.admin-dash-card > strong em { font-family: var(--font-body), sans-serif; letter-spacing: 0; }
+.admin-shell a.admin-dash-card.admin-dash-sales {
+  position: relative; overflow: hidden; isolation: isolate; color: #fff;
+  background:
+    radial-gradient(90% 160% at 100% 0%, rgb(123 47 208 / .5) 0%, rgb(123 47 208 / 0) 60%),
+    linear-gradient(135deg, var(--noche) 0%, #2a0d40 60%, var(--noche-3) 100%);
+  box-shadow: 0 18px 36px -24px rgb(29 10 44 / .9);
+}
+.admin-shell a.admin-dash-card.admin-dash-sales:hover { box-shadow: 0 22px 40px -22px rgb(29 10 44 / .95); }
+.admin-shell .admin-dash-sales small { color: #cdb6ea; }
+.admin-shell a.admin-dash-sales > strong { color: #fff; font-size: 38px; }
+.admin-shell a.admin-dash-sales > span { color: #cbbcdb; }
+.admin-shell .admin-dash-sales .admin-dash-change { background: rgb(255 255 255 / .08); color: #e6dbf3 !important; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .1); }
+.admin-shell .admin-dash-sales .admin-dash-change.is-up { background: rgb(245 184 61 / .14); color: #ffd88a !important; box-shadow: inset 0 0 0 1px rgb(245 184 61 / .3); }
+.admin-shell .admin-dash-sales .admin-dash-change.is-down { background: rgb(255 120 120 / .12); color: #ffc1c1 !important; box-shadow: inset 0 0 0 1px rgb(255 120 120 / .25); }
+
+/* Mismo criterio en el resto de las métricas: etiqueta en tipo oración y cifra en display. */
+.admin-shell :is(.admin-stat small, .admin-sales-kpis small, .admin-sales-breakdown > small, .admin-pos-summary-label) {
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0; text-transform: none;
+}
+.admin-shell .admin-stat { border-color: transparent; box-shadow: var(--ring), var(--shadow-sm); }
+.admin-shell :is(.admin-stat strong, .admin-sales-kpis strong) { font-family: var(--font-display), sans-serif; letter-spacing: -.03em; }
+
+/* Tablas tipo planilla: encabezado gris lila y un filete maíz en la fila que está bajo el mouse. */
+.admin-shell .products-table thead th { background: #f4f0f8; border-bottom-color: var(--line-strong); }
+.admin-shell .products-sort { color: #5d4f6d; font-size: 11px; letter-spacing: .05em; }
+.admin-shell .products-row:hover { background: #fcfaff; }
+.admin-shell .products-row:hover > td:first-child { box-shadow: inset 3px 0 0 var(--maiz); }
+.admin-shell .products-col-price strong { color: var(--ink); }
+.admin-shell .products-page.active { background: var(--noche); }
+.admin-shell .admin-table-row:not(.admin-table-head) { transition: background var(--dur-fast) ease, box-shadow var(--dur-fast) ease; }
+.admin-shell .admin-table-row:not(.admin-table-head):hover { background: #fcfaff; box-shadow: inset 3px 0 0 var(--maiz); }
+
+/* Login: noche con el rastro de huellas y una tarjeta blanca con filete arriba. */
+div.admin-shell.admin-login-shell {
+  position: relative; overflow: hidden; isolation: isolate; min-height: 100dvh;
+  background:
+    radial-gradient(70% 60% at 85% 10%, rgb(123 47 208 / .4) 0%, rgb(123 47 208 / 0) 60%),
+    linear-gradient(160deg, var(--noche) 0%, #170622 70%, #240a35 100%);
+}
+.admin-login-shell .paw-trail {
+  position: absolute; z-index: -1; left: 50%; bottom: 0; width: min(1100px, 140vw); height: auto; transform: translateX(-38%);
+}
+.admin-shell .login { overflow: hidden; border: 0; box-shadow: 0 0 0 1px rgb(255 255 255 / .06), 0 40px 80px -30px rgb(0 0 0 / .7); }
+.admin-shell .login::after {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--forest-light), var(--maiz));
+}
+.admin-shell .login h1 { font-size: 32px; }
+.admin-shell .login .eyebrow { color: var(--forest-light); }
+.admin-shell .login .field { border-color: var(--line-strong); border-radius: 12px; }
+.admin-shell .login .field:focus { outline: none; border-color: var(--forest-light); box-shadow: var(--focus-ring); }
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell .admin-section-head h1::after { animation: none; }
+}

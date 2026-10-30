@@ -19,7 +19,8 @@
 }
 
 /* ===== Tabla ===== */
-.products-table-card { padding: 0; overflow: hidden; }
+/* Contenedor de consultas: la tabla se acomoda al ancho real de la tarjeta (con el menú abierto, contraído o arriba). */
+.products-table-card { padding: 0; overflow: hidden; container-type: inline-size; }
 .products-table-scroll { overflow-x: auto; }
 .products-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 14px; }
 .products-table thead th {
@@ -46,6 +47,9 @@
 .products-name > div { display: grid; gap: 2px; min-width: 0; }
 .products-name strong, .products-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
 .products-name strong { color: var(--ink); font-size: 14.5px; font-weight: 700; }
+/* El nombre usa hasta dos renglones antes de cortarse: en tablet "Cats Adu…" no alcanzaba para reconocerlo. */
+.products-name strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.3; }
+.products-table thead th:first-child { min-width: 230px; }
 .products-name small { color: var(--muted); font-size: 12.5px; }
 .products-thumb {
   flex: 0 0 40px; width: 40px; height: 40px; border-radius: 10px; object-fit: contain; background: white;
@@ -137,4 +141,65 @@
   .product-quick-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .product-quick-head { display: none; }
   .product-quick-row strong { grid-column: 1 / -1; }
+}
+
+/* ===== Tarjeta mediana: columnas más justas para que las acciones entren sin desplazar la tabla ===== */
+@container (min-width: 1000px) and (max-width: 1099px) {
+  .products-table { min-width: 0; }
+  .products-table thead th:first-child { min-width: 190px; }
+  .products-col-stock { width: auto; }
+  .products-actions { gap: 4px; }
+  .products-table td, .products-table thead th { padding-inline: 8px; }
+  .products-col-category { width: auto; }
+  .products-col-price { width: 110px; }
+  .products-col-active { width: 70px; }
+  .products-col-actions { width: 124px; }
+}
+
+/* ===== Tarjeta angosta (celular y tablet): cada producto es una tarjeta ===== */
+/* La tabla de 6 columnas no entra en una tarjeta de menos de 1000 px: las filas pasan a grilla (nombre, categoría, precio y stock,
+   en tienda y acciones) y el encabezado queda como fila de botones para ordenar. */
+@container (max-width: 999px) {
+  .products-table, .products-table thead, .products-table tbody { display: block; min-width: 0; }
+  .products-table thead tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 14px; background: #f4f0f8; border-bottom: 1px solid var(--line-strong); }
+  .products-table thead th { position: static; display: block; width: auto; height: auto; padding: 0; border: 0; background: none; }
+  .products-table thead th.products-col-actions { display: none; }
+  .products-table thead th:first-child { min-width: 0; }
+  /* El filete maíz del mouse va en el borde de la tarjeta, no en la celda del nombre. */
+  .admin-shell .products-table .products-row:hover > td:first-child { box-shadow: none; }
+  .admin-shell .products-table .products-row:hover { box-shadow: inset 3px 0 0 var(--maiz); }
+  .products-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 12px;
+    grid-template-areas: "name name" "category category" "price stock" "active actions";
+    padding: 14px; border-bottom: 1px solid #f1e9f9;
+  }
+  .products-row > td { display: block; width: auto; height: auto; padding: 0; border: 0; }
+  .products-row > td:nth-child(1) { grid-area: name; }
+  .products-row > .products-col-category { grid-area: category; }
+  .products-row > .products-col-price { grid-area: price; }
+  .products-row > .products-col-stock { grid-area: stock; justify-self: end; }
+  .products-row > .products-col-active { grid-area: active; }
+  .products-row > .products-col-actions { grid-area: actions; }
+  .products-name { align-items: flex-start; }
+  .products-name strong { max-width: none; white-space: normal; line-height: 1.3; }
+  .products-name small { max-width: none; }
+  .products-thumb { flex-basis: 48px; width: 48px; height: 48px; }
+  .products-category { max-width: none; white-space: normal; color: var(--muted); }
+  .products-col-price strong { font-size: 16px; }
+  .products-col-active form { align-items: center; gap: 8px; }
+  .products-col-active form::before { content: "En tienda"; order: 2; color: var(--muted); font-size: 13px; font-weight: 600; }
+  .products-actions .icon-button { width: 40px; height: 40px; }
+  .products-quick-row { display: block; }
+  .products-quick-row td { display: block; padding: 0 10px 14px; }
+  .products-empty { display: block; height: auto; padding: 32px 16px; }
+}
+
+/* Con lugar, las tarjetas van de a dos; el aviso de vacío ocupa todo el ancho. */
+@container (min-width: 640px) and (max-width: 999px) {
+  .products-table tbody { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .products-row { box-shadow: inset -1px 0 0 #f1e9f9; }
+  .products-quick-row, .products-table tbody > tr:has(.products-empty) { grid-column: 1 / -1; }
+  /* Mientras se edita, una sola columna: así la edición queda debajo de su producto sin dejar huecos. */
+  .products-table tbody:has(.products-quick-row) { grid-template-columns: minmax(0, 1fr); }
+  .admin-shell .products-table .products-row:hover { box-shadow: inset 3px 0 0 var(--maiz), inset -1px 0 0 #f1e9f9; }
 }

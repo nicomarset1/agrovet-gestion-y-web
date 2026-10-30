@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
+import { PawTrail } from "@/components/paw-trail";
 import { isAdmin } from "@/lib/auth";
 import { panelPath } from "@/lib/panel-path";
 
@@ -8,7 +9,8 @@ export const metadata = { title: "Ingreso administrativo" };
 export default async function LoginPage() {
   if (await isAdmin()) redirect(panelPath);
   return (
-    <div className="admin-shell">
+    <div className="admin-shell admin-login-shell">
+      <PawTrail />
       <section className="card login">
         <p className="eyebrow">Acceso privado</p>
         <h1 className="display">Panel Agrovet</h1>
