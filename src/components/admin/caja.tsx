@@ -3,9 +3,10 @@
 // Panel de gestión: sección Caja (venta de mostrador).
 
 import { useRouter } from "next/navigation";
-import { Minus, PackagePlus, Pencil, Plus, ScanBarcode, Trash2, X } from "lucide-react";
+import { Minus, PackagePlus, Pencil, Plus, RotateCcw, ScanBarcode, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatPrice, installmentsLabel } from "@/lib/format";
+import { formatPrice, installmentsLabel, posMaxUnitPriceCents, posUnitPriceCents } from "@/lib/format";
+import { Switch } from "@/components/ui/form-controls";
 import { Select } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { formatRange } from "@/components/ui/date-utils";
@@ -13,6 +14,119 @@ import type { Branch, OrderRecord, Product } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import { closePosSaleAction } from "@/app/gestion-agrovet/actions";
 import { INSTALLMENT_OPTIONS, PAYMENT_OPTIONS, SectionHeader, dateKey, formatAdminDateTime, isCancelledOrder, isCashOrder, toDate } from "@/components/admin/shared";
+
+// Acepta como se escribe un precio acá: 25000, 25.000, 25.000,50 o $ 25000. Vacío = volver al de lista.
+function parsePosPrice(raw: string): number | "empty" | "invalid" {
+  const value = raw.replace(/[$\s]/g, "");
+  if (!value) return "empty";
+  const plain = /^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(value)
+    ? value.replace(/\./g, "").replace(",", ".")
+    : /^\d+([.,]\d{1,2})?$/.test(value)
+      ? value.replace(",", ".")
+      : null;
+  if (!plain) return "invalid";
+  const cents = Math.round(Number(plain) * 100);
+  return cents > 0 && cents <= posMaxUnitPriceCents ? cents : "invalid";
+}
+
+function formatPriceInput(cents: number) {
+  return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(cents / 100);
+}
+
+function PosPriceField({
+  listCents,
+  manualCents,
+  name,
+  onChange,
+  onCloseSale,
+  onDone,
+  onDraftInvalid,
+  onInvalid,
+  onScan,
+}: {
+  listCents: number;
+  manualCents: number | null;
+  name: string;
+  onChange: (manualCents: number | null) => void;
+  onCloseSale: () => void;
+  onDone: () => void;
+  onDraftInvalid: (invalid: boolean) => void;
+  onInvalid: (text: string) => void;
+  onScan: (code: string) => void;
+}) {
+  // null = no se está editando: se muestra el precio vigente de la línea.
+  const [draft, setDraft] = useState<string | null>(null);
+  const invalid = draft !== null && parsePosPrice(draft) === "invalid";
+  const stopEditing = () => {
+    setDraft(null);
+    onDraftInvalid(false);
+  };
+  // Devuelve si quedó bien: un precio mal escrito no se aplica y la línea sigue con el que tenía.
+  function commit() {
+    if (draft === null) return true;
+    const parsed = parsePosPrice(draft);
+    stopEditing();
+    if (parsed === "invalid") {
+      onInvalid(`"${draft}" no es un precio válido. Se dejó ${formatPrice(manualCents ?? listCents)}.`);
+      return false;
+    }
+    onChange(parsed === "empty" || parsed === listCents ? null : parsed);
+    return true;
+  }
+  return (
+    <div className={`admin-pos-price${manualCents !== null ? " is-manual" : ""}${invalid ? " is-invalid" : ""}`}>
+      <span aria-hidden="true">$</span>
+      <input
+        aria-invalid={invalid}
+        aria-label={`Precio por unidad de ${name}`}
+        autoComplete="off"
+        inputMode="decimal"
+        onBlur={commit}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          onDraftInvalid(parsePosPrice(event.target.value) === "invalid");
+        }}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            // Se aplica el precio antes de cerrar; el atajo general de la Caja no debe cerrar con el anterior.
+            event.preventDefault();
+            event.stopPropagation();
+            if (commit()) onCloseSale();
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            // Si pasan el lector con el foco acá entra un código: se agrega el producto y el precio no se toca.
+            const typed = draft?.trim() ?? "";
+            if (/^\d{8,}$/.test(typed)) {
+              stopEditing();
+              onScan(typed);
+            } else {
+              commit();
+            }
+            onDone();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            stopEditing();
+            onDone();
+          }
+        }}
+        type="text"
+        value={draft ?? formatPriceInput(manualCents ?? listCents)}
+      />
+      {manualCents !== null ? (
+        <button
+          aria-label={`Volver al precio de lista, ${formatPrice(listCents)}`}
+          className="admin-pos-price-reset"
+          onClick={() => { onChange(null); onDone(); }}
+          title={`Volver a ${formatPrice(listCents)}`}
+          type="button"
+        >
+          <RotateCcw aria-hidden="true" size={13} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function PointOfSalePanel({
   branch,
@@ -29,7 +143,8 @@ function PointOfSalePanel({
 }) {
   const router = useRouter();
   const { push } = useToast();
-  type PosLine = { variantId: number; productName: string; brand: string; label: string; sku: string; barcode: string; quantity: number; priceCents: number; stock: number };
+  // priceCents es el precio de lista; manualPriceCents, el escrito a mano solo para esta venta.
+  type PosLine = { variantId: number; productName: string; brand: string; label: string; sku: string; barcode: string; quantity: number; priceCents: number; manualPriceCents: number | null; stock: number };
   const [scanValue, setScanValue] = useState("");
   const [cart, setCart] = useState<PosLine[]>([]);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
@@ -38,6 +153,9 @@ function PointOfSalePanel({
   const focusScan = () => requestAnimationFrame(() => scanRef.current?.focus());
   const [paymentMethod, setPaymentMethod] = useState("Efectivo");
   const [installments, setInstallments] = useState("1");
+  // El 10% de efectivo arranca aplicado, como promete la tienda; se puede sacar venta por venta.
+  const [cashDiscountOn, setCashDiscountOn] = useState(true);
+  const [priceDraftInvalid, setPriceDraftInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showDaySales, setShowDaySales] = useState(false);
   const catalogVariants = useMemo(() => products.flatMap((product) => product.variants.map((variant) => ({
@@ -61,7 +179,13 @@ function PointOfSalePanel({
     const key = dateKey(toDate(order.createdAt));
     return key >= salesFrom && key <= salesTo;
   }), [branch.id, orders, salesFrom, salesTo]);
-  const totalCents = cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+  const isCashPayment = paymentMethod === "Efectivo";
+  const discountActive = isCashPayment && cashDiscountOn;
+  // Las líneas muestran el precio sin el 10%; el descuento se ve aparte en el resumen, como en un ticket.
+  const subtotalCents = cart.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
+  const totalCents = cart.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
+  const discountCents = subtotalCents - totalCents;
+  const hasManualPrice = cart.some((item) => item.manualPriceCents !== null);
   const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0);
   function pushVariant(rawValue: string) {
     const value = rawValue.trim();
@@ -81,7 +205,10 @@ function PointOfSalePanel({
     setFlash((current) => ({ variantId: match.variantId, tick: (current?.tick ?? 0) + 1 }));
     setCart((current) => (existing
       ? current.map((item) => (item.variantId === match.variantId ? { ...item, quantity: item.quantity + 1 } : item))
-      : [...current, { ...match, quantity: 1 }]));
+      : [...current, { ...match, quantity: 1, manualPriceCents: null }]));
+  }
+  function setLinePrice(variantId: number, manualPriceCents: number | null) {
+    setCart((current) => current.map((item) => (item.variantId === variantId ? { ...item, manualPriceCents } : item)));
   }
   // Suma una unidad sin pasar el stock de la sucursal (antes se podía y la venta fallaba al cerrar).
   function increaseLine(variantId: number) {
@@ -103,7 +230,7 @@ function PointOfSalePanel({
     setCart((current) => current.filter((item) => item.variantId !== variantId));
   }
   async function closeSale() {
-    if (!cart.length || submitting) return;
+    if (!cart.length || submitting || priceDraftInvalid) return;
     setSubmitting(true);
     setNotice(null);
     try {
@@ -111,13 +238,19 @@ function PointOfSalePanel({
         branchId: branch.id,
         paymentMethod,
         installments: paymentMethod === "Tarjeta" ? installments : undefined,
-        items: cart.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
+        cashDiscount: discountActive,
+        items: cart.map((item) => ({
+          variantId: item.variantId,
+          quantity: item.quantity,
+          ...(item.manualPriceCents !== null ? { manualPriceCents: item.manualPriceCents } : {}),
+        })),
       });
       if (!result.ok) throw new Error(result.error);
       setCart([]);
       setScanValue("");
-      setNotice({ text: `Venta cerrada: ${result.code}.`, tone: "ok" });
-      push({ title: "Venta cerrada", message: result.code, type: "success" });
+      setCashDiscountOn(true);
+      setNotice({ text: `Venta cerrada: ${result.code} por ${formatPrice(result.totalCents)}.`, tone: "ok" });
+      push({ title: "Venta cerrada", message: `${result.code} · ${formatPrice(result.totalCents)}`, type: "success" });
       setShowDaySales(true);
       router.refresh();
     } catch (error) {
@@ -187,7 +320,7 @@ function PointOfSalePanel({
             </label>
           ) : null}
         </div>
-        <p className="admin-pos-keys"><kbd>Enter</kbd> agrega · <kbd>Esc</kbd> limpia el campo · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> cierra la venta</p>
+        <p className="admin-pos-keys"><kbd>Enter</kbd> agrega · <kbd>Esc</kbd> limpia el campo · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> cierra la venta · Tocá un precio para cambiarlo</p>
         {notice ? (
           <p className={`admin-pos-notice is-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>
         ) : null}
@@ -201,14 +334,25 @@ function PointOfSalePanel({
                 >
                   <div className="admin-pos-line-copy">
                     <strong>{item.brand} {item.productName}</strong>
-                    <small>{item.label} · {item.barcode} · {formatPrice(item.priceCents)} c/u</small>
+                    <small>{item.label} · {item.barcode}{item.manualPriceCents !== null ? ` · lista ${formatPrice(item.priceCents)}` : ""}</small>
                   </div>
+                  <PosPriceField
+                    listCents={item.priceCents}
+                    manualCents={item.manualPriceCents}
+                    name={item.productName}
+                    onChange={(manualCents) => setLinePrice(item.variantId, manualCents)}
+                    onCloseSale={() => requestAnimationFrame(() => void closeSaleRef.current())}
+                    onDone={focusScan}
+                    onDraftInvalid={setPriceDraftInvalid}
+                    onInvalid={(text) => setNotice({ text, tone: "error" })}
+                    onScan={pushVariant}
+                  />
                   <div className="admin-pos-qty" role="group" aria-label={`Cantidad de ${item.productName}`}>
                     <button aria-label="Restar una unidad" className="qty-button" onClick={() => { decreaseLine(item.variantId); focusScan(); }} type="button"><Minus size={14} /></button>
                     <span aria-live="polite">{item.quantity}</span>
                     <button aria-label="Sumar una unidad" className="qty-button" disabled={item.quantity >= item.stock} onClick={() => { increaseLine(item.variantId); focusScan(); }} type="button"><Plus size={14} /></button>
                   </div>
-                  <strong className="admin-pos-subtotal">{formatPrice(item.priceCents * item.quantity)}</strong>
+                  <strong className="admin-pos-subtotal">{formatPrice((item.manualPriceCents ?? item.priceCents) * item.quantity)}</strong>
                   <button aria-label={`Quitar ${item.productName} de la venta`} className="icon-button danger" onClick={() => { removeLine(item.variantId); focusScan(); }} type="button"><X size={15} /></button>
                 </li>
               ))}
@@ -228,11 +372,35 @@ function PointOfSalePanel({
         <p className="admin-pos-summary-meta">
           {totalUnits} {totalUnits === 1 ? "unidad" : "unidades"} · {cart.length} {cart.length === 1 ? "producto" : "productos"} · {paymentSummary}
         </p>
+        <div className={`admin-pos-reveal${isCashPayment ? " is-open" : ""}`} inert={!isCashPayment}>
+          <div>
+            <div className="admin-pos-cash">
+              <Switch
+                checked={cashDiscountOn}
+                label="Descuento efectivo 10%"
+                onChange={(event) => { setCashDiscountOn(event.target.checked); focusScan(); }}
+              />
+              <div className={`admin-pos-reveal${discountCents > 0 ? " is-open" : ""}`}>
+                <div>
+                  <dl className="admin-pos-breakdown">
+                    <div><dt>Subtotal</dt><dd>{formatPrice(subtotalCents)}</dd></div>
+                    <div className="is-discount"><dt>Descuento</dt><dd>−{formatPrice(discountCents)}</dd></div>
+                  </dl>
+                </div>
+              </div>
+              <div className={`admin-pos-reveal${discountActive && hasManualPrice ? " is-open" : ""}`}>
+                <div>
+                  <small className="admin-pos-cash-note">Los precios escritos a mano no llevan el 10%.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div className="admin-point-actions">
-          <button className="button button-primary admin-pos-close" disabled={!cart.length || submitting} onClick={closeSale} type="button">
+          <button className="button button-primary admin-pos-close" disabled={!cart.length || submitting || priceDraftInvalid} onClick={closeSale} type="button">
             {submitting ? "Cerrando…" : "Cerrar venta"}
           </button>
-          <button className="button button-light" disabled={!cart.length || submitting} onClick={() => { setCart([]); setNotice(null); focusScan(); }} type="button">Vaciar venta</button>
+          <button className="button button-light" disabled={!cart.length || submitting} onClick={() => { setCart([]); setNotice(null); setCashDiscountOn(true); setPriceDraftInvalid(false); focusScan(); }} type="button">Vaciar venta</button>
         </div>
         <div className="admin-point-sales-head">
           <button className="button button-light" onClick={() => setShowDaySales((current) => !current)} type="button">

@@ -10,7 +10,7 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
-import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
+import { deliveryMinimumCents, deliveryMinimumMessage, posUnitPriceCents } from "./format";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
@@ -1551,7 +1551,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string };
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number> };
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
@@ -1582,8 +1582,10 @@ export async function createOrder(input: {
         const [stock] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${item.variantId} AND branch_id = ${allocation.branchId}` as unknown as { quantity?: number }[];
         if (Number(stock?.quantity ?? 0) < allocation.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
       }
-      totalCents += Number(row.priceCents) * item.quantity;
-      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: Number(row.priceCents), allocations });
+      // El 10% y el precio manual viven en cashSale: la tienda no puede mandarlos, siempre cobra el precio de lista.
+      const unitPrice = posUnitPriceCents(Number(row.priceCents), { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale?.cashDiscount });
+      totalCents += unitPrice * item.quantity;
+      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, allocations });
     }
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     let code = "";

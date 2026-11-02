@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
-import { installmentsLabel } from "@/lib/format";
+import { installmentsLabel, posMaxUnitPriceCents } from "@/lib/format";
 import { panelPath } from "@/lib/panel-path";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import {
@@ -185,9 +185,11 @@ const posSaleSchema = z.object({
   branchId: z.number().int().positive(),
   paymentMethod: z.enum(["Efectivo", "Tarjeta", "Transferencia", "QR"]),
   installments: z.enum(["1", "2", "3", "6", "12"]).optional(),
+  cashDiscount: z.boolean().optional(),
   items: z.array(z.object({
     variantId: z.number().int().positive(),
     quantity: z.number().int().min(1).max(999),
+    manualPriceCents: z.number().int().positive().max(posMaxUnitPriceCents).optional(),
   })).min(1).max(100),
 });
 
@@ -197,8 +199,10 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
   if (!(await isAdmin())) return { ok: false, error: "Tu sesión del panel venció. Volvé a ingresar para cerrar la venta." };
   const parsed = posSaleSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Revisá los productos y el medio de pago de la venta." };
-  const { branchId, paymentMethod, installments, items } = parsed.data;
+  const { branchId, paymentMethod, installments, cashDiscount, items } = parsed.data;
   if (paymentMethod === "Tarjeta" && !installments) return { ok: false, error: "Elegí la cantidad de cuotas." };
+  // El precio manual vale solo para esta venta: no toca el precio del producto.
+  const manualPrices = Object.fromEntries(items.flatMap((item) => (item.manualPriceCents === undefined ? [] : [[item.variantId, item.manualPriceCents]])));
   // Mismo formato que usan isCashOrder, el cierre del día y el reporte: "Caja / Tarjeta (3 cuotas)" o "(1 cuota)".
   const source = `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments ?? "1")})` : ""}`;
   try {
@@ -209,8 +213,8 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
       fulfillment: "retiro",
       branchId,
       source,
-      items,
-      cashSale: { source },
+      items: items.map(({ variantId, quantity }) => ({ variantId, quantity })),
+      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices },
     });
     revalidatePath("/");
     revalidatePath("/tienda");

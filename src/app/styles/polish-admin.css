@@ -2722,6 +2722,7 @@
 
 .admin-shell .admin-pos-cart {
   margin-top: 12px;
+  container-type: inline-size;
 }
 
 .admin-shell .admin-pos-lines {
@@ -2734,7 +2735,7 @@
 
 .admin-shell .admin-pos-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 104px auto;
+  grid-template-columns: minmax(0, 1fr) 124px auto 104px auto;
   gap: 12px;
   align-items: center;
   padding: 8px 0;
@@ -2768,6 +2769,75 @@
 .admin-shell .admin-pos-line-copy small {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Precio por unidad editable. Lo escrito a mano queda en maíz: se ve de un vistazo que no es el de lista. */
+.admin-shell .admin-pos-price {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  transition: border-color var(--dur-base) ease, background-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
+}
+
+.admin-shell .admin-pos-price:hover {
+  border-color: #cbbbdc;
+}
+
+.admin-shell .admin-pos-price:focus-within {
+  border-color: var(--forest);
+  box-shadow: var(--focus-ring);
+}
+
+.admin-shell .admin-pos-price.is-manual {
+  border-color: #f5b83d;
+  background: #fff8ec;
+}
+
+.admin-shell .admin-pos-price.is-invalid {
+  border-color: #c9543c;
+  background: #fff4f2;
+}
+
+.admin-shell .admin-pos-price input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-pos-price-reset {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #8a5200;
+  cursor: pointer;
+  animation: ui-fade-in var(--dur-base) ease both;
+  transition: background-color var(--dur-base) ease;
+}
+
+.admin-shell .admin-pos-price-reset:hover {
+  background: #fbe7bd;
 }
 
 .admin-shell .admin-pos-qty {
@@ -2828,6 +2898,69 @@
   font-size: 13px;
 }
 
+/* Desplegables del resumen: abren y cierran por grid-template-rows, nada aparece de golpe. */
+.admin-shell .admin-pos-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--dur-base) var(--ease-out), opacity var(--dur-base) ease;
+}
+
+.admin-shell .admin-pos-reveal.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.admin-shell .admin-pos-reveal > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-shell .admin-pos-cash {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-shell .admin-pos-cash .ui-switch {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-shell .admin-pos-breakdown {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.admin-shell .admin-pos-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-shell .admin-pos-breakdown dt {
+  color: var(--muted);
+}
+
+.admin-shell .admin-pos-breakdown dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-pos-breakdown .is-discount dd {
+  color: #1f6b3d;
+}
+
+.admin-shell .admin-pos-cash-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .admin-shell .admin-pos-close {
   min-height: 46px;
   font-size: 15px;
@@ -2847,6 +2980,40 @@
   }
 }
 
+/* Por ancho de la lista y no de la pantalla: depende también de si el menú lateral está abierto. */
+@container (max-width: 580px) {
+  .admin-shell .admin-pos-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+  }
+
+  .admin-shell .admin-pos-line-copy {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell .admin-pos-price {
+    grid-column: 1;
+    grid-row: 2;
+    width: 150px;
+  }
+
+  .admin-shell .admin-pos-subtotal {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .admin-shell .admin-pos-qty {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .admin-shell .admin-pos-line > .icon-button {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
+  }
+}
+
 @media (max-width: 640px) {
   .admin-shell .admin-pos-top {
     grid-template-columns: 1fr 1fr;
@@ -2860,29 +3027,18 @@
     display: none;
   }
 
-  .admin-shell .admin-pos-line {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px 10px;
-  }
-
-  .admin-shell .admin-pos-line-copy {
-    grid-column: 1 / -1;
-  }
-
   .admin-shell .admin-pos-qty .qty-button {
     width: 40px;
     height: 40px;
   }
 
-  .admin-shell .admin-pos-subtotal {
-    grid-column: 2;
-    grid-row: 2;
+  .admin-shell .admin-pos-price {
+    height: 40px;
   }
 
-  .admin-shell .admin-pos-line > .icon-button {
-    grid-column: 2;
-    grid-row: 3;
-    justify-self: end;
+  /* 16 px: con menos, el iPhone hace zoom al tocar el campo. */
+  .admin-shell .admin-pos-price input {
+    font-size: 16px;
   }
 }
 

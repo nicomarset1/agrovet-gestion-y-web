@@ -12,7 +12,7 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
-import { deliveryMinimumCents, deliveryMinimumMessage } from "./format";
+import { deliveryMinimumCents, deliveryMinimumMessage, posUnitPriceCents } from "./format";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
@@ -1525,7 +1525,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string };
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number> };
 }) {
   return db.transaction(() => {
     // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
@@ -1564,7 +1564,8 @@ export function createOrder(input: {
         const stock = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(item.variantId, allocation.branchId) as { quantity?: number } | undefined;
         if ((stock?.quantity ?? 0) < allocation.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
       }
-      const priceCents = row.priceCents ?? 0;
+      // El 10% y el precio manual viven en cashSale: la tienda no puede mandarlos, siempre cobra el precio de lista.
+      const priceCents = posUnitPriceCents(row.priceCents ?? 0, { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale?.cashDiscount });
       totalCents += priceCents * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
     }

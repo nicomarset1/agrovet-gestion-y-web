@@ -207,7 +207,7 @@ export async function createOrder(input: {
   distanceKm?: number | null;
   items: CartItemPayload[];
   // Solo para ventas de Caja desde el panel (server action con sesión de admin).
-  cashSale?: { source: string };
+  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number> };
 }) {
   return withSync((await getDriver()).createOrder(input));
 }
