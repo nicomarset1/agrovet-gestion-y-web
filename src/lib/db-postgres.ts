@@ -1602,7 +1602,8 @@ export async function createOrder(input: {
       totalCents += unitPrice * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, allocations });
     }
-    const extras = input.cashSale?.extras ?? [];
+    // Varios lleva el 10% igual que un producto; se guarda el monto final, como unit_price_cents.
+    const extras = (input.cashSale?.extras ?? []).map((extra) => ({ ...extra, amountCents: posUnitPriceCents(extra.amountCents, { cashDiscount: input.cashSale?.cashDiscount }) }));
     totalCents += extrasTotalCents(extras);
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     let code = "";

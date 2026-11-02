@@ -1584,7 +1584,8 @@ export function createOrder(input: {
       totalCents += priceCents * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
     }
-    const extras = input.cashSale?.extras ?? [];
+    // Varios lleva el 10% igual que un producto; se guarda el monto final, como unit_price_cents.
+    const extras = (input.cashSale?.extras ?? []).map((extra) => ({ ...extra, amountCents: posUnitPriceCents(extra.amountCents, { cashDiscount: input.cashSale?.cashDiscount }) }));
     totalCents += extrasTotalCents(extras);
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     const insertOrder = db.prepare(`

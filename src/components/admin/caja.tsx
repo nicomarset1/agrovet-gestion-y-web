@@ -190,11 +190,11 @@ function PointOfSalePanel({
   const isCashPayment = paymentMethod === "Efectivo";
   const discountActive = isCashPayment && cashDiscountOn;
   // Las líneas muestran el precio sin el 10%; el descuento se ve aparte en el resumen, como en un ticket.
-  const extrasCents = extrasTotalCents(extras);
-  const subtotalCents = extrasCents + cart.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
-  const totalCents = extrasCents + cart.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
+  const subtotalCents = extrasTotalCents(extras) + cart.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
+  const totalCents = extras.reduce((sum, extra) => sum + posUnitPriceCents(extra.amountCents, { cashDiscount: discountActive }), 0)
+    + cart.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
   const discountCents = subtotalCents - totalCents;
-  const hasManualPrice = extras.length > 0 || cart.some((item) => item.manualPriceCents !== null);
+  const hasManualPrice = cart.some((item) => item.manualPriceCents !== null);
   const totalUnits = extras.length + cart.reduce((sum, item) => sum + item.quantity, 0);
   const lineCount = cart.length + extras.length;
   function closeExtraForm() {
@@ -514,7 +514,7 @@ function PointOfSalePanel({
               </div>
               <div className={`admin-pos-reveal${discountActive && hasManualPrice ? " is-open" : ""}`}>
                 <div>
-                  <small className="admin-pos-cash-note">Lo escrito a mano no lleva el 10%.</small>
+                  <small className="admin-pos-cash-note">Los precios escritos a mano no llevan el 10%.</small>
                 </div>
               </div>
             </div>
