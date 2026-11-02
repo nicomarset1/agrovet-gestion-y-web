@@ -10,12 +10,12 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
-import { deliveryMinimumCents, deliveryMinimumMessage, posUnitPriceCents } from "./format";
+import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
-import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
+import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderExtraRecord, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
 
 const uncategorizedSubcategorySlug = "sin-subcategoria";
 const uncategorizedSubcategoryName = "Sin subcategoría";
@@ -216,6 +216,13 @@ async function ensureSchema() {
         quantity INTEGER NOT NULL CHECK (quantity >= 0),
         PRIMARY KEY (order_id, variant_id, branch_id)
       );
+      CREATE TABLE IF NOT EXISTS order_extras (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL CHECK (amount_cents > 0)
+      );
+      CREATE INDEX IF NOT EXISTS order_extras_order_idx ON order_extras(order_id);
       CREATE TABLE IF NOT EXISTS wholesale_clients (
         id SERIAL PRIMARY KEY,
         business_name TEXT NOT NULL,
@@ -936,7 +943,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     JOIN branches b ON b.id = o.branch_id
     WHERE o.deleted_at IS NULL
     ORDER BY o.created_at DESC, o.id DESC
-  ` as unknown as Array<Omit<OrderRecord, "itemCount" | "items" | "createdAt"> & { createdAt: unknown }>;
+  ` as unknown as Array<Omit<OrderRecord, "itemCount" | "items" | "extras" | "createdAt"> & { createdAt: unknown }>;
   const visibleOrders = orders.filter((order) => !(/^Tienda online/i.test(order.source) && /mercado pago/i.test(order.paymentMethod) && Number(order.paidCents) < Number(order.totalCents) && /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(order.status)));
   if (!visibleOrders.length) return [];
   const items = await sql`
@@ -980,8 +987,16 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     });
     itemsByOrder.set(item.orderId, current);
   }
+  const extraRows = await sql`
+    SELECT order_id AS "orderId", description, amount_cents AS "amountCents" FROM order_extras ORDER BY id
+  ` as unknown as Array<{ orderId: number; description: string; amountCents: number }>;
+  const extrasByOrder = new Map<number, OrderExtraRecord[]>();
+  for (const extra of extraRows) {
+    extrasByOrder.set(extra.orderId, [...(extrasByOrder.get(extra.orderId) ?? []), { description: extra.description, amountCents: Number(extra.amountCents) }]);
+  }
   return visibleOrders.map((order) => ({
     ...order,
+    extras: extrasByOrder.get(order.id) ?? [],
     totalCents: Number(order.totalCents),
     paidCents: Number(order.paidCents ?? order.totalCents),
     createdAt: toIso(order.createdAt),
@@ -1551,7 +1566,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number> };
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
@@ -1587,6 +1602,8 @@ export async function createOrder(input: {
       totalCents += unitPrice * item.quantity;
       lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, allocations });
     }
+    const extras = input.cashSale?.extras ?? [];
+    totalCents += extrasTotalCents(extras);
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
     let code = "";
     let order: { id: number; createdAt: unknown } | undefined;
@@ -1611,6 +1628,9 @@ export async function createOrder(input: {
         if (!result.count) throw new Error("No hay stock suficiente para reservar.");
         await insertOrderAllocation(tx, Number(order.id), line.variantId, allocation.branchId, allocation.quantity);
       }
+    }
+    for (const extra of extras) {
+      await tx`INSERT INTO order_extras (order_id, description, amount_cents) VALUES (${order.id}, ${extra.description}, ${extra.amountCents})`;
     }
     await bumpSyncVersion(tx);
     return { code, totalCents, ...(isMercadoPago ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}) };
@@ -1910,7 +1930,9 @@ export async function updateOrder(input: {
       WHERE order_id = ${input.id}
       ORDER BY variant_id
     ` as unknown as Array<{ variantId: number; quantity: number; unitPriceCents: number }>;
-    if (!currentItems.length) throw new Error("El pedido no tiene productos.");
+    const currentExtras = await tx`SELECT amount_cents AS "amountCents" FROM order_extras WHERE order_id = ${input.id}` as unknown as Array<{ amountCents: number }>;
+    const extrasCents = extrasTotalCents(currentExtras.map((extra) => ({ amountCents: Number(extra.amountCents) })));
+    if (!currentItems.length && !currentExtras.length) throw new Error("El pedido no tiene productos.");
     const currentMap = new Map(currentItems.map((item) => [item.variantId, item]));
     const nextItems = input.items.map((item) => ({ variantId: item.variantId, quantity: Math.max(0, Math.round(item.quantity)) }));
     if (nextItems.length !== currentItems.length) throw new Error("No se puede agregar ni quitar productos desde esta edición.");
@@ -1973,7 +1995,7 @@ export async function updateOrder(input: {
       }
       await tx`UPDATE inventory SET quantity = quantity + ${delta.delta}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId}`;
     }
-    const totalCents = nextItems.reduce((sum, item) => sum + (Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
+    const totalCents = extrasCents + nextItems.reduce((sum, item) => sum + (Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
     await tx`
       UPDATE orders
       SET customer_name = ${input.customerName.trim()}, phone = ${input.phone.trim()}, email = ${input.email.trim()}, fulfillment = ${input.fulfillment.trim()}, branch_id = ${resolvedBranchId},

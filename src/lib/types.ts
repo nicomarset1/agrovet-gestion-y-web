@@ -171,6 +171,12 @@ export type OrderItemRecord = {
   }[];
 };
 
+/** Renglón libre de una venta de Caja ("Varios"): descripción y monto, sin producto ni stock. */
+export type OrderExtraRecord = {
+  description: string;
+  amountCents: number;
+};
+
 export type OrderRecord = {
   id: number;
   code: string;
@@ -191,6 +197,7 @@ export type OrderRecord = {
   // Solo en pedidos "Reservado" (Mercado Pago con stock reservado): cuándo vence la reserva (ISO 8601).
   reservedUntil?: string;
   itemCount: number;
+  extras: OrderExtraRecord[];
   items: OrderItemRecord[];
 };
 

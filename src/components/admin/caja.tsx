@@ -5,7 +5,7 @@
 import { useRouter } from "next/navigation";
 import { Minus, PackagePlus, Pencil, Plus, RotateCcw, ScanBarcode, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatPrice, installmentsLabel, posMaxUnitPriceCents, posUnitPriceCents } from "@/lib/format";
+import { extrasTotalCents, formatPrice, installmentsLabel, posMaxUnitPriceCents, posUnitPriceCents } from "@/lib/format";
 import { Switch } from "@/components/ui/form-controls";
 import { Select } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
@@ -147,6 +147,14 @@ function PointOfSalePanel({
   type PosLine = { variantId: number; productName: string; brand: string; label: string; sku: string; barcode: string; quantity: number; priceCents: number; manualPriceCents: number | null; stock: number };
   const [scanValue, setScanValue] = useState("");
   const [cart, setCart] = useState<PosLine[]>([]);
+  // "Varios": renglones libres con descripción y monto, sin producto ni stock.
+  const [extras, setExtras] = useState<{ id: number; description: string; amountCents: number }[]>([]);
+  const nextExtraId = useRef(1);
+  const [extraFormOpen, setExtraFormOpen] = useState(false);
+  const [extraDescription, setExtraDescription] = useState("");
+  const [extraAmount, setExtraAmount] = useState("");
+  const extraDescriptionRef = useRef<HTMLInputElement>(null);
+  const extraAmountRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
   const [flash, setFlash] = useState<{ variantId: number; tick: number } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
@@ -182,11 +190,58 @@ function PointOfSalePanel({
   const isCashPayment = paymentMethod === "Efectivo";
   const discountActive = isCashPayment && cashDiscountOn;
   // Las líneas muestran el precio sin el 10%; el descuento se ve aparte en el resumen, como en un ticket.
-  const subtotalCents = cart.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
-  const totalCents = cart.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
+  const extrasCents = extrasTotalCents(extras);
+  const subtotalCents = extrasCents + cart.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
+  const totalCents = extrasCents + cart.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
   const discountCents = subtotalCents - totalCents;
-  const hasManualPrice = cart.some((item) => item.manualPriceCents !== null);
-  const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const hasManualPrice = extras.length > 0 || cart.some((item) => item.manualPriceCents !== null);
+  const totalUnits = extras.length + cart.reduce((sum, item) => sum + item.quantity, 0);
+  const lineCount = cart.length + extras.length;
+  function closeExtraForm() {
+    setExtraFormOpen(false);
+    setExtraDescription("");
+    setExtraAmount("");
+  }
+  function openExtraForm() {
+    setExtraFormOpen(true);
+    requestAnimationFrame(() => extraDescriptionRef.current?.focus());
+  }
+  // Devuelve si se agregó. Sin descripción queda como "Varios"; el monto es lo único obligatorio.
+  function addExtra() {
+    const amountCents = parsePosPrice(extraAmount);
+    if (typeof amountCents !== "number") {
+      setNotice({ text: extraAmount.trim() ? `"${extraAmount.trim()}" no es un monto válido.` : "Escribí el monto de varios.", tone: "error" });
+      extraAmountRef.current?.focus();
+      return false;
+    }
+    if (extras.length >= 20) {
+      setNotice({ text: "Se pueden agregar hasta 20 renglones de varios por venta.", tone: "error" });
+      return false;
+    }
+    const description = extraDescription.trim() || "Varios";
+    const id = nextExtraId.current++;
+    setExtras((current) => [...current, { id, description, amountCents }]);
+    setNotice({ text: `${description} por ${formatPrice(amountCents)} agregado.`, tone: "ok" });
+    closeExtraForm();
+    focusScan();
+    return true;
+  }
+  function onExtraFormKeyDown(event: React.KeyboardEvent, field: "description" | "amount") {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeExtraForm();
+      focusScan();
+    } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      // Lo escrito se suma antes de cerrar; el atajo general de la Caja cerraría sin esto.
+      event.preventDefault();
+      event.stopPropagation();
+      if (addExtra()) requestAnimationFrame(() => void closeSaleRef.current());
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (field === "description" && !extraAmount.trim()) extraAmountRef.current?.focus();
+      else addExtra();
+    }
+  }
   function pushVariant(rawValue: string) {
     const value = rawValue.trim();
     if (!value) return;
@@ -230,7 +285,7 @@ function PointOfSalePanel({
     setCart((current) => current.filter((item) => item.variantId !== variantId));
   }
   async function closeSale() {
-    if (!cart.length || submitting || priceDraftInvalid) return;
+    if (!lineCount || submitting || priceDraftInvalid) return;
     setSubmitting(true);
     setNotice(null);
     try {
@@ -244,9 +299,11 @@ function PointOfSalePanel({
           quantity: item.quantity,
           ...(item.manualPriceCents !== null ? { manualPriceCents: item.manualPriceCents } : {}),
         })),
+        extras: extras.map(({ description, amountCents }) => ({ description, amountCents })),
       });
       if (!result.ok) throw new Error(result.error);
       setCart([]);
+      setExtras([]);
       setScanValue("");
       setCashDiscountOn(true);
       setNotice({ text: `Venta cerrada: ${result.code} por ${formatPrice(result.totalCents)}.`, tone: "ok" });
@@ -325,7 +382,7 @@ function PointOfSalePanel({
           <p className={`admin-pos-notice is-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>
         ) : null}
         <div className="admin-pos-cart">
-          {cart.length ? (
+          {lineCount ? (
             <ul className="admin-pos-lines">
               {cart.map((item) => (
                 <li
@@ -356,6 +413,30 @@ function PointOfSalePanel({
                   <button aria-label={`Quitar ${item.productName} de la venta`} className="icon-button danger" onClick={() => { removeLine(item.variantId); focusScan(); }} type="button"><X size={15} /></button>
                 </li>
               ))}
+              {extras.map((extra) => (
+                <li className="admin-pos-line is-extra is-flash" key={`extra-${extra.id}`}>
+                  <div className="admin-pos-line-copy">
+                    <strong>{extra.description}</strong>
+                    <small>Varios · sin stock</small>
+                  </div>
+                  <PosPriceField
+                    listCents={extra.amountCents}
+                    manualCents={null}
+                    name={extra.description}
+                    onChange={(amountCents) => {
+                      if (amountCents !== null) setExtras((current) => current.map((item) => (item.id === extra.id ? { ...item, amountCents } : item)));
+                    }}
+                    onCloseSale={() => requestAnimationFrame(() => void closeSaleRef.current())}
+                    onDone={focusScan}
+                    onDraftInvalid={setPriceDraftInvalid}
+                    onInvalid={(text) => setNotice({ text, tone: "error" })}
+                    onScan={pushVariant}
+                  />
+                  <span aria-hidden="true" className="admin-pos-qty-spacer" />
+                  <strong className="admin-pos-subtotal">{formatPrice(extra.amountCents)}</strong>
+                  <button aria-label={`Quitar ${extra.description} de la venta`} className="icon-button danger" onClick={() => { setExtras((current) => current.filter((item) => item.id !== extra.id)); focusScan(); }} type="button"><X size={15} /></button>
+                </li>
+              ))}
             </ul>
           ) : (
             <div className="admin-empty-state">
@@ -364,13 +445,56 @@ function PointOfSalePanel({
               <span>Escaneá un código de barras para empezar</span>
             </div>
           )}
+          <div className="admin-pos-extra">
+            <div className={`admin-pos-reveal${extraFormOpen ? "" : " is-open"}`} inert={extraFormOpen}>
+              <div>
+                <button className="button button-light admin-pos-extra-open" onClick={openExtraForm} type="button"><Plus size={15} /> Agregar varios</button>
+              </div>
+            </div>
+            <div className={`admin-pos-reveal${extraFormOpen ? " is-open" : ""}`} inert={!extraFormOpen}>
+              <div>
+                <div className="admin-pos-extra-form" role="group" aria-label="Agregar varios">
+                  <label>
+                    <span>Descripción</span>
+                    <input
+                      autoComplete="off"
+                      className="field"
+                      maxLength={80}
+                      onChange={(event) => setExtraDescription(event.target.value)}
+                      onKeyDown={(event) => onExtraFormKeyDown(event, "description")}
+                      placeholder="Varios"
+                      ref={extraDescriptionRef}
+                      type="text"
+                      value={extraDescription}
+                    />
+                  </label>
+                  <label>
+                    <span>Monto</span>
+                    <input
+                      autoComplete="off"
+                      className="field"
+                      inputMode="decimal"
+                      onChange={(event) => setExtraAmount(event.target.value)}
+                      onKeyDown={(event) => onExtraFormKeyDown(event, "amount")}
+                      placeholder="$ 0"
+                      ref={extraAmountRef}
+                      type="text"
+                      value={extraAmount}
+                    />
+                  </label>
+                  <button className="button button-primary" onClick={addExtra} type="button">Agregar</button>
+                  <button aria-label="Cancelar varios" className="icon-button" onClick={() => { closeExtraForm(); focusScan(); }} type="button"><X size={15} /></button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
       <aside className="card admin-panel admin-pos-summary" aria-label="Resumen de venta">
         <small className="admin-pos-summary-label">Total a cobrar</small>
         <strong className="admin-pos-total">{formatPrice(totalCents)}</strong>
         <p className="admin-pos-summary-meta">
-          {totalUnits} {totalUnits === 1 ? "unidad" : "unidades"} · {cart.length} {cart.length === 1 ? "producto" : "productos"} · {paymentSummary}
+          {totalUnits} {totalUnits === 1 ? "unidad" : "unidades"} · {lineCount} {lineCount === 1 ? "producto" : "productos"} · {paymentSummary}
         </p>
         <div className={`admin-pos-reveal${isCashPayment ? " is-open" : ""}`} inert={!isCashPayment}>
           <div>
@@ -390,17 +514,17 @@ function PointOfSalePanel({
               </div>
               <div className={`admin-pos-reveal${discountActive && hasManualPrice ? " is-open" : ""}`}>
                 <div>
-                  <small className="admin-pos-cash-note">Los precios escritos a mano no llevan el 10%.</small>
+                  <small className="admin-pos-cash-note">Lo escrito a mano no lleva el 10%.</small>
                 </div>
               </div>
             </div>
           </div>
         </div>
         <div className="admin-point-actions">
-          <button className="button button-primary admin-pos-close" disabled={!cart.length || submitting || priceDraftInvalid} onClick={closeSale} type="button">
+          <button className="button button-primary admin-pos-close" disabled={!lineCount || submitting || priceDraftInvalid} onClick={closeSale} type="button">
             {submitting ? "Cerrando…" : "Cerrar venta"}
           </button>
-          <button className="button button-light" disabled={!cart.length || submitting} onClick={() => { setCart([]); setNotice(null); setCashDiscountOn(true); setPriceDraftInvalid(false); focusScan(); }} type="button">Vaciar venta</button>
+          <button className="button button-light" disabled={!lineCount || submitting} onClick={() => { setCart([]); setExtras([]); closeExtraForm(); setNotice(null); setCashDiscountOn(true); setPriceDraftInvalid(false); focusScan(); }} type="button">Vaciar venta</button>
         </div>
         <div className="admin-point-sales-head">
           <button className="button button-light" onClick={() => setShowDaySales((current) => !current)} type="button">

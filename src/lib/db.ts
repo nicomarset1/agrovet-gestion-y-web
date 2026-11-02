@@ -1,7 +1,7 @@
 import "server-only";
 
 import { revalidateTag, unstable_cache, unstable_noStore as noStore } from "next/cache";
-import type { CatalogFilters, CartItemPayload, WholesaleClient } from "./types";
+import type { CatalogFilters, CartItemPayload, OrderExtraRecord, WholesaleClient } from "./types";
 
 const hasPostgres = Boolean(process.env.DATABASE_URL);
 const isHostedProduction = process.env.VERCEL === "1" || process.env.VERCEL_ENV === "production";
@@ -207,7 +207,7 @@ export async function createOrder(input: {
   distanceKm?: number | null;
   items: CartItemPayload[];
   // Solo para ventas de Caja desde el panel (server action con sesión de admin).
-  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number> };
+  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
 }) {
   return withSync((await getDriver()).createOrder(input));
 }

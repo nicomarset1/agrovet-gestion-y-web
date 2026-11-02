@@ -27,6 +27,10 @@ export function posUnitPriceCents(listCents: number, options: { manualCents?: nu
   return options.cashDiscount ? Math.round(applyCashDiscount(listCents) / 100) * 100 : listCents;
 }
 
+export function extrasTotalCents(extras: { amountCents: number }[]) {
+  return extras.reduce((sum, extra) => sum + extra.amountCents, 0);
+}
+
 // Cuotas en singular o plural: "1 cuota", "3 cuotas". Es lo que se guarda desde ahora en ventas nuevas.
 export function installmentsLabel(installments: string | number) {
   return String(installments) === "1" ? "1 cuota" : `${installments} cuotas`;

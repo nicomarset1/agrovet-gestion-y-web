@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot } from "@/lib/db";
-import { fixInstallmentsText } from "@/lib/format";
+import { extrasTotalCents, fixInstallmentsText } from "@/lib/format";
 import { reservedStatus } from "@/lib/reservation";
 
 function ascii(value: string) {
@@ -44,6 +44,8 @@ function isCancelledOrder(order: ReportOrder) {
 }
 
 function orderHasBranch(order: ReportOrder, branchId: string) {
+  // Los "Varios" no tienen stock: pertenecen a la sucursal de la venta.
+  if (order.extras.length && String(order.branchId) === branchId) return true;
   return order.items.some((item) => {
     if (item.allocations?.length) return item.allocations.some((allocation) => String(allocation.branchId) === branchId);
     return String(order.branchId) === branchId;
@@ -58,7 +60,7 @@ function getOrderBranchRevenueCents(order: ReportOrder, branchId: number) {
       return quantity + (allocation.branchId === branchId ? allocation.quantity : 0);
     }, 0) ?? (order.branchId === branchId ? item.quantity : 0);
     return sum + allocatedQuantity * item.unitPriceCents;
-  }, 0);
+  }, order.branchId === branchId ? extrasTotalCents(order.extras) : 0);
   return branchTotal || (order.branchId === branchId ? order.totalCents : 0);
 }
 

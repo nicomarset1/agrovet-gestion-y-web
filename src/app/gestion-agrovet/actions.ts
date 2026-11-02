@@ -190,7 +190,11 @@ const posSaleSchema = z.object({
     variantId: z.number().int().positive(),
     quantity: z.number().int().min(1).max(999),
     manualPriceCents: z.number().int().positive().max(posMaxUnitPriceCents).optional(),
-  })).min(1).max(100),
+  })).max(100),
+  extras: z.array(z.object({
+    description: z.string().trim().max(80),
+    amountCents: z.number().int().positive().max(posMaxUnitPriceCents),
+  })).max(20).optional(),
 });
 
 export type PosSaleResult = { ok: true; code: string; totalCents: number } | { ok: false; error: string };
@@ -200,6 +204,8 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
   const parsed = posSaleSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Revisá los productos y el medio de pago de la venta." };
   const { branchId, paymentMethod, installments, cashDiscount, items } = parsed.data;
+  const extras = (parsed.data.extras ?? []).map((extra) => ({ description: extra.description || "Varios", amountCents: extra.amountCents }));
+  if (!items.length && !extras.length) return { ok: false, error: "La venta está vacía." };
   if (paymentMethod === "Tarjeta" && !installments) return { ok: false, error: "Elegí la cantidad de cuotas." };
   // El precio manual vale solo para esta venta: no toca el precio del producto.
   const manualPrices = Object.fromEntries(items.flatMap((item) => (item.manualPriceCents === undefined ? [] : [[item.variantId, item.manualPriceCents]])));
@@ -214,7 +220,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
       branchId,
       source,
       items: items.map(({ variantId, quantity }) => ({ variantId, quantity })),
-      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices },
+      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices, extras },
     });
     revalidatePath("/");
     revalidatePath("/tienda");
@@ -475,7 +481,8 @@ export async function updateOrderAction(formData: FormData) {
   if (!parsed.success) throw new Error("Registro inválido.");
   const variantIds = formData.getAll("itemVariantId").map((value) => z.coerce.number().int().positive().parse(value));
   const quantities = formData.getAll("itemQuantity").map((value) => z.coerce.number().int().min(1).max(9999).parse(value));
-  if (!variantIds.length || variantIds.length !== quantities.length) throw new Error("Los productos del pedido son inválidos.");
+  // Una venta de Caja puede ser solo "Varios", sin productos: updateOrder valida que la lista coincida con la guardada.
+  if (variantIds.length !== quantities.length) throw new Error("Los productos del pedido son inválidos.");
   const allocationVariantIds = formData.getAll("allocationVariantId").map((value) => z.coerce.number().int().positive().parse(value));
   const allocationBranchIds = formData.getAll("allocationBranchId").map((value) => z.coerce.number().int().positive().parse(value));
   const allocationQuantities = formData.getAll("allocationQuantity").map((value) => z.coerce.number().int().min(1).max(9999).parse(value));

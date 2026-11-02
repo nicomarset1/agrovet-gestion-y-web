@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
+import { extrasTotalCents, fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { NumberInput } from "@/components/ui/form-controls";
 import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
@@ -149,6 +149,14 @@ export function DeleteOrderModal({
               </div>
             );
           })}
+          {order.extras.map((extra, index) => (
+            <div className="admin-table-row compact" key={`${order.id}-extra-${index}`}>
+              <div>
+                <strong>{extra.description}</strong>
+                <small>Varios | {formatPrice(extra.amountCents)}</small>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="admin-modal-actions admin-confirm-actions">
           <button className="button button-light" disabled={submitting} onClick={onClose} type="button">Cancelar</button>
@@ -308,6 +316,10 @@ function getOrderBranchBuckets(order: OrderRecord) {
       buckets.set(allocation.branchId, current);
     }
   }
+  // Los "Varios" no tienen stock: pertenecen a la sucursal de la venta, aunque sea lo único que tiene.
+  if (order.extras.length && !buckets.has(order.branchId)) {
+    buckets.set(order.branchId, { branchId: order.branchId, branchName: order.branchName, quantity: 0, items: 0 });
+  }
   return [...buckets.values()].sort((a, b) => a.branchId - b.branchId);
 }
 
@@ -338,7 +350,7 @@ export function getOrderBranchRevenueCents(order: OrderRecord, branchId: number)
       return quantity + (allocation.branchId === branchId ? allocation.quantity : 0);
     }, 0) ?? (order.branchId === branchId ? item.quantity : 0);
     return sum + allocatedQuantity * item.unitPriceCents;
-  }, 0);
+  }, order.branchId === branchId ? extrasTotalCents(order.extras) : 0);
 
   return branchTotal || (order.branchId === branchId ? order.totalCents : 0);
 }
@@ -451,7 +463,7 @@ export function OrderModal({
   const itemTotalCents = order.items.reduce((sum, item, index) => {
     const quantity = Math.max(1, Number(itemQuantities[index]) || item.quantity);
     return sum + item.unitPriceCents * quantity;
-  }, 0);
+  }, extrasTotalCents(order.extras));
   const customerSummary = [
     order.customerName,
     order.phone,
@@ -530,10 +542,18 @@ export function OrderModal({
               <input name="itemVariantId" type="hidden" value={item.variantId} />
             </div>
           ))}
+          {order.extras.map((extra, index) => (
+            <div className="admin-order-item" key={`extra-${index}`}>
+              <div>
+                <span>{extra.description}</span>
+                <small>Varios | {formatPrice(extra.amountCents)}</small>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="admin-span-2 admin-detail-summary compact">
           <strong>{formatPrice(itemTotalCents)}</strong>
-          <span>{order.items.length} productos | {isCashOrder(order) ? "Venta de caja" : `Pedido ${order.fulfillment}`}</span>
+          <span>{order.items.length + order.extras.length} {order.items.length + order.extras.length === 1 ? "producto" : "productos"} | {isCashOrder(order) ? "Venta de caja" : `Pedido ${order.fulfillment}`}</span>
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light danger" onClick={() => onRequestDelete(order)} type="button">
