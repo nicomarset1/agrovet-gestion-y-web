@@ -130,8 +130,11 @@ export function LiveSearch({ products }: { products: SearchIndexItem[] }) {
     <div
       className="live-search"
       onBlur={(event) => {
-        // Salir del buscador con Tab cierra el panel.
-        if (!rootRef.current?.contains(event.relatedTarget as Node | null)) closePanel();
+        // Salir del buscador con Tab cierra el panel. Sin destino (relatedTarget null) no se cierra:
+        // Safari no le da foco a links ni botones al tocarlos, y cerrar acá desmontaría el resultado
+        // antes de que llegue el click. Tocar afuera ya lo resuelve closeOnOutside.
+        const next = event.relatedTarget as Node | null;
+        if (next && !rootRef.current?.contains(next)) closePanel();
       }}
       ref={rootRef}
     >
