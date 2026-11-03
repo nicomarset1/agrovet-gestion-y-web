@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/format";
+import { isExcludedFromIncome } from "@/lib/order-status";
 import type { Branch, OrderRecord } from "@/lib/types";
 import { PendingOrderCard, SectionHeader, StatCard, isReservedWebOrder, isAwaitingOnlinePayment, isCancelledOrder, isCancelledWebOrder, isCompletedWebOrder, isDeliveryWebOrder, isPendingWebOrder, isPickupWebOrder, isWebOrder, orderHasBranch, periodBounds, toDate } from "@/components/admin/shared";
 import type { Period, WebOrderStatus } from "@/components/admin/shared";
@@ -61,7 +62,7 @@ export function VentasWebSection({
     const orderDate = toDate(order.createdAt);
     return orderDate >= webPeriodRange.start && orderDate < webPeriodRange.end;
   });
-  const webPeriodBillableOrders = webPeriodOrders.filter((order) => !isCancelledOrder(order) && !isAwaitingOnlinePayment(order));
+  const webPeriodBillableOrders = webPeriodOrders.filter((order) => !isCancelledOrder(order) && !isAwaitingOnlinePayment(order) && !isExcludedFromIncome(order));
   const webOrdersTotal = webPeriodBillableOrders.reduce((sum, order) => sum + order.totalCents, 0);
   const webOrdersActive = webPeriodOrders.filter((order) => !isCancelledWebOrder(order) && !isAwaitingOnlinePayment(order));
   const webOrdersPending = webPeriodOrders.filter((order) => isPendingWebOrder(order));

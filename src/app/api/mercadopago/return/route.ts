@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getOrderReservation, markOrderPaidByCode, markOrderPaymentFailedByCode } from "@/lib/db";
-import { getMercadoPagoPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
+import { getMercadoPagoPayment, isRefundedPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
+import { isValidOrderToken } from "@/lib/order-token";
 
 function cartUrl(request: Request, params: Record<string, string>) {
   const url = new URL("/carrito", request.url);
@@ -14,12 +15,14 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const paymentId = (url.searchParams.get("payment_id") ?? url.searchParams.get("collection_id") ?? "").trim();
   const returnedOrder = (url.searchParams.get("external_reference") ?? "").trim();
+  // Este GET lo puede abrir cualquiera y el código de pedido es adivinable: liberar una reserva exige el token.
+  const token = url.searchParams.get("token");
 
   // Si el cliente vuelve con "Volver al sitio" sin pagar, Mercado Pago manda payment_id=null (texto).
   // Cualquier id vacío o no numérico se trata como abandono: el carrito queda intacto.
   if (!/^\d+$/.test(paymentId)) {
     // Vuelve al carrito para reintentar: se libera la reserva de este intento, así no reserva dos veces.
-    if (returnedOrder) await markOrderPaymentFailedByCode(returnedOrder).catch(() => false);
+    if (returnedOrder && isValidOrderToken(returnedOrder, token)) await markOrderPaymentFailedByCode(returnedOrder).catch(() => false);
     redirect(cartUrl(request, {
       payment: "failure",
       order: returnedOrder,
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
     }
 
     if (payment.status === "approved") {
-      const reconciliation = await markOrderPaidByCode(order, mercadoPagoMethodLabel(payment), amountCents);
+      const reconciliation = await markOrderPaidByCode(order, mercadoPagoMethodLabel(payment), amountCents, String(payment.id ?? paymentId));
       // Si el pago está aprobado pero no concilia, el cliente ya pagó: se le avisa que lo estamos revisando.
       redirect(cartUrl(request, {
         payment: reconciliation === "paid" ? "success" : "review",
@@ -51,7 +54,8 @@ export async function GET(request: Request) {
     }
 
     // Rechazado y de vuelta en el sitio: desde el carrito va a iniciar un pedido nuevo, así que se libera esta reserva.
-    await markOrderPaymentFailedByCode(order);
+    // Una devolución no libera nada: la marca el webhook, y el stock sigue retenido hasta que alguien lo revise.
+    if (!isRefundedPayment(payment) && isValidOrderToken(order, token)) await markOrderPaymentFailedByCode(order);
     redirect(cartUrl(request, {
       payment: "failure",
       order,

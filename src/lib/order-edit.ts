@@ -25,8 +25,12 @@ export function resizeAllocations(current: Allocation[], quantity: number, fallb
 
 // Lo cobrado después de cambiar el total. Una venta de Caja ya se cobró entera, sea cual sea el total nuevo.
 // Un mayorista conserva lo que pagó (sin pasarse del total) y su estado sigue a la deuda.
-export function settleEditedOrder(order: { source: string; status: string; paidCents: number; totalCents: number }) {
+// Un pedido web que no se pagó por Mercado Pago se cobra en sucursal: al cerrarlo como Retirado o Entregado queda saldado.
+export function settleEditedOrder(order: { source: string; status: string; paidCents: number; totalCents: number; paymentMethod?: string }) {
   if (/^Caja\b/i.test(order.source)) return { paidCents: order.totalCents, status: order.status };
+  if (/^Tienda online/i.test(order.source) && /^(retirado|entregado)$/i.test(order.status.trim()) && !/mercado pago/i.test(order.paymentMethod ?? "")) {
+    return { paidCents: order.totalCents, status: order.status };
+  }
   if (/^Mayorista\b/i.test(order.source) && /^(Cerrado mayorista|Cuenta corriente)$/i.test(order.status.trim())) {
     const paidCents = Math.min(order.paidCents, order.totalCents);
     return { paidCents, status: paidCents >= order.totalCents ? "Cerrado mayorista" : "Cuenta corriente" };

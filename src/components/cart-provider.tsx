@@ -26,6 +26,8 @@ type CartContextValue = {
   change: (variantId: number, quantity: number) => void;
   remove: (variantId: number) => void;
   clear: (options?: { silent?: boolean }) => void;
+  // El servidor rechazó el pedido porque el carrito tenía precios viejos: quedan los reales.
+  updatePrices: (prices: { variantId: number; priceCents: number }[]) => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -138,6 +140,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (items.length && !options?.silent) push({ title: "Carrito vaciado", type: "info", icon: RotateCcw });
       window.localStorage.removeItem(key);
       setItems([]);
+    },
+    updatePrices: (prices) => {
+      const byVariant = new Map(prices.map((price) => [price.variantId, price.priceCents]));
+      setItems((current) => current.map((item) => {
+        const priceCents = byVariant.get(item.variantId);
+        return priceCents === undefined || priceCents === item.priceCents ? item : { ...item, priceCents };
+      }));
     },
   }), [items, push]);
 

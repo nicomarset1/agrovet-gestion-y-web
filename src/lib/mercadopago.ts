@@ -1,5 +1,6 @@
 import "server-only";
 
+import { orderToken } from "./order-token";
 import { excludeCashTickets, mercadoPagoDate } from "./reservation";
 
 type PreferenceInput = {
@@ -85,10 +86,12 @@ export async function createMercadoPagoPreference(input: PreferenceInput) {
   };
 
   if (siteUrl.startsWith("https://")) {
+    // El token prueba que quien vuelve es quien inició el pago: sin él, abandonar no libera la reserva.
+    const returnUrl = `${siteUrl}/api/mercadopago/return?token=${orderToken(input.code)}`;
     body.back_urls = {
-      success: `${siteUrl}/api/mercadopago/return`,
-      failure: `${siteUrl}/api/mercadopago/return`,
-      pending: `${siteUrl}/api/mercadopago/return`,
+      success: returnUrl,
+      failure: returnUrl,
+      pending: returnUrl,
     };
     body.auto_return = "approved";
     body.notification_url = `${siteUrl}/api/mercadopago/webhook`;
@@ -128,6 +131,11 @@ export async function getMercadoPagoPayment(paymentId: string) {
     throw new Error(data?.message ?? `No se pudo consultar el pago en Mercado Pago (${response.status}).`);
   }
   return response.json() as Promise<MercadoPagoPayment>;
+}
+
+// Devolución o contracargo: la plata ya no está, pero la mercadería puede haber salido. Lo decide una persona.
+export function isRefundedPayment(payment: MercadoPagoPayment) {
+  return payment.status === "refunded" || payment.status === "charged_back";
 }
 
 export function paymentAmountCents(payment: MercadoPagoPayment) {

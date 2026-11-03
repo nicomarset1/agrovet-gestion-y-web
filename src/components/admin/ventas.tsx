@@ -6,6 +6,7 @@
 import { ArrowDown, ArrowUp, Download, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { fixInstallmentsText, formatPrice } from "@/lib/format";
+import { isExcludedFromIncome } from "@/lib/order-status";
 import { Select } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { formatRange, startOfMonth, toIsoDate } from "@/components/ui/date-utils";
@@ -88,7 +89,7 @@ export function VentasSection({
 
   // Igual que el reporte: sin cancelados ni pedidos sin cobrar (reservados o esperando pago).
   const filtered = useMemo(() => orders.filter((order) => {
-    if (isCancelledOrder(order) || isAwaitingOnlinePayment(order)) return false;
+    if (isCancelledOrder(order) || isAwaitingOnlinePayment(order) || isExcludedFromIncome(order)) return false;
     const key = dateKey(toDate(order.createdAt));
     if (key < from || key > to) return false;
     if (branchId && !orderHasBranch(order, branchId)) return false;

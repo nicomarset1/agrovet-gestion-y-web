@@ -1,5 +1,7 @@
 import "server-only";
 
+import { hitRateLimit } from "./db";
+
 type Bucket = { count: number; resetAt: number };
 
 const buckets = new Map<string, Bucket>();
@@ -51,6 +53,30 @@ export function clientKey(request: Request): string {
     if (trusted) return trusted;
   }
   return "local";
+}
+
+// A quién se le cuenta el límite compartido. Una conexión IPv6 suele tener una red /64 entera para ella:
+// contar por dirección dejaría esquivar el límite cambiando de dirección en cada pedido.
+export function rateLimitSubject(ip: string) {
+  const value = ip.trim().toLowerCase().slice(0, 64);
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(value);
+  if (mapped) return mapped[1];
+  if (!value.includes(":")) return value;
+  const [head, tail = ""] = value.split("::");
+  const headGroups = head ? head.split(":") : [];
+  const tailGroups = tail ? tail.split(":") : [];
+  const missing = Math.max(0, 8 - headGroups.length - tailGroups.length);
+  const groups = value.includes("::") ? [...headGroups, ...Array(missing).fill("0"), ...tailGroups] : headGroups;
+  return groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, "")).join(":");
+}
+
+// Pedidos web: por IP, 6 por minuto y 20 por día, contados en la base para que valgan entre instancias.
+// Si frena el minuto no gasta el cupo diario: un cliente que reintenta no se queda sin comprar por el resto del día.
+export async function checkOrderRateLimit(ip: string): Promise<RateLimitResult> {
+  const subject = rateLimitSubject(ip);
+  const minute = await hitRateLimit(`orders:min:${subject}`, 6, 60_000);
+  if (minute.limited) return minute;
+  return hitRateLimit(`orders:day:${subject}`, 20, 24 * 60 * 60_000);
 }
 
 export function tooManyRequests(retryAfterSeconds: number, message: string): Response {

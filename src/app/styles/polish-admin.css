@@ -2368,6 +2368,45 @@
   vertical-align: middle;
 }
 
+/* Pedido a revisar: tiene que saltar a la vista entre los retiros normales. */
+.admin-shell .admin-pending-card.is-review {
+  border-color: #e8a598;
+  border-left: 4px solid #c8452d;
+  background: #fff6f3;
+  animation: admin-review-in .32s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.admin-shell .admin-review-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #c8452d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.admin-shell .admin-review-note {
+  margin: 8px 0 4px;
+  color: #8f2f1c;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+@keyframes admin-review-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell .admin-pending-card.is-review { animation: none; }
+}
+
 /* ===== Ventas: filtros, resumen y tabla ===== */
 .admin-shell .admin-sales-filters {
   grid-template-columns: minmax(0, 1.2fr) repeat(3, minmax(0, 1fr));

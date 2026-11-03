@@ -24,6 +24,30 @@ export function reservationExpiry(createdAt: unknown) {
   return new Date(parseDbDate(createdAt).getTime() + reservationMs);
 }
 
+// Pedido web a pagar en efectivo en sucursal: la tienda promete guardarlo 3 días hábiles.
+export const cashPickupBusinessDays = 3;
+export const pickupExpiredStatus = "Cancelado (no retirado)";
+
+const dayMs = 24 * 60 * 60 * 1000;
+// Argentina es UTC-3 todo el año. Se calcula con esta cuenta y métodos UTC, así da igual la zona horaria del servidor.
+const argentinaOffsetMs = 3 * 60 * 60 * 1000;
+
+// Último instante del tercer día hábil posterior a la compra (lunes a viernes, hora de Argentina, sin feriados).
+export function cashPickupExpiry(createdAt: unknown) {
+  const local = new Date(parseDbDate(createdAt).getTime() - argentinaOffsetMs);
+  let day = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
+  for (let remaining = cashPickupBusinessDays; remaining > 0;) {
+    day += dayMs;
+    const weekday = new Date(day).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) remaining--;
+  }
+  return new Date(day + dayMs - 1 + argentinaOffsetMs);
+}
+
+export function isCashPickupExpired(createdAt: unknown, now = new Date()) {
+  return now.getTime() > cashPickupExpiry(createdAt).getTime();
+}
+
 // Formato que pide Mercado Pago (ISO 8601 con zona): se expresa en hora de Argentina (UTC-3, sin horario de verano).
 export function mercadoPagoDate(date: Date) {
   const local = new Date(date.getTime() - 3 * 60 * 60 * 1000);

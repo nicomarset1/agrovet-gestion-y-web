@@ -13,7 +13,10 @@ import {
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { resizeAllocations, settleEditedOrder } from "./order-edit";
-import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
+import { OrderRejectedError, outOfStockError, priceChangedError, productDisplayName, unavailableProductError } from "./order-errors";
+import { chargeReviewStatus, holdsStock, parsePaymentRefs, paymentReviewStatus, paymentStockReviewStatus, planApprovedPayment, refundNeedsReview, refundReviewStatus, webCashPaymentMethod } from "./order-status";
+import type { PaymentReconciliation } from "./order-status";
+import { cashPickupExpiry, isCashPickupExpired, mercadoPagoReservationHours, paymentFailedStatus, pickupExpiredStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { globalLoginIdentifier, globalLoginWindowMs, loginLockMs, loginReservation, loginWindowMs, maxGlobalLoginFailures, maxLoginFailures, type LoginCounter, type LoginReservation } from "./login-limits";
 import { buildProductImageIndex, maxIndexedImageUrl, productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
@@ -179,6 +182,11 @@ db.exec(`
     reset_at INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS order_rate_limits (
+    key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0,
+    reset_at INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 ensureColumn("branches", "map_url", "TEXT NOT NULL DEFAULT ''");
@@ -189,6 +197,7 @@ const paidCentsAdded = ensureColumn("orders", "paid_cents", "INTEGER NOT NULL DE
 ensureColumn("orders", "deleted_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_method", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_note", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("orders", "payment_ref", "TEXT");
 // Relleno único al crear la columna (los pedidos viejos estaban cobrados). Correrlo en cada arranque marcaba
 // como pagos los pedidos de Mercado Pago sin cobro (reservados, esperando pago) cada vez que se reiniciaba el servidor.
 if (paidCentsAdded) db.prepare("UPDATE orders SET paid_cents = total_cents WHERE paid_cents = 0 AND payment_method != 'Cuenta corriente'").run();
@@ -616,8 +625,54 @@ function releaseExpiredReservationsIn() {
   const released = db.prepare(`UPDATE orders SET status = ? WHERE ${expiredReservationFilter} RETURNING id, branch_id AS branchId`)
     .all(reservationExpiredStatus, reservedStatus) as Array<{ id: number; branchId: number }>;
   for (const order of released) restoreOrderStock(order.id, order.branchId);
+  const pickups = releaseExpiredCashPickupsIn();
   if (released.length) bumpSyncVersion();
-  return released.length;
+  return released.length + pickups;
+}
+
+const pendingCashPickupFilter = `status = 'Pendiente de retiro' AND deleted_at = '' AND paid_cents = 0 AND source = 'Tienda online' AND fulfillment = 'retiro' AND payment_method = '${webCashPaymentMethod}'`;
+
+// Pedidos web en efectivo sin cobrar. Los días hábiles se calculan en código: SQL solo descarta los que
+// todavía no pueden haber vencido (nunca pasan menos de 3 días corridos), así se revisan muy pocos.
+function expiredCashPickupIds() {
+  const candidates = db.prepare(`SELECT id, created_at AS createdAt FROM orders WHERE ${pendingCashPickupFilter} AND created_at < datetime('now', '-2 days')`)
+    .all() as Array<{ id: number; createdAt: string }>;
+  return candidates.filter((order) => isCashPickupExpired(order.createdAt)).map((order) => order.id);
+}
+
+// Vencidos: pasan a "Cancelado (no retirado)" y devuelven el stock. Se vuelve a filtrar en el UPDATE por si se cobró en el medio.
+function releaseExpiredCashPickupsIn() {
+  const update = db.prepare(`UPDATE orders SET status = ? WHERE id = ? AND ${pendingCashPickupFilter} RETURNING id, branch_id AS branchId`);
+  let released = 0;
+  for (const id of expiredCashPickupIds()) {
+    const order = update.get(pickupExpiredStatus, id) as { id: number; branchId: number } | undefined;
+    if (!order) continue;
+    restoreOrderStock(order.id, order.branchId);
+    released++;
+  }
+  if (released) bumpSyncVersion();
+  return released;
+}
+
+let lastRateLimitPrune = 0;
+
+// Límite de pedidos compartido: el UPSERT cuenta en un solo paso, así dos pedidos a la vez no leen el mismo número.
+export function hitRateLimit(key: string, limit: number, windowMs: number) {
+  const now = Date.now();
+  // La tabla guarda una fila por IP: lo vencido se borra cada tanto para que siga chica.
+  if (now - lastRateLimitPrune > 10 * 60_000) {
+    lastRateLimitPrune = now;
+    db.prepare("DELETE FROM order_rate_limits WHERE reset_at <= ?").run(now);
+  }
+  const row = db.prepare(`
+    INSERT INTO order_rate_limits (key, count, reset_at) VALUES (?, 1, ?)
+    ON CONFLICT (key) DO UPDATE SET
+      count = CASE WHEN order_rate_limits.reset_at <= ? THEN 1 ELSE order_rate_limits.count + 1 END,
+      reset_at = CASE WHEN order_rate_limits.reset_at <= ? THEN ? ELSE order_rate_limits.reset_at END
+    RETURNING count, reset_at AS resetAt
+  `).get(key, now + windowMs, now, now, now + windowMs) as { count: number; resetAt: number };
+  const limited = row.count > limit;
+  return { limited, retryAfterSeconds: limited ? Math.max(1, Math.ceil((row.resetAt - now) / 1000)) : 0, remaining: Math.max(0, limit - row.count) };
 }
 
 // En lecturas (tienda, ficha, panel) se revisa como mucho una vez por minuto, y solo escribe si hay algo vencido.
@@ -626,7 +681,7 @@ export function releaseExpiredReservations(options: { force?: boolean } = {}) {
   if (!options.force && Date.now() - lastReservationSweep < 60_000) return 0;
   lastReservationSweep = Date.now();
   const pending = db.prepare(`SELECT EXISTS (SELECT 1 FROM orders WHERE ${expiredReservationFilter}) AS any`).get(reservedStatus) as { any: number };
-  if (!pending.any) return 0;
+  if (!pending.any && !expiredCashPickupIds().length) return 0;
   return db.transaction(() => releaseExpiredReservationsIn()).immediate();
 }
 
@@ -866,12 +921,16 @@ export function deleteWholesaleClient(id: number) {
   bumpSyncVersion();
 }
 
+function isPendingCashPickup(order: { status: string; source: string; fulfillment: string; paymentMethod: string; paidCents: number }) {
+  return order.status === "Pendiente de retiro" && /^Tienda online/i.test(order.source) && order.fulfillment === "retiro" && order.paymentMethod === webCashPaymentMethod && !Number(order.paidCents);
+}
+
 function mapAdminOrders(): OrderRecord[] {
   const orders = db.prepare(`
     SELECT o.id, o.code, o.customer_name AS customerName, o.phone, o.email, o.fulfillment,
       o.delivery_address AS deliveryAddress, o.delivery_distance_km AS deliveryDistanceKm,
       o.branch_id AS branchId, b.name AS branchName, o.total_cents AS totalCents, o.status,
-      o.source, o.payment_method AS paymentMethod, o.paid_cents AS paidCents, o.created_at AS createdAt
+      o.source, o.payment_method AS paymentMethod, o.paid_cents AS paidCents, o.created_at AS createdAt, o.payment_ref AS paymentRef
     FROM orders o
     JOIN branches b ON b.id = o.branch_id
     WHERE o.deleted_at = ''
@@ -934,6 +993,7 @@ function mapAdminOrders(): OrderRecord[] {
     paymentMethod: order.paymentMethod ?? "",
     paidCents: order.paidCents ?? order.totalCents,
     ...(order.status === reservedStatus ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}),
+    ...(isPendingCashPickup(order) ? { pickupExpiresAt: cashPickupExpiry(order.createdAt).toISOString() } : {}),
     itemCount: itemsByOrder.get(order.id)?.reduce((sum, item) => sum + item.quantity, 0) ?? 0,
     items: itemsByOrder.get(order.id) ?? [],
   }));
@@ -1486,6 +1546,10 @@ export function addInventory(variantId: number, branchId: number, delta: number)
   updateInventory(variantId, branchId, current + Math.max(0, delta));
 }
 
+function variantDisplayName(variantId: number) {
+  return productDisplayName(db.prepare("SELECT p.brand, p.name, v.label FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?").get(variantId) as { brand: string; name: string; label: string } | undefined);
+}
+
 function resolveDeliveryAllocationPlan(items: CartItemPayload[]) {
   const branches = branchSeed.filter((branch) => branch.verified).map((branch) => branch.id);
   const variantAllocations = items.map((item) => {
@@ -1502,7 +1566,7 @@ function resolveDeliveryAllocationPlan(items: CartItemPayload[]) {
       allocations.push({ branchId: branch.branchId, quantity });
       remaining -= quantity;
     }
-    if (remaining > 0) throw new Error("No hay stock suficiente para armar el envío.");
+    if (remaining > 0) throw outOfStockError(variantDisplayName(item.variantId), item.variantId, "para armar el envío");
     return { variantId: item.variantId, allocations };
   });
   const branchTotals = new Map<number, number>();
@@ -1531,7 +1595,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
 }) {
   return db.transaction(() => {
     // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
@@ -1539,7 +1603,7 @@ export function createOrder(input: {
     const deliveryPlan = input.fulfillment === "envio" ? resolveDeliveryAllocationPlan(input.items) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
     const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(resolvedBranchId);
-    if (!branch) throw new Error("Sucursal inválida.");
+    if (!branch) throw new OrderRejectedError("Sucursal inválida.", { reason: "invalid" });
     // Solo la venta de Caja (server action con sesión de admin) manda cashSale; la tienda nunca.
     const source = input.cashSale ? input.cashSale.source : "Tienda online";
     const isMercadoPago = !input.cashSale && input.paymentMethod === "mercado_pago";
@@ -1550,35 +1614,42 @@ export function createOrder(input: {
         : input.fulfillment === "envio"
           ? "Pendiente de envío"
           : "Pendiente de retiro";
-    const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
+    const paymentMethod = isMercadoPago ? "Mercado Pago" : webCashPaymentMethod;
+    // Retiro a pagar en efectivo: el 10% lo decide el servidor y queda guardado en cada unidad.
+    const isWebCashPickup = !input.cashSale && !isMercadoPago && input.fulfillment === "retiro";
     let totalCents = 0;
-    const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
+    const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const row = db.prepare(`
-        SELECT v.price_cents AS priceCents
+        SELECT v.price_cents AS priceCents, p.brand, p.name, v.label,
+          (p.active = 1 AND p.archived_at = '' AND p.purged_at = '') AS available
         FROM variants v
         JOIN products p ON p.id = v.product_id
-        WHERE v.id = ? AND p.active = 1 AND p.archived_at = '' AND p.purged_at = ''
-      `).get(item.variantId) as { priceCents?: number } | undefined;
-      if (!row || item.quantity < 1) {
-        throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
-      }
+        WHERE v.id = ?
+      `).get(item.variantId) as { priceCents: number; brand: string; name: string; label: string; available: number } | undefined;
+      const displayName = productDisplayName(row);
+      if (!row || !row.available) throw unavailableProductError(displayName, item.variantId);
+      if (item.quantity < 1) throw outOfStockError(displayName, item.variantId);
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
       const totalAllocated = allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
-      if (totalAllocated !== item.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+      if (totalAllocated !== item.quantity) throw outOfStockError(displayName, item.variantId);
       for (const allocation of allocations) {
         const stock = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(item.variantId, allocation.branchId) as { quantity?: number } | undefined;
-        if ((stock?.quantity ?? 0) < allocation.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+        if ((stock?.quantity ?? 0) < allocation.quantity) throw outOfStockError(displayName, item.variantId);
       }
-      // El 10% y el precio manual viven en cashSale: la tienda no puede mandarlos, siempre cobra el precio de lista.
-      const priceCents = posUnitPriceCents(row.priceCents ?? 0, { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale?.cashDiscount });
+      // El precio manual y el 10% de Caja viven en cashSale: la tienda no puede mandarlos. Su 10% sale de arriba, nunca del navegador.
+      const priceCents = posUnitPriceCents(row.priceCents, { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale ? input.cashSale.cashDiscount : isWebCashPickup });
       totalCents += priceCents * item.quantity;
-      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, allocations });
+      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, listPrice: row.priceCents, allocations });
     }
     // Varios lleva el 10% igual que un producto; se guarda el monto final, como unit_price_cents.
     const extras = (input.cashSale?.extras ?? []).map((extra) => ({ ...extra, amountCents: posUnitPriceCents(extra.amountCents, { cashDiscount: input.cashSale?.cashDiscount }) }));
     totalCents += extrasTotalCents(extras);
-    if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
+    // El carrito mostraba otro total (precio cambiado o carrito viejo): se avisa antes de crear nada.
+    if (input.expectedTotalCents !== undefined && input.expectedTotalCents !== totalCents) {
+      throw priceChangedError(lines.map((line) => ({ variantId: line.variantId, priceCents: line.listPrice })));
+    }
+    if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new OrderRejectedError(deliveryMinimumMessage(), { reason: "invalid" });
     const insertOrder = db.prepare(`
       INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1589,7 +1660,7 @@ export function createOrder(input: {
       code = newOrderCode(attempt);
       try {
         // En SQLite el error de UNIQUE revierte solo esta sentencia, así que se puede reintentar dentro de la transacción.
-        order = insertOrder.run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, isMercadoPago ? 0 : totalCents);
+        order = insertOrder.run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, input.cashSale ? totalCents : 0);
       } catch (error) {
         if (attempt >= 2 || !isOrderCodeConflict(error)) throw error;
       }
@@ -1601,7 +1672,7 @@ export function createOrder(input: {
       for (const allocation of line.allocations) {
         // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
         const result = deduct.run(allocation.quantity, line.variantId, allocation.branchId, allocation.quantity);
-        if (result.changes === 0) throw new Error("No hay stock suficiente para reservar.");
+        if (result.changes === 0) throw outOfStockError(variantDisplayName(line.variantId), line.variantId);
         insertOrderAllocation.run(order.lastInsertRowid, line.variantId, allocation.branchId, allocation.quantity);
       }
     }
@@ -1609,73 +1680,79 @@ export function createOrder(input: {
     for (const extra of extras) insertExtra.run(order.lastInsertRowid, extra.description, extra.amountCents);
     bumpSyncVersion();
     const createdAt = (db.prepare("SELECT created_at AS createdAt FROM orders WHERE id = ?").get(order.lastInsertRowid) as { createdAt: string }).createdAt;
-    return { code, totalCents, ...(isMercadoPago ? { reservedUntil: reservationExpiry(createdAt).toISOString() } : {}) };
+    return {
+      code,
+      totalCents,
+      ...(isMercadoPago ? { reservedUntil: reservationExpiry(createdAt).toISOString() } : {}),
+      ...(isWebCashPickup ? { pickupExpiresAt: cashPickupExpiry(createdAt).toISOString() } : {}),
+    };
   })();
 }
 
-export type PaymentReconciliation = "paid" | "review" | "missing";
+export type { PaymentReconciliation };
 
-const paymentReviewStatus = "Pago recibido - revisar";
 const stockRaceError = "No hay stock suficiente para acreditar el pago.";
 
-// Pedidos de Mercado Pago sin cobro que NO tienen stock tomado: los "Esperando pago" anteriores a la
-// reserva y los cancelados sin pago (reserva vencida o pago no completado, ya devolvieron el stock).
-// Si después llega un pago aprobado, markOrderPaidByCode los reactiva descontando el stock de nuevo.
-function isAwaitingPaymentStatus(status: string) {
-  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(status.trim());
-}
-
-export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): PaymentReconciliation {
+export function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number, paymentRef = ""): PaymentReconciliation {
   // IMMEDIATE toma el lock de escritura al empezar: si hay otro proceso acreditando el mismo pago, espera y después cae en el camino idempotente.
   return db.transaction((): PaymentReconciliation => {
     const order = db.prepare(`
-      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents, deleted_at AS deletedAt
+      SELECT id, branch_id AS branchId, fulfillment, status, total_cents AS totalCents, paid_cents AS paidCents, deleted_at AS deletedAt, payment_ref AS paymentRef
       FROM orders
       WHERE code = ?
       ORDER BY (deleted_at = '') DESC, id DESC
       LIMIT 1
-    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: string } | undefined;
+    `).get(code) as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: string; paymentRef: string | null } | undefined;
     if (!order) return "missing";
 
     const method = paymentMethod.trim() || "Mercado Pago";
     const deleted = Boolean(order.deletedAt);
-    const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
-    const amountMatches = validAmount && amountCents === order.totalCents;
-    const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
-    const reserved = !deleted && order.status === reservedStatus;
+    const plan = planApprovedPayment({ status: order.status, paidCents: order.paidCents, totalCents: order.totalCents, deleted, paymentRef: order.paymentRef }, amountCents, paymentRef);
+    const logReview = () => console.error("Pago de Mercado Pago aprobado que requiere revisión", {
+      code,
+      amountCents,
+      totalCents: order.totalCents,
+      previousStatus: order.status,
+      paymentRef: plan.paymentRef,
+      deleted,
+    });
 
-    // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
-    if (!deleted && !awaitingPayment && !reserved && order.paidCents >= order.totalCents) {
-      return /revisar/i.test(order.status) ? "review" : "paid";
+    if (plan.action === "none") {
+      if (plan.paymentRef !== parsePaymentRefs(order.paymentRef).join(",")) {
+        db.prepare("UPDATE orders SET payment_ref = ? WHERE id = ?").run(plan.paymentRef, order.id);
+        bumpSyncVersion();
+        if (plan.result === "review") logReview();
+      }
+      return plan.result;
     }
 
-    // Reserva vigente (aunque ya pasaron las 12 h, si todavía no se liberó): el stock ya está descontado.
-    if (reserved && amountMatches) {
+    if (plan.action === "settle-reserved") {
       db.prepare(`
         UPDATE orders
         SET paid_cents = total_cents,
             payment_method = ?,
+            payment_ref = ?,
             status = CASE WHEN fulfillment = 'envio' THEN 'Pendiente de envío' ELSE 'Pendiente de retiro' END
         WHERE id = ?
-      `).run(method, order.id);
+      `).run(method, plan.paymentRef, order.id);
       bumpSyncVersion();
       return "paid";
     }
 
-    // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
-    // queda visible en el panel para revisar, con lo realmente cobrado y sin stock tomado.
-    if (!awaitingPayment || !amountMatches) {
-      if (reserved) restoreOrderStock(order.id, order.branchId);
-      db.prepare("UPDATE orders SET paid_cents = ?, payment_method = ?, status = ?, deleted_at = '' WHERE id = ?")
-        .run(validAmount ? amountCents : 0, method, paymentReviewStatus, order.id);
+    // Tiene el stock tomado y así sigue: pasa a revisión con un estado que lo retiene, sin moverlo ni perderlo al borrarlo.
+    if (plan.action === "review-keep-stock") {
+      db.prepare("UPDATE orders SET status = ?, paid_cents = ?, payment_ref = ? WHERE id = ?").run(chargeReviewStatus, plan.paidCents, plan.paymentRef, order.id);
       bumpSyncVersion();
-      console.error("Pago de Mercado Pago aprobado que requiere revisión", {
-        code,
-        amountCents,
-        totalCents: order.totalCents,
-        previousStatus: order.status,
-        deleted,
-      });
+      logReview();
+      return "review";
+    }
+
+    if (plan.action === "review-no-stock") {
+      if (plan.restoreStock) restoreOrderStock(order.id, order.branchId);
+      db.prepare("UPDATE orders SET paid_cents = ?, payment_method = ?, payment_ref = ?, status = ?, deleted_at = '' WHERE id = ?")
+        .run(plan.paidCents, method, plan.paymentRef, paymentReviewStatus, order.id);
+      bumpSyncVersion();
+      logReview();
       return "review";
     }
 
@@ -1687,13 +1764,15 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       for (const allocation of buckets) required.push({ variantId: item.variantId, branchId: allocation.branchId, quantity: allocation.quantity });
     }
 
+    const markStockReview = () => {
+      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, payment_ref = ?, status = ? WHERE id = ?").run(method, plan.paymentRef, paymentStockReviewStatus, order.id);
+      bumpSyncVersion();
+      return "review" as const;
+    };
+
     for (const allocation of required) {
       const stock = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(allocation.variantId, allocation.branchId) as { quantity?: number } | undefined;
-      if ((stock?.quantity ?? 0) < allocation.quantity) {
-        db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
-        bumpSyncVersion();
-        return "review";
-      }
+      if ((stock?.quantity ?? 0) < allocation.quantity) return markStockReview();
     }
 
     // Si otro pedido se llevó la última unidad en el medio, se deshace solo este descuento (transacción anidada
@@ -1711,24 +1790,38 @@ export function markOrderPaidByCode(code: string, paymentMethod: string, amountC
       if (!(error instanceof Error) || error.message !== stockRaceError) throw error;
       deducted = false;
     }
-    if (!deducted) {
-      db.prepare("UPDATE orders SET paid_cents = total_cents, payment_method = ?, status = 'Pago recibido - revisar stock' WHERE id = ?").run(method, order.id);
-      bumpSyncVersion();
-      return "review";
-    }
+    if (!deducted) return markStockReview();
 
     db.prepare(`
       UPDATE orders
       SET paid_cents = total_cents,
           payment_method = ?,
+          payment_ref = ?,
           status = CASE
             WHEN fulfillment = 'envio' THEN 'Pendiente de envío'
             ELSE 'Pendiente de retiro'
           END
       WHERE id = ?
-    `).run(method, order.id);
+    `).run(method, plan.paymentRef, order.id);
     bumpSyncVersion();
     return "paid";
+  }).immediate();
+}
+
+// Devolución o contracargo avisado por Mercado Pago. El stock no se toca: la mercadería puede haber salido,
+// así que queda retenido y destacado hasta que alguien lo cancele desde el panel.
+export function markOrderRefundedByCode(code: string, paymentRef = "") {
+  return db.transaction(() => {
+    const order = db.prepare("SELECT id, status, deleted_at AS deletedAt, payment_ref AS paymentRef FROM orders WHERE code = ? ORDER BY (deleted_at = '') DESC, id DESC LIMIT 1")
+      .get(code) as { id: number; status: string; deletedAt: string; paymentRef: string | null } | undefined;
+    if (!order || !refundNeedsReview({ status: order.status, deleted: Boolean(order.deletedAt) })) return false;
+    const refs = parsePaymentRefs(order.paymentRef);
+    const ref = paymentRef.trim();
+    const nextRef = (ref && !refs.includes(ref) ? [...refs, ref] : refs).join(",");
+    db.prepare("UPDATE orders SET status = ?, payment_ref = ? WHERE id = ?").run(refundReviewStatus, nextRef, order.id);
+    bumpSyncVersion();
+    console.error("Mercado Pago informó una devolución o contracargo", { code, paymentRef: ref, previousStatus: order.status });
+    return true;
   }).immediate();
 }
 
@@ -1869,16 +1962,6 @@ export function updateOrderPayment(input: { id: number; addCents?: number; settl
   })();
 }
 
-function isCanceledStatus(status: string) {
-  return /cancelad/i.test(status);
-}
-
-// Un pedido tiene stock tomado salvo que esté cancelado, esperando el cobro de Mercado Pago
-// o pagado pendiente de revisión: esos nunca descontaron stock, así que tampoco hay que devolverlo.
-function holdsStock(status: string) {
-  return !isCanceledStatus(status) && !isAwaitingPaymentStatus(status) && !/^Pago recibido - revisar/i.test(status.trim());
-}
-
 function readCurrentAllocations(orderId: number, fallbackBranchId: number, currentItems: Array<{ variantId: number; quantity: number }>) {
   const grouped = getAllocationBuckets(orderId);
   return currentItems.map((item) => ({
@@ -2010,7 +2093,7 @@ export function updateOrder(input: {
     }
 
     const totalCents = extrasCents + nextItems.reduce((sum, item) => sum + ((currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
-    const settled = settleEditedOrder({ source: order.source, status: input.status, paidCents: order.paidCents, totalCents });
+    const settled = settleEditedOrder({ source: order.source, status: input.status, paidCents: order.paidCents, totalCents, paymentMethod: order.paymentMethod });
     db.prepare(`
       UPDATE orders
       SET customer_name = ?, phone = ?, email = ?, fulfillment = ?, branch_id = ?,
