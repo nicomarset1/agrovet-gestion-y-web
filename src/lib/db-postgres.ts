@@ -39,7 +39,7 @@ let initialized: Promise<void> | null = null;
 
 // Versión del esquema de la base. SUBILA EN 1 CADA VEZ QUE CAMBIES EL DDL de ensureSchema (tablas, columnas,
 // índices): si no, las bases que ya están en esta versión nunca reciben el cambio.
-export const schemaVersion = 2;
+export const schemaVersion = 3;
 
 // Evita correr el DDL en cada arranque en frío: los ALTER toman un lock exclusivo sobre orders y products.
 // Una versión más nueva en la base también cuenta como al día (una reversión de despliegue no la baja).
@@ -269,6 +269,10 @@ async function ensureSchema() {
         count INTEGER NOT NULL DEFAULT 0,
         reset_at BIGINT NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS revoked_sessions (
+        nonce TEXT PRIMARY KEY,
+        expires_at BIGINT NOT NULL
+      );
 
       CREATE INDEX IF NOT EXISTS products_category_idx ON products(category_id);
       CREATE INDEX IF NOT EXISTS products_subcategory_idx ON products(subcategory_slug);
@@ -285,6 +289,8 @@ async function ensureSchema() {
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_method TEXT NOT NULL DEFAULT ''`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_note TEXT NOT NULL DEFAULT ''`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_ref TEXT`;
+      await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS sale_key TEXT`;
+      await schemaTx`CREATE UNIQUE INDEX IF NOT EXISTS orders_sale_key_idx ON orders(sale_key) WHERE sale_key IS NOT NULL`;
       await schemaTx`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`;
@@ -1671,10 +1677,18 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[]; saleKey?: string }; expectedTotalCents?: number;
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
+    // Reintento de una venta de Caja que ya entró (se perdió la respuesta): se devuelve la misma, sin tocar stock.
+    // El lock hace esperar al que llega a la vez con la misma clave, hasta que el primero termine.
+    const saleKey = input.cashSale?.saleKey;
+    if (saleKey) {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${saleKey}::text))`;
+      const [existing] = await tx`SELECT code, total_cents AS "totalCents" FROM orders WHERE sale_key = ${saleKey}` as unknown as { code: string; totalCents: number }[];
+      if (existing) return { code: existing.code, totalCents: Number(existing.totalCents) };
+    }
     // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
     await releaseExpiredReservationsIn(tx);
     const deliveryPlan = input.fulfillment === "envio" ? await resolveDeliveryAllocationPlan(input.items, tx) : null;
@@ -1734,8 +1748,8 @@ export async function createOrder(input: {
       try {
         // Savepoint: si el INSERT choca por código repetido, se reintenta sin abortar la transacción.
         [order] = await tx.savepoint((sp) => sp`
-          INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-          VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${input.cashSale ? totalCents : 0})
+          INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents, sale_key)
+          VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${input.cashSale ? totalCents : 0}, ${saleKey ?? null})
           RETURNING id, created_at AS "createdAt"
         `) as unknown as { id: number; createdAt: unknown }[];
       } catch (error) {
@@ -2471,5 +2485,20 @@ export async function clearLoginFailures(identifier: string) {
   await ensureSchema();
   await sql`DELETE FROM admin_login_attempts WHERE identifier = ${identifier}`;
   await sql`UPDATE admin_login_attempts SET failures = GREATEST(failures - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE identifier = ${globalLoginIdentifier}`;
+}
+
+// Sesiones cerradas antes de vencer. Lo vencido no hace falta guardarlo: la cookie ya no vale por sí sola.
+export async function revokeSession(nonce: string, expiresAt: number) {
+  await ensureSchema();
+  const now = Date.now();
+  await sql`DELETE FROM revoked_sessions WHERE expires_at <= ${now}`;
+  if (expiresAt <= now) return;
+  await sql`INSERT INTO revoked_sessions (nonce, expires_at) VALUES (${nonce}, ${expiresAt}) ON CONFLICT (nonce) DO NOTHING`;
+}
+
+export async function getRevokedSessions() {
+  await ensureSchema();
+  const rows = await sql`SELECT nonce FROM revoked_sessions WHERE expires_at > ${Date.now()}` as unknown as { nonce: string }[];
+  return rows.map((row) => row.nonce);
 }
 

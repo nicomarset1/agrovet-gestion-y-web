@@ -171,6 +171,7 @@ function PointOfSalePanel({
   const [cashDiscountOn, setCashDiscountOn] = useState(true);
   const [priceDraftInvalid, setPriceDraftInvalid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const saleAttempt = useRef<{ key: string; signature: string } | null>(null);
   const [showDaySales, setShowDaySales] = useState(false);
   const catalogVariants = useMemo(() => products.flatMap((product) => product.variants.map((variant) => ({
     variantId: variant.id,
@@ -252,6 +253,38 @@ function PointOfSalePanel({
       // Sin almacenamiento, la venta dura hasta recargar.
     }
   }, [cart, cashDiscountOn, extras, installments, paymentMethod, restored, storageKey]);
+  // Clave de este intento de venta: la misma mientras no cambie lo que se cobra, aunque se recargue la página. Si se
+  // pierde la respuesta y el cajero reintenta, el servidor reconoce la clave y no registra la venta dos veces.
+  const saleKeyStorage = `${storageKey}:clave`;
+  function saleKeyFor(signature: string) {
+    let attempt = saleAttempt.current;
+    if (!attempt) {
+      try {
+        attempt = JSON.parse(window.sessionStorage.getItem(saleKeyStorage) ?? "null");
+      } catch {
+        // Sin almacenamiento, la clave dura hasta recargar.
+      }
+    }
+    if (attempt?.signature !== signature || !attempt.key) {
+      const key = Array.from(window.crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      attempt = { key, signature };
+      try {
+        window.sessionStorage.setItem(saleKeyStorage, JSON.stringify(attempt));
+      } catch {
+        // Sin almacenamiento, la clave dura hasta recargar.
+      }
+    }
+    saleAttempt.current = attempt;
+    return attempt.key;
+  }
+  function clearSaleKey() {
+    saleAttempt.current = null;
+    try {
+      window.sessionStorage.removeItem(saleKeyStorage);
+    } catch {
+      // Sin almacenamiento no hay nada que borrar.
+    }
+  }
   function closeExtraForm() {
     setExtraFormOpen(false);
     setExtraDescription("");
@@ -364,8 +397,17 @@ function PointOfSalePanel({
     if (!lineCount) return;
     setSubmitting(true);
     setNotice(null);
+    const saleKey = saleKeyFor(JSON.stringify({
+      branchId: branch.id,
+      paymentMethod,
+      installments: paymentMethod === "Tarjeta" ? installments : null,
+      discountActive,
+      items: lines.map((item) => [item.variantId, item.quantity, item.manualPriceCents]),
+      extras: extras.map((extra) => [extra.description, extra.amountCents]),
+    }));
     try {
       const result = await closePosSaleAction({
+        saleKey,
         branchId: branch.id,
         paymentMethod,
         installments: paymentMethod === "Tarjeta" ? installments : undefined,
@@ -376,8 +418,11 @@ function PointOfSalePanel({
           ...(item.manualPriceCents !== null ? { manualPriceCents: item.manualPriceCents } : { expectedPriceCents: item.priceCents }),
         })),
         extras: extras.map(({ description, amountCents }) => ({ description, amountCents })),
-      });
+      }).catch(() => null);
+      // Sin respuesta no se sabe si entró: reintentar es seguro porque viaja la misma clave.
+      if (!result) throw new Error("No se pudo confirmar la venta por un problema de conexión. Apretá Cerrar venta de nuevo: si ya había entrado, no se cobra dos veces.");
       if (!result.ok) throw new Error(result.error);
+      clearSaleKey();
       setCart([]);
       setExtras([]);
       setScanValue("");

@@ -205,6 +205,8 @@ const posSaleSchema = z.object({
     description: z.string().trim().max(80),
     amountCents: z.number().int().positive().max(posMaxUnitPriceCents),
   })).max(20).optional(),
+  // Identifica este intento de venta: si se perdió la respuesta y se reintenta, no se registra dos veces.
+  saleKey: z.string().regex(/^[0-9a-f-]{16,64}$/).optional(),
 });
 
 export type PosSaleResult = { ok: true; code: string; totalCents: number } | { ok: false; error: string };
@@ -213,7 +215,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
   if (!(await isAdmin())) return { ok: false, error: "Tu sesión del panel venció. Volvé a ingresar para cerrar la venta." };
   const parsed = posSaleSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Revisá los productos y el medio de pago de la venta." };
-  const { branchId, paymentMethod, installments, cashDiscount, items } = parsed.data;
+  const { branchId, paymentMethod, installments, cashDiscount, items, saleKey } = parsed.data;
   const extras = (parsed.data.extras ?? []).map((extra) => ({ description: extra.description || "Varios", amountCents: extra.amountCents }));
   if (!items.length && !extras.length) return { ok: false, error: "La venta está vacía." };
   if (paymentMethod === "Tarjeta" && !installments) return { ok: false, error: "Elegí la cantidad de cuotas." };
@@ -231,7 +233,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
       branchId,
       source,
       items: items.map(({ variantId, quantity }) => ({ variantId, quantity })),
-      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices, expectedPrices, extras },
+      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices, expectedPrices, extras, saleKey },
     });
     revalidatePath("/");
     revalidatePath("/tienda");
@@ -439,8 +441,28 @@ function readVariantRows(formData: FormData) {
   return parsed.map((row) => row.success ? row.data : null).filter(Boolean) as Array<z.infer<typeof variantRowSchema>>;
 }
 
-export async function createProductAction(formData: FormData) {
+export type ProductSaveState = { ok: true } | { error: string };
+
+function productSaveError(error: unknown) {
+  // Los errores de la base traen "code" y no le dicen nada a quien carga el producto; los mensajes propios sí.
+  if (!(error instanceof Error) || "code" in error) return "No se pudo guardar el producto. Probá de nuevo.";
+  return error instanceof z.ZodError ? "Revisá los datos del producto." : error.message;
+}
+
+// El error vuelve al formulario: una categoría borrada en otra pestaña o un dato inválido no deben llevar a la
+// pantalla de error ni perder lo cargado. Sin redirect: el listado conserva búsqueda y página, y revalidatePath trae los datos nuevos.
+export async function saveProductAction(mode: "create" | "edit", formData: FormData): Promise<ProductSaveState> {
   await requireAdmin();
+  try {
+    if (mode === "create") await applyProductCreate(formData);
+    else await applyProductUpdate(formData);
+    return { ok: true };
+  } catch (error) {
+    return { error: productSaveError(error) };
+  }
+}
+
+async function applyProductCreate(formData: FormData) {
   const parsed = productBaseSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) throw new Error("Producto inválido.");
   const variants = readVariantRows(formData);
@@ -463,7 +485,6 @@ export async function createProductAction(formData: FormData) {
       ],
     })),
   });
-  // Sin redirect: conserva la búsqueda y la página del listado. revalidatePath trae los datos nuevos en esta misma respuesta.
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath(panelPath);
@@ -629,8 +650,7 @@ const productUpdateSchema = productBaseSchema.extend({
   id: z.coerce.number().int().positive(),
 });
 
-export async function updateProductAction(formData: FormData) {
-  await requireAdmin();
+async function applyProductUpdate(formData: FormData) {
   const parsed = productUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) throw new Error("Producto inválido.");
   const variants = readVariantRows(formData);
@@ -664,7 +684,6 @@ export async function updateProductAction(formData: FormData) {
       ],
     })),
   });
-  // Sin redirect: conserva la búsqueda y la página del listado. revalidatePath trae los datos nuevos en esta misma respuesta.
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath(panelPath);

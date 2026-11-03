@@ -259,7 +259,7 @@ export async function createOrder(input: {
   distanceKm?: number | null;
   items: CartItemPayload[];
   // Solo para ventas de Caja desde el panel (server action con sesión de admin).
-  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
+  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[]; saleKey?: string };
   // Total que vio el cliente: si no coincide con el que calcula el servidor, no se crea el pedido.
   expectedTotalCents?: number;
 }) {
@@ -329,4 +329,33 @@ export async function reserveLoginAttempt(identifier: string) {
 
 export async function clearLoginFailures(identifier: string) {
   return (await getDriver()).clearLoginFailures(identifier);
+}
+
+// Sesiones cerradas antes de vencer. Se leen de la caché, con tag propio: cada pantalla del panel lo consulta y las
+// escrituras comunes no tienen por qué invalidarlo, así Neon no se despierta solo por esto. Cerrar sesión la invalida.
+const revokedSessionsTag = "sesiones-revocadas";
+const readCachedRevokedSessions = unstable_cache(
+  async () => (await getDriver()).getRevokedSessions(),
+  ["sesiones-revocadas"],
+  { tags: [revokedSessionsTag], revalidate: 600 },
+);
+
+export async function revokeSession(nonce: string, expiresAt: number) {
+  await (await getDriver()).revokeSession(nonce, expiresAt);
+  try {
+    revalidateTag(revokedSessionsTag, { expire: 0 });
+  } catch {
+    // Fuera de una acción o route handler: se ignora, lo cubre el vencimiento de 10 min.
+  }
+}
+
+// Si la base no responde, la sesión sigue valiendo: el panel igual no puede trabajar sin base, y fallar acá dejaría
+// afuera a todos por un dato que importa mucho menos que poder entrar cuando vuelva.
+export async function isSessionRevoked(nonce: string) {
+  try {
+    return (await readCachedRevokedSessions()).includes(nonce);
+  } catch (error) {
+    console.error("No se pudieron leer las sesiones cerradas", error instanceof Error ? error.message : String(error));
+    return false;
+  }
 }

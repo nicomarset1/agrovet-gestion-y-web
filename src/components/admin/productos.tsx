@@ -4,14 +4,15 @@
 
 import Image from "next/image";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, PackagePlus, Pencil, Search, Trash2, X, Zap } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import type { FormEvent } from "react";
 import { formatPrice } from "@/lib/format";
 import { productImageSrc } from "@/lib/product-image";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { Checkbox, NumberInput, Switch } from "@/components/ui/form-controls";
 import type { Category, Product } from "@/lib/types";
-import { createProductAction, deleteProductAction, updateProductActiveAction, updateProductAction } from "@/app/gestion-agrovet/actions";
-import { AdminModal, SectionHeader, SubmitButton, UNCATEGORIZED_CATEGORY_VALUE, UNCATEGORIZED_SUBCATEGORY_SLUG, leafCategories } from "@/components/admin/shared";
+import { deleteProductAction, saveProductAction, updateProductActiveAction } from "@/app/gestion-agrovet/actions";
+import { AdminModal, SectionHeader, UNCATEGORIZED_CATEGORY_VALUE, UNCATEGORIZED_SUBCATEGORY_SLUG, leafCategories } from "@/components/admin/shared";
 import type { AdminModalState, Subcategory } from "@/components/admin/shared";
 import "./productos.css";
 
@@ -279,6 +280,30 @@ function ModalSection({ title, hint, children }: { title: string; hint?: string;
   );
 }
 
+// Guardar un producto sin salir del formulario. Va por onSubmit y no por <form action>: React vacía los campos
+// al terminar una action, y con un error (dato rechazado, sin conexión) se perdería todo lo cargado.
+function useProductSave(mode: "create" | "edit", onSaved: () => void) {
+  const [error, setError] = useState("");
+  const [saving, startSaving] = useTransition();
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setError("");
+    startSaving(async () => {
+      try {
+        const result = await saveProductAction(mode, formData);
+        if ("error" in result) setError(result.error);
+        else onSaved();
+      } catch (failure) {
+        // La redirección por sesión vencida la resuelve Next.
+        if (failure && typeof failure === "object" && "digest" in failure) throw failure;
+        setError("No se pudo guardar por un problema de conexión. Lo cargado sigue acá: probá de nuevo.");
+      }
+    });
+  };
+  return { error, saving, onSubmit };
+}
+
 export function ProductModal({
   categories,
   subcategories,
@@ -292,13 +317,9 @@ export function ProductModal({
   mode: "create" | "edit";
   product?: Product;
 }) {
-  // Guardar no navega: se cierra el modal y el listado conserva búsqueda, filtros y página. Si la acción
-  // falla, el error sigue yendo a la pantalla de error, como antes.
-  const save = mode === "create" ? createProductAction : updateProductAction;
-  const action = async (formData: FormData) => {
-    await save(formData);
-    onClose();
-  };
+  // Guardar no navega: se cierra el modal y el listado conserva búsqueda, filtros y página. Si falla, el aviso
+  // aparece acá mismo y no se pierde lo cargado.
+  const { error: saveError, saving, onSubmit } = useProductSave(mode, onClose);
   const selectableCategories = leafCategories(categories);
   const initialCategoryId = product
     ? selectableCategories.find((category) => category.slug === product.categorySlug)?.id ?? null
@@ -371,7 +392,7 @@ export function ProductModal({
       subtitle={mode === "create" ? "Cargá un producto con todas sus presentaciones." : `${product?.brand ?? ""} ${product?.name ?? ""}`.trim()}
       title={mode === "create" ? "Nuevo producto" : "Editar producto"}
     >
-      <form action={action} className="admin-modal-form product-form" onSubmitCapture={() => {
+      <form className="admin-modal-form product-form" onSubmit={onSubmit} onSubmitCapture={() => {
         if (saveBrandAsFrequent && !brandKnown) {
           persistFrequentBrands([...frequentBrands, brandValue.trim()]);
         }
@@ -676,11 +697,12 @@ export function ProductModal({
           </div>
         </ModalSection>
 
+        {saveError ? <p className="notice error admin-span-2" role="alert">{saveError}</p> : null}
         <div className="admin-modal-actions admin-span-2 product-form-actions">
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
-          <SubmitButton disabled={photoProcessing} pendingText="Guardando…">
-            {photoProcessing ? "Procesando foto…" : mode === "create" ? "Crear producto" : "Guardar cambios"}
-          </SubmitButton>
+          <button className="button button-primary" disabled={photoProcessing || saving} type="submit">
+            {saving ? "Guardando…" : photoProcessing ? "Procesando foto…" : mode === "create" ? "Crear producto" : "Guardar cambios"}
+          </button>
         </div>
       </form>
     </AdminModal>
@@ -716,6 +738,8 @@ function QuickEdit({
   product: Product;
 }) {
   const [rows, setRows] = useState<VariantRow[]>(() => variantRowsOf(product));
+  // Guardar sin cambios no mueve la firma de precios y stock: la edición se cierra acá, no solo por la firma.
+  const { error: saveError, saving, onSubmit } = useProductSave("edit", onCancel);
   const category = categories.find((item) => item.slug === product.categorySlug);
   const categoryId = product.categorySlug ? (category ? String(category.id) : "") : UNCATEGORIZED_CATEGORY_VALUE;
   const problems = quickEditProblems(product, categoryId);
@@ -735,12 +759,8 @@ function QuickEdit({
 
   return (
     <form
-      action={async (formData) => {
-        await updateProductAction(formData);
-        // Guardar sin cambios no mueve la firma de precios y stock: la edición se cierra acá, no solo por la firma.
-        onCancel();
-      }}
       className="product-quick"
+      onSubmit={onSubmit}
       aria-label={`Edición rápida de ${product.name}`}
     >
       <input name="id" type="hidden" value={product.id} />
@@ -806,10 +826,11 @@ function QuickEdit({
           </div>
         ))}
       </div>
+      {saveError ? <p className="notice error" role="alert">{saveError}</p> : null}
       <div className="product-quick-actions">
         <button className="button button-light" onClick={onFullEdit} type="button"><Pencil size={15} /> Editor completo</button>
         <button className="button button-light" onClick={onCancel} type="button">Cancelar</button>
-        <SubmitButton pendingText="Guardando…">Guardar precio y stock</SubmitButton>
+        <button className="button button-primary" disabled={saving} type="submit">{saving ? "Guardando…" : "Guardar precio y stock"}</button>
       </div>
     </form>
   );

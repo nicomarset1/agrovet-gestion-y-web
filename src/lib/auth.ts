@@ -4,7 +4,7 @@ import { panelLoginPath } from "./panel-path";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { clearLoginFailures as clearStoredLoginFailures, reserveLoginAttempt as reserveStoredLoginAttempt } from "./db";
+import { clearLoginFailures as clearStoredLoginFailures, isSessionRevoked, reserveLoginAttempt as reserveStoredLoginAttempt, revokeSession } from "./db";
 
 const cookieName = "agrovet_admin";
 const sessionHours = 6;
@@ -74,13 +74,23 @@ export async function startAdminSession() {
 
 export async function isAdmin() {
   const token = (await cookies()).get(cookieName)?.value;
-  return token ? isValidSessionToken(token) : false;
+  if (!token || !isValidSessionToken(token)) return false;
+  return !(await isSessionRevoked(token.split(".")[2]));
 }
 
 export async function requireAdmin() {
   if (!(await isAdmin())) redirect(panelLoginPath);
 }
 
+// Cierra solo esta sesión: una Caja abierta en otra compu sigue andando. Si la base no responde igual se borra la cookie.
 export async function endAdminSession() {
-  (await cookies()).delete(cookieName);
+  const store = await cookies();
+  const token = store.get(cookieName)?.value;
+  if (token && isValidSessionToken(token)) {
+    const [, expires, nonce] = token.split(".");
+    await revokeSession(nonce, Number(expires)).catch((error: unknown) => {
+      console.error("No se pudo registrar el cierre de sesión", error instanceof Error ? error.message : String(error));
+    });
+  }
+  store.delete(cookieName);
 }

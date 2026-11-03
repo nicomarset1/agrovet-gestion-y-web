@@ -188,6 +188,10 @@ db.exec(`
     count INTEGER NOT NULL DEFAULT 0,
     reset_at INTEGER NOT NULL DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS revoked_sessions (
+    nonce TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+  );
 `);
 
 ensureColumn("branches", "map_url", "TEXT NOT NULL DEFAULT ''");
@@ -199,6 +203,8 @@ ensureColumn("orders", "deleted_at", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_method", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_note", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "payment_ref", "TEXT");
+ensureColumn("orders", "sale_key", "TEXT");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS orders_sale_key_idx ON orders(sale_key) WHERE sale_key IS NOT NULL");
 // Relleno único al crear la columna (los pedidos viejos estaban cobrados). Correrlo en cada arranque marcaba
 // como pagos los pedidos de Mercado Pago sin cobro (reservados, esperando pago) cada vez que se reiniciaba el servidor.
 if (paidCentsAdded) db.prepare("UPDATE orders SET paid_cents = total_cents WHERE paid_cents = 0 AND payment_method != 'Cuenta corriente'").run();
@@ -1596,9 +1602,15 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[]; saleKey?: string }; expectedTotalCents?: number;
 }) {
   return db.transaction(() => {
+    // Reintento de una venta de Caja que ya entró (se perdió la respuesta): se devuelve la misma, sin tocar stock.
+    const saleKey = input.cashSale?.saleKey;
+    if (saleKey) {
+      const existing = db.prepare("SELECT code, total_cents AS totalCents FROM orders WHERE sale_key = ?").get(saleKey) as { code: string; totalCents: number } | undefined;
+      if (existing) return { code: existing.code, totalCents: Number(existing.totalCents) };
+    }
     // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
     releaseExpiredReservationsIn();
     const deliveryPlan = input.fulfillment === "envio" ? resolveDeliveryAllocationPlan(input.items) : null;
@@ -1659,8 +1671,8 @@ export function createOrder(input: {
     }
     if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new OrderRejectedError(deliveryMinimumMessage(), { reason: "invalid" });
     const insertOrder = db.prepare(`
-      INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents, sale_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let code = "";
     let order: ReturnType<typeof insertOrder.run> | undefined;
@@ -1668,7 +1680,7 @@ export function createOrder(input: {
       code = newOrderCode(attempt);
       try {
         // En SQLite el error de UNIQUE revierte solo esta sentencia, así que se puede reintentar dentro de la transacción.
-        order = insertOrder.run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, input.cashSale ? totalCents : 0);
+        order = insertOrder.run(code, input.name, input.phone, input.email, input.fulfillment, input.address ?? "", input.distanceKm ?? null, resolvedBranchId, totalCents, status, source, paymentMethod, input.cashSale ? totalCents : 0, saleKey ?? null);
       } catch (error) {
         if (attempt >= 2 || !isOrderCodeConflict(error)) throw error;
       }
@@ -2468,5 +2480,18 @@ export function reserveLoginAttempt(identifier: string): LoginReservation {
 export function clearLoginFailures(identifier: string) {
   db.prepare("DELETE FROM admin_login_attempts WHERE identifier = ?").run(identifier);
   db.prepare("UPDATE admin_login_attempts SET failures = MAX(failures - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE identifier = ?").run(globalLoginIdentifier);
+}
+
+// Sesiones cerradas antes de vencer. Lo vencido no hace falta guardarlo: la cookie ya no vale por sí sola.
+export function revokeSession(nonce: string, expiresAt: number) {
+  const now = Date.now();
+  db.prepare("DELETE FROM revoked_sessions WHERE expires_at <= ?").run(now);
+  if (expiresAt <= now) return;
+  db.prepare("INSERT INTO revoked_sessions (nonce, expires_at) VALUES (?, ?) ON CONFLICT (nonce) DO NOTHING").run(nonce, expiresAt);
+}
+
+export function getRevokedSessions() {
+  const rows = db.prepare("SELECT nonce FROM revoked_sessions WHERE expires_at > ?").all(Date.now()) as { nonce: string }[];
+  return rows.map((row) => row.nonce);
 }
 
