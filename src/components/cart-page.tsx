@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Lock, MessageCircle, Minus, PawPrint, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { applyCashDiscount, deliveryMinimumCents, formatPrice } from "@/lib/format";
+import { deliveryMinimumCents, formatPrice, maxOnlineUnitsMessage, maxOnlineUnitsPerProduct, posUnitPriceCents } from "@/lib/format";
 import { formatReservationTime, mercadoPagoReservationHours } from "@/lib/reservation";
 import type { Branch } from "@/lib/types";
 import { cartItemStockLimit, useCart } from "./cart-provider";
@@ -18,6 +18,52 @@ type CheckoutMessage = {
   finalStatus?: "success" | "pending" | "review";
   outsideCheckout?: boolean;
 };
+
+type OrderResponse = {
+  code?: string;
+  error?: string;
+  paymentUrl?: string;
+  retryToken?: string;
+  reason?: string;
+  variantIds?: number[];
+  prices?: { variantId: number; priceCents: number }[];
+  totalCents?: number;
+  pickupExpiresAt?: string;
+};
+
+// Reserva de Mercado Pago de esta pestaña. Si el cliente vuelve con el botón del navegador, el próximo pedido
+// la libera: si no, su propia reserva le puede bloquear la última unidad durante 12 h.
+const pendingOrderKey = "agrovet-pending-order";
+
+function readPendingOrder() {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(pendingOrderKey) ?? "null") as { code?: unknown; token?: unknown } | null;
+    return typeof saved?.code === "string" && typeof saved.token === "string" ? { code: saved.code, token: saved.token } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function savePendingOrder(code: string, token: string) {
+  try {
+    window.sessionStorage.setItem(pendingOrderKey, JSON.stringify({ code, token }));
+  } catch {
+    // Sin sessionStorage (modo privado estricto) solo se pierde el reintento automático.
+  }
+}
+
+function forgetPendingOrder() {
+  try {
+    window.sessionStorage.removeItem(pendingOrderKey);
+  } catch {
+    // Ídem: no hay nada que limpiar.
+  }
+}
+
+// Un cuerpo vacío o HTML (error del proxy, página de mantenimiento) no debe colgar la pantalla.
+async function readJson<T>(response: Response) {
+  return await response.json().catch(() => null) as T | null;
+}
 
 function getMercadoPagoReturn(params: URLSearchParams) {
   const explicitPayment = params.get("payment");
@@ -43,8 +89,9 @@ function CartLineThumb({ src }: { src?: string }) {
 }
 
 export function CartPage({ branches }: { branches: Branch[] }) {
-  const { items, totalItems, totalCents, change, remove, clear } = useCart();
+  const { items, totalItems, totalCents, change, remove, clear, updatePrices } = useCart();
   const handledPaymentReturn = useRef(false);
+  const lastZoneCheck = useRef(0);
   const [branchId, setBranchId] = useState(branches[0]?.id ?? 0);
   const [fulfillment, setFulfillment] = useState<"retiro" | "envio">("retiro");
   const [paymentMethod, setPaymentMethod] = useState<"mercado_pago" | "efectivo">("mercado_pago");
@@ -69,7 +116,8 @@ export function CartPage({ branches }: { branches: Branch[] }) {
     return stock < item.quantity;
   }), [effectiveBranchId, fulfillment, items]);
   const belowDeliveryMinimum = totalCents < deliveryMinimumCents;
-  const cashTotalCents = applyCashDiscount(totalCents);
+  // Suma por unidad, igual que lo guarda el servidor: el 10% se redondea al peso en cada unidad.
+  const cashTotalCents = items.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { cashDiscount: true }) * item.quantity, 0);
   const cashDiscountNote = "Pagando en efectivo en sucursal tenés 10% de descuento en todos los productos.";
   const effectivePaymentMethod = fulfillment === "envio" ? "mercado_pago" : paymentMethod;
   const showFinalMessage = Boolean(message?.final);
@@ -81,9 +129,13 @@ export function CartPage({ branches }: { branches: Branch[] }) {
     const payment = getMercadoPagoReturn(params);
     if (!payment) return;
 
-    handledPaymentReturn.current = true;
+    // Se marca adentro del timer: si el efecto se limpia antes de que corra (React lo repite en desarrollo, y clear
+    // cambia cuando se hidrata el carrito), se vuelve a programar en vez de perder el mensaje de la vuelta del pago.
     const timer = window.setTimeout(() => {
+      handledPaymentReturn.current = true;
       const order = params.get("order") ?? params.get("external_reference") ?? undefined;
+      // Pago aprobado, en proceso o en revisión: esa reserva ya no se libera desde un pedido nuevo.
+      if (payment === "success" || payment === "pending" || payment === "review") forgetPendingOrder();
       if (payment === "success") {
         clear({ silent: true });
         setMessage({
@@ -107,8 +159,8 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           finalStatus: "pending",
           title: "Pedido recibido",
           text: (order
-            ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.`
-            : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Te avisamos por WhatsApp cuando quede confirmado.") + reservation,
+            ? `Recibimos el pedido ${order}, pero Mercado Pago todavía está procesando el pago. Cuando se acredite, el pedido queda confirmado.`
+            : "Recibimos tu pedido, pero Mercado Pago todavía está procesando el pago. Cuando se acredite, el pedido queda confirmado.") + reservation,
         });
       } else if (payment === "review") {
         clear({ silent: true });
@@ -118,8 +170,8 @@ export function CartPage({ branches }: { branches: Branch[] }) {
           finalStatus: "review",
           title: "Recibimos tu pago",
           text: order
-            ? `Tu pago quedó acreditado y estamos revisando el pedido ${order} antes de confirmarlo. Te contactamos por WhatsApp a la brevedad.`
-            : "Tu pago quedó acreditado y estamos revisando el pedido antes de confirmarlo. Te contactamos por WhatsApp a la brevedad.",
+            ? `Tu pago quedó acreditado y estamos revisando el pedido ${order} antes de confirmarlo. Si tenés dudas, escribinos por WhatsApp con este número de pedido.`
+            : "Tu pago quedó acreditado y estamos revisando el pedido antes de confirmarlo. Si tenés dudas, escribinos por WhatsApp.",
         });
       } else if (payment === "failure" && params.get("reason") === "abandoned") {
         setMessage({
@@ -145,20 +197,28 @@ export function CartPage({ branches }: { branches: Branch[] }) {
     setAddress(value);
     setZone(null);
     if (value.trim().length < 6) return;
+    // Si el cliente cambió la dirección mientras se verificaba, la respuesta vieja se descarta.
+    const check = ++lastZoneCheck.current;
     setCheckingZone(true);
-    const response = await fetch("/api/delivery-zone", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ address: value }),
-    });
-    const result = await response.json() as { distanceKm?: number; deliveryAvailable?: boolean; error?: string };
-    setCheckingZone(false);
-    if (!response.ok) {
-      setZone({ distanceKm: 0, deliveryAvailable: false, error: result.error ?? "No pudimos verificar la dirección." });
-      return;
+    try {
+      const response = await fetch("/api/delivery-zone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: value }),
+      });
+      const result = await readJson<{ distanceKm?: number; deliveryAvailable?: boolean; error?: string }>(response);
+      if (check !== lastZoneCheck.current) return;
+      if (!response.ok || !result) {
+        setZone({ distanceKm: 0, deliveryAvailable: false, error: result?.error ?? "No pudimos verificar la dirección. Probá de nuevo o elegí retiro por sucursal." });
+        return;
+      }
+      setZone({ distanceKm: result.distanceKm ?? 0, deliveryAvailable: Boolean(result.deliveryAvailable) });
+      if (!result.deliveryAvailable) setFulfillment("retiro");
+    } catch {
+      if (check === lastZoneCheck.current) setZone({ distanceKm: 0, deliveryAvailable: false, error: "No pudimos verificar la dirección. Revisá tu conexión, probá de nuevo o elegí retiro por sucursal." });
+    } finally {
+      if (check === lastZoneCheck.current) setCheckingZone(false);
     }
-    setZone({ distanceKm: result.distanceKm ?? 0, deliveryAvailable: Boolean(result.deliveryAvailable) });
-    if (!result.deliveryAvailable) setFulfillment("retiro");
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -172,41 +232,62 @@ export function CartPage({ branches }: { branches: Branch[] }) {
       setFulfillment("retiro");
       return;
     }
+    const overLimit = items.find((item) => item.quantity > maxOnlineUnitsPerProduct);
+    if (overLimit) {
+      setMessage({ text: maxOnlineUnitsMessage(overLimit.name), error: true });
+      return;
+    }
     setPending(true);
     setMessage(null);
     const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: form.get("name"),
-        phone: form.get("phone"),
-        email: form.get("email"),
-        fulfillment,
-        source: "Tienda online",
-        paymentMethod: effectivePaymentMethod,
-        address: fulfillment === "envio" ? address : "",
-        distanceKm: fulfillment === "envio" ? zone?.distanceKm ?? null : null,
-        branchId: effectiveBranchId,
-        items: items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
-      }),
-    });
-    const result = await response.json() as { code?: string; error?: string; paymentUrl?: string };
-    setPending(false);
-    if (!response.ok) {
-      setMessage({ text: result.error ?? "No se pudo crear el pedido.", error: true });
-      return;
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: form.get("name"),
+          phone: form.get("phone"),
+          email: form.get("email"),
+          fulfillment,
+          paymentMethod: effectivePaymentMethod,
+          address: fulfillment === "envio" ? address : "",
+          branchId: effectiveBranchId,
+          expectedTotalCents: effectivePaymentMethod === "efectivo" ? cashTotalCents : totalCents,
+          previousOrder: readPendingOrder(),
+          items: items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
+        }),
+      });
+      const result = await readJson<OrderResponse>(response);
+      if (!response.ok || !result) {
+        if (result?.prices?.length) updatePrices(result.prices);
+        const gone = result?.reason === "unavailable" ? items.filter((item) => result.variantIds?.includes(item.variantId)).map((item) => item.name) : [];
+        setMessage({
+          text: gone.length ? `${gone.join(", ")} ya no está disponible. Quitalo del carrito para seguir.` : result?.error ?? "No pudimos crear el pedido. Probá de nuevo en unos minutos.",
+          error: true,
+        });
+        return;
+      }
+      if (result.paymentUrl) {
+        if (result.code && result.retryToken) savePendingOrder(result.code, result.retryToken);
+        window.location.assign(result.paymentUrl);
+        return;
+      }
+      if (effectivePaymentMethod === "mercado_pago") {
+        setMessage({ text: "No se pudo abrir Mercado Pago. Probá de nuevo en unos segundos.", error: true });
+        return;
+      }
+      forgetPendingOrder();
+      clear();
+      // Con una fecha de referencia vieja siempre devuelve "dd/mm hh:mm": acá alcanza con el día.
+      const until = result.pickupExpiresAt ? formatReservationTime(result.pickupExpiresAt, new Date(0)).split(" ")[0] : "";
+      const total = typeof result.totalCents === "number" ? ` El total a pagar es ${formatPrice(result.totalCents)}.` : "";
+      setMessage({ code: result.code, text: `Pedido ${result.code} reservado.${total} Te esperamos para abonar en efectivo en sucursal${until ? ` hasta el ${until} inclusive: después se cancela y el stock se libera` : ""}.` });
+    } catch {
+      // Falló la red: no se puede saber si el pedido llegó, así que no se promete nada de más.
+      setMessage({ text: "No pudimos conectarnos para crear el pedido. Revisá tu conexión y probá de nuevo.", error: true });
+    } finally {
+      setPending(false);
     }
-    if (result.paymentUrl) {
-      window.location.href = result.paymentUrl;
-      return;
-    }
-    if (effectivePaymentMethod === "mercado_pago") {
-      setMessage({ text: "No se pudo abrir Mercado Pago. Probá de nuevo en unos segundos.", error: true });
-      return;
-    }
-    clear();
-    setMessage({ code: result.code, text: `Pedido ${result.code} reservado. Te esperamos para abonar en efectivo en sucursal.` });
   }
 
   return (
@@ -256,7 +337,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
               </div>
               <div>
                 <span><MessageCircle size={17} /></span>
-                <p><strong>Te contactamos</strong>Coordinamos retiro o entrega por WhatsApp.</p>
+                <p><strong>¿Tenés dudas?</strong>Escribinos por WhatsApp con tu número de pedido.</p>
               </div>
             </div>
             <div className="order-confirmation-actions">
@@ -317,7 +398,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
       {items.length > 0 && !showFinalMessage && (
         <aside className="card checkout" id="checkout">
           <h2>Finalizar pedido</h2>
-          {message && !message.outsideCheckout && <p className={`notice ${message.error ? "error" : ""}`} role={message.error ? "alert" : "status"}>{message.text}</p>}
+          {message && !message.outsideCheckout && <p className={`notice checkout-notice-in ${message.error ? "error" : ""}`} role={message.error ? "alert" : "status"}>{message.text}</p>}
           <form onSubmit={submit}>
             <p className="checkout-step">Tus datos</p>
             <input aria-label="Nombre y apellido" autoComplete="name" className="field" name="name" placeholder="Nombre y apellido" required />
@@ -422,7 +503,7 @@ export function CartPage({ branches }: { branches: Branch[] }) {
               <p className="notice checkout-reservation-note">Reservamos tu pedido por {mercadoPagoReservationHours} horas. Si no se completa el pago en ese plazo, se libera el stock.</p>
             ) : null}
             <Link className="button button-light" href="/tienda">Seguir comprando</Link>
-            <p className="notice checkout-footnote">Te vamos a contactar por WhatsApp al número que ingresaste en la compra. Los medicamentos requieren asesoramiento cuando corresponda.</p>
+            <p className="notice checkout-footnote">Si tenés una consulta sobre tu pedido, escribinos por WhatsApp con el número de pedido. Los medicamentos requieren asesoramiento cuando corresponda.</p>
           </form>
         </aside>
       )}

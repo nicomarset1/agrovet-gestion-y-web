@@ -333,5 +333,10 @@
   .delivery-zone-card .zone-result { scroll-margin-bottom: 76px; }
 }
 
+/* Avisos del checkout (precio cambiado, sin conexión): aparecen suave, no de golpe. */
+.checkout .checkout-notice-in { animation: checkout-notice-in .28s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes checkout-notice-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .checkout .checkout-notice-in { animation: none; } }
+
 /* Aviso de la reserva de 12 h junto al pago con Mercado Pago. */
 .checkout .checkout-reservation-note { border-color: #e7dcff; background: #faf7ff; color: var(--forest); font-weight: 600; }

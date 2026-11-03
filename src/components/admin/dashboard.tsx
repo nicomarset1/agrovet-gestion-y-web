@@ -10,7 +10,7 @@ import { formatPrice } from "@/lib/format";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { formatRange, parseIsoDate, toIsoDate } from "@/components/ui/date-utils";
 import type { Branch, OrderRecord, Product } from "@/lib/types";
-import { AdminModal, CountUp, PendingOrderCard, SectionHeader, buildAdminHref, dateKey, formatAdminDateTime, formatDayLabel, getOrderBranchRevenueCents, isCancelledOrder, isCashOrder, isPendingWebOrder, isWholesaleOrder, monthKey, startOfDay, startOfMonth, toDate, weekKey } from "@/components/admin/shared";
+import { AdminModal, CountUp, PendingOrderCard, SectionHeader, buildAdminHref, dateKey, formatAdminDateTime, formatDayLabel, getOrderBranchRevenueCents, isCancelledOrder, isCashOrder, isPendingWebOrder, isWholesaleOrder, monthKey, orderHasBranch, startOfDay, startOfMonth, toDate, weekKey } from "@/components/admin/shared";
 import type { DashboardDetail, WebOrderStatus } from "@/components/admin/shared";
 
 export function DashboardDetailModal({
@@ -86,7 +86,8 @@ export function DashboardDetailModal({
     [rangeFrom, rangeTo, selectedBranchOrders],
   );
   const todayOrders = useMemo(() => selectedBranchOrders.filter((order) => isCashOrder(order) && dateKey(toDate(order.createdAt)) === todayKey), [selectedBranchOrders, todayKey]);
-  const pendingOrders = useMemo(() => selectedBranchOrders.filter((order) => isPendingWebOrder(order)), [selectedBranchOrders]);
+  // De todos los pedidos, no de los que suman ingresos: uno en efectivo sin cobrar igual está pendiente.
+  const pendingOrders = useMemo(() => orders.filter((order) => orderHasBranch(order, selectedBranch.id) && isPendingWebOrder(order)), [orders, selectedBranch.id]);
   const channelWeeks = useMemo(() => {
     const groups = new Map<string, Record<string, number>>();
     for (const order of orders) {

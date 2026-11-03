@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { extrasTotalCents, fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { NumberInput } from "@/components/ui/form-controls";
+import { chargeReviewStatus, holdsStock, isExcludedFromIncome, isReviewStatus, parsePaymentRefs, paymentStockReviewStatus, refundReviewStatus } from "@/lib/order-status";
 import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
@@ -247,6 +248,21 @@ export function reservationLabel(order: OrderRecord) {
   return until ? `Reservado · vence ${until}` : `Reservado · ${mercadoPagoReservationHours} h`;
 }
 
+// "Sin cobrar · vence 05/11 23:59": pedido web a pagar en efectivo, se cancela solo si nadie lo retira.
+function pickupExpiryLabel(order: OrderRecord) {
+  return order.pickupExpiresAt ? `Sin cobrar · vence ${formatReservationTime(order.pickupExpiresAt)}` : "";
+}
+
+// Pedido que una persona tiene que mirar: no se cierra como un retiro normal.
+function reviewInfo(order: OrderRecord) {
+  if (!isWebOrder(order) || !isReviewStatus(order.status) || isCancelledOrder(order)) return null;
+  const status = order.status.trim();
+  if (status === refundReviewStatus) return { label: "Devolución", note: "Mercado Pago informó una devolución o un contracargo. El stock sigue retenido hasta que lo canceles." };
+  if (status === chargeReviewStatus) return { label: "Cobro a revisar", note: "Llegó un cobro que no concilia: otro pago sobre este pedido, o le sumaron unidades después de pagar. El stock sigue retenido." };
+  if (status === paymentStockReviewStatus) return { label: "Pago sin stock", note: "Se cobró, pero no había stock al acreditarse. Revisá el pago en Mercado Pago antes de resolverlo." };
+  return { label: "Pago a revisar", note: "Se cobró, pero el pago no coincide con el pedido. No tiene stock tomado. Revisalo en Mercado Pago antes de resolverlo." };
+}
+
 export function trashTypeLabel(type: TrashItem["type"]) {
   if (type === "order") return "Pedidos";
   if (type === "product") return "Productos";
@@ -344,6 +360,7 @@ export function orderHasBranch(order: OrderRecord, branchId: number) {
 export function getOrderBranchRevenueCents(order: OrderRecord, branchId: number) {
   if (isCancelledOrder(order)) return 0;
   if (isAwaitingOnlinePayment(order)) return 0;
+  if (isExcludedFromIncome(order)) return 0;
 
   const branchTotal = order.items.reduce((sum, item) => {
     const allocatedQuantity = item.allocations?.reduce((quantity, allocation) => {
@@ -630,12 +647,19 @@ export function PendingOrderCard({
   const compactMode = dense || branchId !== undefined;
   // Reservado: todavía no está pago, así que no se puede cerrar como retirado/entregado; solo cancelar (devuelve el stock).
   const reserved = isReservedWebOrder(order);
+  // En revisión tampoco: hasta que alguien lo mire, lo único que se puede hacer es cancelarlo.
+  const review = reviewInfo(order);
+  const cancelOnly = reserved || Boolean(review);
+  const pickupExpiry = pickupExpiryLabel(order);
+  const paymentRefs = parsePaymentRefs(order.paymentRef);
   return (
-    <article className={`admin-pending-card${compactMode ? " dense" : ""}`}>
+    <article className={`admin-pending-card${compactMode ? " dense" : ""}${review ? " is-review" : ""}`}>
       <header className="admin-pending-card-head">
         <div>
           <strong>{order.code}</strong>
           {reserved ? <span className="admin-reserved-chip">{reservationLabel(order)}</span> : null}
+          {pickupExpiry ? <span className="admin-reserved-chip">{pickupExpiry}</span> : null}
+          {review ? <span className="admin-review-chip">{review.label}</span> : null}
         </div>
         <div className="admin-pending-card-head-actions">
           <button className="button button-light subtle" onClick={() => onSelectOrder(order)} type="button">
@@ -643,13 +667,19 @@ export function PendingOrderCard({
           </button>
         </div>
       </header>
+      {review ? (
+        <p className="admin-review-note" role="status">
+          {review.note}
+          {paymentRefs.length > 1 ? ` Pagos: ${paymentRefs.join(", ")}.` : ""}
+        </p>
+      ) : null}
       <div className="admin-pending-card-items horizontal">
         {itemLabel}
         {!branchId && order.items.length > 3 ? ` · +${order.items.length - 3} más` : ""}
       </div>
       <div className="admin-pending-card-footer">
         <div className="admin-order-status-actions">
-          {showStatusActions && reserved ? (
+          {showStatusActions && cancelOnly ? (
             onCancelOrder ? (
               <button className="button button-light" onClick={() => onCancelOrder(order)} type="button">Cancelar</button>
             ) : (
@@ -684,7 +714,7 @@ export function PendingOrderCard({
               </>
             )
           ) : null}
-          {onEditDistribution && !reserved ? (
+          {onEditDistribution && !cancelOnly ? (
             <button className="button button-light subtle" onClick={() => onEditDistribution(order)} type="button">
               Cambiar sucursal
             </button>
@@ -707,7 +737,8 @@ export function WebOrderStatusModal({
   status: WebOrderStatus;
 }) {
   const paymentMatch = /^(Tarjeta)(?: \((\d+) cuotas?\))?/i.exec(order.paymentMethod);
-  const [paymentMethod, setPaymentMethod] = useState(paymentMatch?.[1] ?? (order.paymentMethod || "Efectivo"));
+  // "Efectivo en sucursal" (pedido web) se cierra por defecto como "Efectivo", la opción de la lista.
+  const [paymentMethod, setPaymentMethod] = useState(paymentMatch?.[1] ?? (/^efectivo/i.test(order.paymentMethod) ? "Efectivo" : order.paymentMethod || "Efectivo"));
   const [installments, setInstallments] = useState(paymentMatch?.[2] ?? "1");
   const [submitting, setSubmitting] = useState(false);
   const isCancellation = status === "Cancelado";
@@ -755,7 +786,7 @@ export function WebOrderStatusModal({
         {isCancellation ? (
           <>
             <p className="notice admin-span-2">
-              Se cancelará el pedido y se devolverá el stock reservado.
+              {holdsStock(order.status) ? "Se cancelará el pedido y se devolverá el stock reservado." : "Se cancelará el pedido. No tiene stock tomado, así que el stock no cambia."}
             </p>
             {needsRefundRecord ? (
               <div className="admin-span-2 admin-confirm-refund">
