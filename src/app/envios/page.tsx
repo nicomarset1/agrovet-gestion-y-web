@@ -9,7 +9,6 @@ export const metadata = infoPageMetadata({
   path: "/envios",
   description: "Envíos gratis en Mar del Plata dentro de 3 km de la sucursal de Av. Independencia y Alberti, con compra mínima de $ 50.000. Verificá tu dirección y conocé cómo coordinamos la entrega.",
 });
-export const dynamic = "force-dynamic";
 
 const fallbackDescription = "Hacemos envíos gratis dentro de la zona de reparto para compras desde $ 50.000. Verificá tu dirección antes de finalizar el pedido.";
 

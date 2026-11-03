@@ -22,10 +22,10 @@ if (!connectionUrl) {
   throw new Error("DATABASE_URL_UNPOOLED, POSTGRES_URL_NON_POOLING o DATABASE_URL no está configurado.");
 }
 
+// Solo contra una base en esta máquina (certificado propio) no se verifica el certificado.
+const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(connectionUrl).hostname.toLowerCase());
 const sql = postgres(connectionUrl, {
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: isLocal ? "prefer" : { rejectUnauthorized: true },
 });
 
 // Pide confirmación por consola. Si no hay nadie para responder (entrada cerrada), cuenta como "no".

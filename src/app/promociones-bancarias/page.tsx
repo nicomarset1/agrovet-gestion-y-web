@@ -9,7 +9,6 @@ export const metadata = infoPageMetadata({
   path: "/promociones-bancarias",
   description: "Cuotas sin interés y reintegro con Favacard en Agrovet Mar del Plata. Conocé las promociones bancarias vigentes para tus compras.",
 });
-export const dynamic = "force-dynamic";
 
 export default async function PromocionesBancariasPage() {
   const description = await getSpecialPageDescription(

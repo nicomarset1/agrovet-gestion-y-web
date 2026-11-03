@@ -10,7 +10,6 @@ export const metadata = infoPageMetadata({
   path: "/contacto",
   description: "Contactá a Agrovet Mar del Plata por WhatsApp o en nuestras sucursales para consultar stock, pedidos online, retiro o envíos.",
 });
-export const dynamic = "force-dynamic";
 
 export default async function ContactoPage() {
   const [description, branches] = await Promise.all([

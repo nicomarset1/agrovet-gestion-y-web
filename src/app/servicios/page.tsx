@@ -7,7 +7,6 @@ export const metadata = infoPageMetadata({
   path: "/servicios",
   description: "Servicios de Agrovet Mar del Plata para el cuidado de perros y gatos y cómo solicitarlos.",
 });
-export const dynamic = "force-dynamic";
 
 export default async function ServiciosPage() {
   return (

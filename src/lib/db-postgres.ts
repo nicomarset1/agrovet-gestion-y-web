@@ -13,7 +13,9 @@ import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { resizeAllocations, settleEditedOrder } from "./order-edit";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
-import { productImageSrcFromSample } from "./product-image";
+import { globalLoginIdentifier, globalLoginWindowMs, loginLockMs, loginReservation, loginWindowMs, maxGlobalLoginFailures, maxLoginFailures, type LoginCounter, type LoginReservation } from "./login-limits";
+import { applyTransactionTimeouts, postgresPoolOptions } from "./postgres-connection";
+import { buildProductImageIndex, maxIndexedImageUrl, productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderExtraRecord, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
@@ -26,15 +28,24 @@ if (!databaseUrl) {
   throw new Error("DATABASE_URL is required for the Postgres data layer.");
 }
 
-const sql = postgres(databaseUrl, {
-  max: 10,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-});
+const sql = applyTransactionTimeouts(postgres(databaseUrl, postgresPoolOptions(databaseUrl)));
 
 type Db = typeof sql | postgres.TransactionSql<Record<string, never>>;
 let initialized: Promise<void> | null = null;
+
+// Versión del esquema de la base. SUBILA EN 1 CADA VEZ QUE CAMBIES EL DDL de ensureSchema (tablas, columnas,
+// índices): si no, las bases que ya están en esta versión nunca reciben el cambio.
+export const schemaVersion = 1;
+
+// Evita correr el DDL en cada arranque en frío: los ALTER toman un lock exclusivo sobre orders y products.
+// Una versión más nueva en la base también cuenta como al día (una reversión de despliegue no la baja).
+async function schemaIsCurrent(db: Db) {
+  const [table] = await db`SELECT to_regclass('app_meta') IS NOT NULL AS exists` as unknown as { exists: boolean }[];
+  if (!table?.exists) return false;
+  const rows = await db`SELECT key, value FROM app_meta WHERE key IN ('schema_version', 'catalog_version')` as unknown as { key: string; value: number }[];
+  const stored = new Map(rows.map((row) => [row.key, Number(row.value)]));
+  return (stored.get("schema_version") ?? 0) >= schemaVersion && (stored.get("catalog_version") ?? 0) >= catalogVersion;
+}
 
 const branchSeed = [
   { id: 1, slug: "independencia", name: "Sucursal Independencia", address: "Av. Independencia 2599, Mar del Plata", phone: "0223 493-5665", mapUrl: "", verified: true },
@@ -109,8 +120,14 @@ const subcategorySeed = [...new Map(productSeed.map((product) => ([
 
 async function ensureSchema() {
   initialized ??= (async () => {
+    if (await schemaIsCurrent(sql)) return;
     await sql.begin(async (schemaTx) => {
+      // Otra instancia puede estar sembrando: se la espera más que a un pedido, pero sin colgarse para siempre.
+      await schemaTx.unsafe("SET LOCAL lock_timeout = '20s'");
       await schemaTx`SELECT pg_advisory_xact_lock(742060606)`;
+      // Con el lock ya tomado, un ALTER en espera frena a todos los pedidos detrás de él: tiene que rendirse rápido.
+      await schemaTx.unsafe("SET LOCAL lock_timeout = '8s'");
+      if (await schemaIsCurrent(schemaTx)) return;
       await schemaTx.unsafe(`
       CREATE TABLE IF NOT EXISTS app_meta (
         key TEXT PRIMARY KEY,
@@ -373,90 +390,71 @@ async function ensureSchema() {
       `;
       if (Number(catalogMeta?.value ?? 0) < catalogVersion) {
         const tx = schemaTx;
-        await tx`
-          UPDATE products
-          SET slug = 'legacy-' || id || '-' || slug,
-              active = FALSE,
-              featured = FALSE,
-              archived_at = CURRENT_TIMESTAMP,
-              purged_at = CURRENT_TIMESTAMP
-          WHERE id < ${catalogProductStartId}
-            AND purged_at IS NULL
-        `;
+        // Los productos de muestra se retiran solo si recién se sembraron arriba, en una base vacía.
+        // Con datos reales esto no corre: renombrar y dar de baja es justo lo que la siembra no debe hacer.
+        if (Number(seedCheck.count) === 0) {
+          await tx`
+            UPDATE products
+            SET slug = 'legacy-' || id || '-' || slug,
+                active = FALSE,
+                featured = FALSE,
+                archived_at = CURRENT_TIMESTAMP,
+                purged_at = CURRENT_TIMESTAMP
+            WHERE id < ${catalogProductStartId}
+              AND purged_at IS NULL
+          `;
+        }
+        // La siembra solo crea lo que falta: subir catalogVersion nunca pisa fotos, precios ni descripciones, ni
+        // reactiva lo borrado. ON CONFLICT sin destino cubre también un slug o SKU que ya usa algo del dueño, y
+        // los (SELECT id ...) evitan que una categoría salteada por eso rompa la clave foránea y el arranque.
         for (const category of catalogCategorySeeds) {
           await tx`
             INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu, deleted_at)
             VALUES (
               ${category.id}, ${category.slug}, ${category.name}, ${category.description},
-              ${category.parentCategoryId}, ${category.showInMenu}, NULL
+              (SELECT id FROM categories WHERE id = ${category.parentCategoryId}), ${category.showInMenu}, NULL
             )
-            ON CONFLICT (id) DO UPDATE SET
-              slug = EXCLUDED.slug,
-              name = EXCLUDED.name,
-              description = EXCLUDED.description,
-              parent_category_id = EXCLUDED.parent_category_id,
-              show_in_menu = EXCLUDED.show_in_menu,
-              deleted_at = NULL
+            ON CONFLICT DO NOTHING
           `;
         }
         for (const subcategory of catalogSubcategorySeeds) {
           await tx`
             INSERT INTO subcategories (slug, category_id, name, description, deleted_at)
-            VALUES (${subcategory.slug}, ${subcategory.categoryId}, ${subcategory.name}, ${subcategory.description}, NULL)
-            ON CONFLICT (slug) DO UPDATE SET
-              category_id = EXCLUDED.category_id,
-              name = EXCLUDED.name,
-              description = EXCLUDED.description,
-              deleted_at = NULL
+            VALUES (${subcategory.slug}, (SELECT id FROM categories WHERE id = ${subcategory.categoryId}), ${subcategory.name}, ${subcategory.description}, NULL)
+            ON CONFLICT DO NOTHING
           `;
         }
+        const createdProducts = new Set<number>();
         for (const product of catalogProductSeeds) {
-          await tx`
+          const created = await tx`
             INSERT INTO products (
               id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name,
               life_stage, size, need, description, featured, requires_advice, active, color,
               image_url, archived_at, purged_at
             ) VALUES (
-              ${product.id}, ${product.slug}, ${product.name}, ${product.brand}, ${product.categoryId},
+              ${product.id}, ${product.slug}, ${product.name}, ${product.brand}, (SELECT id FROM categories WHERE id = ${product.categoryId}),
               ${product.species}, ${product.subcategorySlug}, ${product.subcategoryName}, ${product.lifeStage},
               ${product.size}, ${product.need}, ${product.description}, ${product.featured},
               ${product.requiresAdvice}, TRUE, ${product.color}, ${product.imageUrl}, NULL, NULL
             )
-            ON CONFLICT (id) DO UPDATE SET
-              slug = EXCLUDED.slug,
-              name = EXCLUDED.name,
-              brand = EXCLUDED.brand,
-              category_id = EXCLUDED.category_id,
-              species = EXCLUDED.species,
-              subcategory_slug = EXCLUDED.subcategory_slug,
-              subcategory_name = EXCLUDED.subcategory_name,
-              life_stage = EXCLUDED.life_stage,
-              size = EXCLUDED.size,
-              need = EXCLUDED.need,
-              description = EXCLUDED.description,
-              featured = EXCLUDED.featured,
-              requires_advice = EXCLUDED.requires_advice,
-              active = TRUE,
-              color = EXCLUDED.color,
-              image_url = EXCLUDED.image_url,
-              archived_at = NULL,
-              purged_at = NULL
+            ON CONFLICT DO NOTHING
+            RETURNING id
           `;
+          if (created.length) createdProducts.add(product.id);
         }
         for (const variant of catalogVariantSeeds) {
-          await tx`
+          // Las presentaciones y el stock solo acompañan a un producto recién creado: a uno existente no se le agrega nada.
+          if (!createdProducts.has(variant.productId)) continue;
+          const created = await tx`
             INSERT INTO variants (id, product_id, label, sku, barcode, price_cents)
             VALUES (
               ${variant.id}, ${variant.productId}, ${variant.label}, ${variant.sku},
               ${variant.barcode}, ${variant.priceCents}
             )
-            ON CONFLICT (id) DO UPDATE SET
-              product_id = EXCLUDED.product_id,
-              label = EXCLUDED.label,
-              sku = EXCLUDED.sku,
-              barcode = EXCLUDED.barcode,
-              price_cents = EXCLUDED.price_cents
+            ON CONFLICT DO NOTHING
+            RETURNING id
           `;
+          if (!created.length) continue;
           await tx`
             INSERT INTO inventory (variant_id, branch_id, quantity)
             VALUES (${variant.id}, 1, ${variant.branch1})
@@ -475,8 +473,16 @@ async function ensureSchema() {
         await tx`UPDATE app_meta SET value = ${catalogVersion} WHERE key = 'catalog_version'`;
         await tx`UPDATE app_meta SET value = value + 1 WHERE key = 'sync_version'`;
       }
+      await schemaTx`
+        INSERT INTO app_meta (key, value) VALUES ('schema_version', ${schemaVersion})
+        ON CONFLICT (key) DO UPDATE SET value = GREATEST(app_meta.value, EXCLUDED.value)
+      `;
     });
-  })();
+  })().catch((error) => {
+    // Sin esto la promesa rechazada queda guardada y la instancia da error para siempre aunque la base vuelva.
+    initialized = null;
+    throw error;
+  });
   await initialized;
 }
 
@@ -724,6 +730,22 @@ export async function getProductImage(id: number): Promise<{ imageUrl: string } 
   await ensureSchema();
   const [row] = await sql`SELECT image_url AS "imageUrl" FROM products WHERE id = ${id} AND purged_at IS NULL` as unknown as { imageUrl?: string }[];
   return row?.imageUrl ? { imageUrl: row.imageUrl } : null;
+}
+
+// Índice liviano id -> URL de la foto, para que la ruta de fotos responda URLs inventadas e ids inexistentes
+// sin leer la base. Nunca trae la foto: de un data URL solo la muestra corta, y lo demás recortado.
+export async function getProductImageIndex(): Promise<Record<string, string>> {
+  await ensureSchema();
+  const rows = await sql`
+    SELECT id,
+      CASE WHEN image_url ILIKE 'data:image/%'
+        THEN length(image_url) || ':' || left(image_url, 96) || ':' || right(image_url, 96)
+        ELSE '' END AS "imageSample",
+      CASE WHEN image_url ILIKE 'data:%' THEN '' ELSE left(image_url, ${maxIndexedImageUrl + 1}) END AS "imageUrl"
+    FROM products
+    WHERE purged_at IS NULL AND image_url <> ''
+  ` as unknown as Array<{ id: number; imageSample: string; imageUrl: string }>;
+  return buildProductImageIndex(rows);
 }
 
 export async function getFeaturedProducts() {
@@ -2280,55 +2302,49 @@ export async function restoreTrashItem(input: { type: TrashItem["type"]; id: str
   });
 }
 
-const loginWindowMs = 1000 * 60 * 15;
-const loginLockMs = 1000 * 60 * 15;
-const maxLoginFailures = 5;
-
-export async function getLoginRateLimit(identifier: string) {
-  await ensureSchema();
+// Suma un intento en una sola sentencia: Postgres serializa los UPSERT sobre la misma fila, así que en una
+// ráfaga cada pedido ve el contador con los anteriores ya sumados. Mismo cálculo que en el driver de SQLite.
+async function bumpLoginCounter(identifier: string, max: number, windowMs: number, lockMs: number): Promise<LoginCounter> {
   const now = Date.now();
   const [row] = await sql`
-    SELECT identifier, failures, locked_until AS "lockedUntil", reset_at AS "resetAt"
-    FROM admin_login_attempts
-    WHERE identifier = ${identifier}
-  ` as unknown as Array<{ failures: number; lockedUntil: number; resetAt: number }>;
-  if (!row) return { limited: false, retryAfterSeconds: 0 };
-  if (Number(row.resetAt) <= now && Number(row.lockedUntil) <= now) {
-    await sql`DELETE FROM admin_login_attempts WHERE identifier = ${identifier}`;
-    return { limited: false, retryAfterSeconds: 0 };
-  }
-  if (Number(row.lockedUntil) > now) {
-    return { limited: true, retryAfterSeconds: Math.ceil((Number(row.lockedUntil) - now) / 1000) };
-  }
-  return { limited: false, retryAfterSeconds: 0 };
+    INSERT INTO admin_login_attempts (identifier, failures, locked_until, reset_at, updated_at)
+    VALUES (${identifier}, 1, 0, ${now + windowMs}, CURRENT_TIMESTAMP)
+    ON CONFLICT (identifier) DO UPDATE SET
+      failures = CASE
+        WHEN admin_login_attempts.reset_at <= ${now} AND admin_login_attempts.locked_until <= ${now} THEN 1
+        ELSE admin_login_attempts.failures + 1
+      END,
+      locked_until = CASE
+        WHEN admin_login_attempts.reset_at <= ${now} AND admin_login_attempts.locked_until <= ${now} THEN 0
+        WHEN admin_login_attempts.locked_until > ${now} THEN admin_login_attempts.locked_until
+        WHEN admin_login_attempts.failures + 1 >= ${max} THEN ${now + lockMs}::bigint
+        ELSE admin_login_attempts.locked_until
+      END,
+      reset_at = CASE
+        WHEN admin_login_attempts.reset_at <= ${now} AND admin_login_attempts.locked_until <= ${now} THEN ${now + windowMs}::bigint
+        WHEN admin_login_attempts.locked_until > ${now} THEN admin_login_attempts.reset_at
+        WHEN admin_login_attempts.failures + 1 >= ${max} THEN ${now + lockMs}::bigint
+        ELSE admin_login_attempts.reset_at
+      END,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING failures, locked_until AS "lockedUntil"
+  ` as unknown as LoginCounter[];
+  return row;
 }
 
-export async function recordLoginAttempt(identifier: string, success: boolean) {
+// Reserva un intento antes de probar el código. Si la IP ya está frenada no se toca el global: si no, una
+// sola IP insistiendo podría llenar el tope y dejar afuera al dueño.
+export async function reserveLoginAttempt(identifier: string): Promise<LoginReservation> {
   await ensureSchema();
-  if (success) {
-    await sql`DELETE FROM admin_login_attempts WHERE identifier = ${identifier}`;
-    return;
-  }
-  const now = Date.now();
-  const [current] = await sql`
-    SELECT identifier, failures, locked_until AS "lockedUntil", reset_at AS "resetAt"
-    FROM admin_login_attempts
-    WHERE identifier = ${identifier}
-  ` as unknown as Array<{ failures: number; lockedUntil: number; resetAt: number }>;
-  const bucket = current && Number(current.resetAt) > now
-    ? current
-    : { failures: 0, lockedUntil: 0, resetAt: now + loginWindowMs };
-  const failures = Number(bucket.failures) + 1;
-  const lockedUntil = failures >= maxLoginFailures ? now + loginLockMs : Number(bucket.lockedUntil ?? 0);
-  const resetAt = failures >= maxLoginFailures ? lockedUntil : Number(bucket.resetAt);
-  await sql`
-    INSERT INTO admin_login_attempts (identifier, failures, locked_until, reset_at, updated_at)
-    VALUES (${identifier}, ${failures}, ${lockedUntil}, ${resetAt}, CURRENT_TIMESTAMP)
-    ON CONFLICT (identifier) DO UPDATE SET
-      failures = EXCLUDED.failures,
-      locked_until = EXCLUDED.locked_until,
-      reset_at = EXCLUDED.reset_at,
-      updated_at = CURRENT_TIMESTAMP
-  `;
+  const byIp = loginReservation(await bumpLoginCounter(identifier, maxLoginFailures, loginWindowMs, loginLockMs), maxLoginFailures, Date.now());
+  if (byIp.limited) return byIp;
+  return loginReservation(await bumpLoginCounter(globalLoginIdentifier, maxGlobalLoginFailures, globalLoginWindowMs, globalLoginWindowMs), maxGlobalLoginFailures, Date.now());
+}
+
+// Entró bien: esa IP arranca de cero y el intento reservado no cuenta como fallo en el tope global.
+export async function clearLoginFailures(identifier: string) {
+  await ensureSchema();
+  await sql`DELETE FROM admin_login_attempts WHERE identifier = ${identifier}`;
+  await sql`UPDATE admin_login_attempts SET failures = GREATEST(failures - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE identifier = ${globalLoginIdentifier}`;
 }
 

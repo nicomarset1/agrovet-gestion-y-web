@@ -4,7 +4,7 @@ import { panelLoginPath } from "./panel-path";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getLoginRateLimit as getStoredLoginRateLimit, recordLoginAttempt as recordStoredLoginAttempt } from "./db";
+import { clearLoginFailures as clearStoredLoginFailures, reserveLoginAttempt as reserveStoredLoginAttempt } from "./db";
 
 const cookieName = "agrovet_admin";
 const sessionHours = 6;
@@ -30,20 +30,40 @@ export function isValidAdminPassword(password: string) {
   return expected.length === supplied.length && timingSafeEqual(expected, supplied);
 }
 
-export async function getLoginRateLimit(identifier: string) {
-  return getStoredLoginRateLimit(identifier);
+export async function reserveLoginAttempt(identifier: string) {
+  return reserveStoredLoginAttempt(identifier);
 }
 
-export async function recordLoginAttempt(identifier: string, success: boolean) {
-  return recordStoredLoginAttempt(identifier, success);
+export async function clearLoginFailures(identifier: string) {
+  return clearStoredLoginFailures(identifier);
+}
+
+// La firma de la sesión depende también del código de acceso: cambiarlo revoca todas las cookies, sin
+// consultar la base en cada pedido.
+function signSession(payload: string) {
+  const key = createHmac("sha256", secret()).update(`sesion:${process.env.ADMIN_PASSWORD ?? ""}`).digest();
+  return createHmac("sha256", key).update(payload).digest("hex");
+}
+
+export function createSessionToken(expires: number, nonce: string) {
+  const payload = `admin.${expires}.${nonce}`;
+  return `${payload}.${signSession(payload)}`;
+}
+
+export function isValidSessionToken(token: string) {
+  const [role, expires, nonce, signature] = token.split(".");
+  const payload = `${role}.${expires}.${nonce}`;
+  if (role !== "admin" || Number(expires) < Date.now() || !nonce || !signature) return false;
+  const expected = Buffer.from(signSession(payload));
+  const supplied = Buffer.from(signature);
+  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
 }
 
 export async function startAdminSession() {
   const maxAge = 60 * 60 * sessionHours;
   const expires = Date.now() + 1000 * maxAge;
   const nonce = randomBytes(16).toString("hex");
-  const payload = `admin.${expires}.${nonce}`;
-  (await cookies()).set(cookieName, `${payload}.${sign(payload)}`, {
+  (await cookies()).set(cookieName, createSessionToken(expires, nonce), {
     httpOnly: true,
     sameSite: "strict",
     secure: process.env.NODE_ENV === "production",
@@ -54,13 +74,7 @@ export async function startAdminSession() {
 
 export async function isAdmin() {
   const token = (await cookies()).get(cookieName)?.value;
-  if (!token) return false;
-  const [role, expires, nonce, signature] = token.split(".");
-  const payload = `${role}.${expires}.${nonce}`;
-  if (role !== "admin" || Number(expires) < Date.now() || !nonce || !signature) return false;
-  const expected = Buffer.from(sign(payload));
-  const supplied = Buffer.from(signature);
-  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+  return token ? isValidSessionToken(token) : false;
 }
 
 export async function requireAdmin() {

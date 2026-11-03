@@ -1,6 +1,6 @@
 import { AdminConsole } from "@/components/admin-console";
 import { requireAdmin } from "@/lib/auth";
-import { getAdminSnapshot, getCategories, getSubcategories, getTrashItems } from "@/lib/db";
+import { getAdminSnapshot, getCategoriesFresh, getSubcategoriesFresh, getTrashItems } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,8 @@ export default async function AdminPage({
   await requireAdmin();
   const [{ products, branches, orders, wholesaleClients }, categories, subcategories, trashItems, resolvedSearchParams] = await Promise.all([
     getAdminSnapshot(),
-    getCategories(),
-    getSubcategories(),
+    getCategoriesFresh(),
+    getSubcategoriesFresh(),
     getTrashItems(),
     searchParams,
   ]);

@@ -5,7 +5,6 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   catalogCategorySeeds,
-  catalogProductStartId,
   catalogProductSeeds,
   catalogSubcategorySeeds,
   catalogVariantSeeds,
@@ -15,7 +14,8 @@ import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { resizeAllocations, settleEditedOrder } from "./order-edit";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
-import { productImageSrcFromSample } from "./product-image";
+import { globalLoginIdentifier, globalLoginWindowMs, loginLockMs, loginReservation, loginWindowMs, maxGlobalLoginFailures, maxLoginFailures, type LoginCounter, type LoginReservation } from "./login-limits";
+import { buildProductImageIndex, maxIndexedImageUrl, productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
 import type { Branch, CartItemPayload, CatalogFilters, CatalogMenuNode, Category, LowStockItem, OrderExtraRecord, OrderRecord, Product, SearchIndexItem, TrashItem, Variant, WholesaleClient } from "./types";
@@ -299,16 +299,13 @@ const upsertBranch = db.prepare(`
     map_url = excluded.map_url,
     verified = excluded.verified
 `);
-const upsertCategory = db.prepare(`
+// La siembra solo crea lo que falta: subir catalogVersion nunca pisa fotos, precios ni descripciones, ni
+// reactiva lo borrado. ON CONFLICT sin destino cubre también un slug o SKU que ya usa algo del dueño, y
+// los (SELECT id ...) evitan que una categoría salteada por eso rompa la clave foránea y el arranque.
+const seedCategory = db.prepare(`
   INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu)
-  VALUES (@id, @slug, @name, @description, @parentCategoryId, @showInMenu)
-  ON CONFLICT(id) DO UPDATE SET
-    slug = excluded.slug,
-    name = excluded.name,
-    description = excluded.description,
-    parent_category_id = excluded.parent_category_id,
-    deleted_at = NULL,
-    show_in_menu = excluded.show_in_menu
+  VALUES (@id, @slug, @name, @description, (SELECT id FROM categories WHERE id = @parentCategoryId), @showInMenu)
+  ON CONFLICT DO NOTHING
 `);
 const upsertSpecialCategory = db.prepare(`
   INSERT INTO categories (id, slug, name, description, parent_category_id, show_in_menu)
@@ -317,58 +314,30 @@ const upsertSpecialCategory = db.prepare(`
     name = excluded.name,
     parent_category_id = NULL
 `);
-const upsertSubcategory = db.prepare(`
+const seedSubcategory = db.prepare(`
   INSERT INTO subcategories (slug, category_id, name, description)
-  VALUES (@slug, @categoryId, @name, @description)
-  ON CONFLICT(slug) DO UPDATE SET
-    category_id = excluded.category_id,
-    name = excluded.name,
-    description = excluded.description
+  VALUES (@slug, (SELECT id FROM categories WHERE id = @categoryId), @name, @description)
+  ON CONFLICT DO NOTHING
 `);
-const upsertProduct = db.prepare(`
+const seedProduct = db.prepare(`
   INSERT INTO products (
     id, slug, name, brand, category_id, species, subcategory_slug, subcategory_name, life_stage, size, need,
     description, featured, requires_advice, active, color, image_url
   ) VALUES (
-    @id, @slug, @name, @brand, @categoryId, @species, @subcategorySlug, @subcategoryName, @lifeStage, @size, @need,
+    @id, @slug, @name, @brand, (SELECT id FROM categories WHERE id = @categoryId), @species, @subcategorySlug, @subcategoryName, @lifeStage, @size, @need,
     @description, @featured, @requiresAdvice, 1, @color, @imageUrl
   )
-  ON CONFLICT(id) DO UPDATE SET
-    slug = excluded.slug,
-    name = excluded.name,
-    brand = excluded.brand,
-    category_id = excluded.category_id,
-    species = excluded.species,
-    subcategory_slug = excluded.subcategory_slug,
-    subcategory_name = excluded.subcategory_name,
-    life_stage = excluded.life_stage,
-    size = excluded.size,
-    need = excluded.need,
-    description = excluded.description,
-    featured = excluded.featured,
-    requires_advice = excluded.requires_advice,
-    active = 1,
-    color = excluded.color,
-    image_url = excluded.image_url,
-    archived_at = '',
-    purged_at = ''
+  ON CONFLICT DO NOTHING
 `);
-const upsertVariant = db.prepare(`
+const seedVariant = db.prepare(`
   INSERT INTO variants (id, product_id, label, sku, barcode, price_cents)
   VALUES (@id, @productId, @label, @sku, @barcode, @priceCents)
-  ON CONFLICT(id) DO UPDATE SET
-    product_id = excluded.product_id,
-    label = excluded.label,
-    sku = excluded.sku,
-    barcode = excluded.barcode,
-    price_cents = excluded.price_cents
+  ON CONFLICT DO NOTHING
 `);
-const upsertInventory = db.prepare(`
+const seedInventory = db.prepare(`
   INSERT INTO inventory (variant_id, branch_id, quantity)
   VALUES (@variantId, @branchId, @quantity)
-  ON CONFLICT(variant_id, branch_id) DO UPDATE SET
-    quantity = excluded.quantity,
-    updated_at = CURRENT_TIMESTAMP
+  ON CONFLICT DO NOTHING
 `);
 const insertOrderAllocation = db.prepare(`
   INSERT INTO order_item_allocations (order_id, variant_id, branch_id, quantity)
@@ -454,22 +423,25 @@ db.transaction(() => {
     (db.prepare("SELECT value FROM app_meta WHERE key = 'catalog_version'").get() as { value?: number } | undefined)?.value ?? 0,
   );
   if (currentCatalogVersion < catalogVersion) {
-    db.prepare("UPDATE products SET slug = 'legacy-' || id || '-' || slug, active = 0, featured = 0, archived_at = CURRENT_TIMESTAMP, purged_at = CURRENT_TIMESTAMP WHERE id < ? AND purged_at = ''")
-      .run(catalogProductStartId);
-    catalogCategorySeeds.forEach((category) => upsertCategory.run({
+    catalogCategorySeeds.forEach((category) => seedCategory.run({
       ...category,
       showInMenu: category.showInMenu ? 1 : 0,
     }));
-    catalogSubcategorySeeds.forEach((subcategory) => upsertSubcategory.run(subcategory));
-    catalogProductSeeds.forEach((product) => upsertProduct.run({
-      ...product,
-      featured: product.featured ? 1 : 0,
-      requiresAdvice: product.requiresAdvice ? 1 : 0,
-    }));
+    catalogSubcategorySeeds.forEach((subcategory) => seedSubcategory.run(subcategory));
+    const createdProducts = new Set<number>();
+    catalogProductSeeds.forEach((product) => {
+      const { changes } = seedProduct.run({
+        ...product,
+        featured: product.featured ? 1 : 0,
+        requiresAdvice: product.requiresAdvice ? 1 : 0,
+      });
+      if (changes) createdProducts.add(product.id);
+    });
+    // Las presentaciones y el stock solo acompañan a un producto recién creado: a uno existente no se le agrega nada.
     catalogVariantSeeds.forEach((variant) => {
-      upsertVariant.run(variant);
-      upsertInventory.run({ variantId: variant.id, branchId: 1, quantity: variant.branch1 });
-      upsertInventory.run({ variantId: variant.id, branchId: 2, quantity: variant.branch2 });
+      if (!createdProducts.has(variant.productId) || !seedVariant.run(variant).changes) return;
+      seedInventory.run({ variantId: variant.id, branchId: 1, quantity: variant.branch1 });
+      seedInventory.run({ variantId: variant.id, branchId: 2, quantity: variant.branch2 });
     });
     db.prepare("UPDATE app_meta SET value = ? WHERE key = 'catalog_version'").run(catalogVersion);
   }
@@ -740,6 +712,21 @@ export function getProduct(slug: string) {
 export function getProductImage(id: number): { imageUrl: string } | null {
   const row = db.prepare("SELECT image_url AS imageUrl FROM products WHERE id = ? AND purged_at = ''").get(id) as { imageUrl?: string } | undefined;
   return row?.imageUrl ? { imageUrl: row.imageUrl } : null;
+}
+
+// Índice liviano id -> URL de la foto, para que la ruta de fotos responda URLs inventadas e ids inexistentes
+// sin leer la base. Nunca trae la foto: de un data URL solo la muestra corta, y lo demás recortado.
+export function getProductImageIndex(): Record<string, string> {
+  const rows = db.prepare(`
+    SELECT id,
+      CASE WHEN lower(substr(image_url, 1, 11)) = 'data:image/'
+        THEN length(image_url) || ':' || substr(image_url, 1, 96) || ':' || substr(image_url, -96)
+        ELSE '' END AS imageSample,
+      CASE WHEN lower(substr(image_url, 1, 5)) = 'data:' THEN '' ELSE substr(image_url, 1, ?) END AS imageUrl
+    FROM products
+    WHERE purged_at = '' AND image_url <> ''
+  `).all(maxIndexedImageUrl + 1) as Array<{ id: number; imageSample: string; imageUrl: string }>;
+  return buildProductImageIndex(rows);
 }
 
 export function getFeaturedProducts() {
@@ -2338,45 +2325,43 @@ export function restoreTrashItem(input: { type: TrashItem["type"]; id: string | 
   })();
 }
 
-const loginWindowMs = 1000 * 60 * 15;
-const loginLockMs = 1000 * 60 * 15;
-const maxLoginFailures = 5;
-
-export function getLoginRateLimit(identifier: string) {
-  const now = Date.now();
-  const row = db.prepare("SELECT failures, locked_until AS lockedUntil, reset_at AS resetAt FROM admin_login_attempts WHERE identifier = ?").get(identifier) as { failures?: number; lockedUntil?: number; resetAt?: number } | undefined;
-  if (!row) return { limited: false, retryAfterSeconds: 0 };
-  if ((row.resetAt ?? 0) <= now && (row.lockedUntil ?? 0) <= now) {
-    db.prepare("DELETE FROM admin_login_attempts WHERE identifier = ?").run(identifier);
-    return { limited: false, retryAfterSeconds: 0 };
-  }
-  if ((row.lockedUntil ?? 0) > now) {
-    return { limited: true, retryAfterSeconds: Math.ceil(((row.lockedUntil ?? 0) - now) / 1000) };
-  }
-  return { limited: false, retryAfterSeconds: 0 };
+// Suma un intento en una sola sentencia, atómica aunque haya otro proceso con la misma base. Mismo cálculo
+// que en el driver de Postgres.
+function bumpLoginCounter(identifier: string, max: number, windowMs: number, lockMs: number): LoginCounter {
+  const expired = "admin_login_attempts.reset_at <= @now AND admin_login_attempts.locked_until <= @now";
+  return db.prepare(`
+    INSERT INTO admin_login_attempts (identifier, failures, locked_until, reset_at, updated_at)
+    VALUES (@identifier, 1, 0, @resetAt, CURRENT_TIMESTAMP)
+    ON CONFLICT(identifier) DO UPDATE SET
+      failures = CASE WHEN ${expired} THEN 1 ELSE admin_login_attempts.failures + 1 END,
+      locked_until = CASE
+        WHEN ${expired} THEN 0
+        WHEN admin_login_attempts.locked_until > @now THEN admin_login_attempts.locked_until
+        WHEN admin_login_attempts.failures + 1 >= @max THEN @lockedUntil
+        ELSE admin_login_attempts.locked_until
+      END,
+      reset_at = CASE
+        WHEN ${expired} THEN @resetAt
+        WHEN admin_login_attempts.locked_until > @now THEN admin_login_attempts.reset_at
+        WHEN admin_login_attempts.failures + 1 >= @max THEN @lockedUntil
+        ELSE admin_login_attempts.reset_at
+      END,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING failures, locked_until AS lockedUntil
+  `).get({ identifier, max, now: Date.now(), resetAt: Date.now() + windowMs, lockedUntil: Date.now() + lockMs }) as LoginCounter;
 }
 
-export function recordLoginAttempt(identifier: string, success: boolean) {
-  if (success) {
-    db.prepare("DELETE FROM admin_login_attempts WHERE identifier = ?").run(identifier);
-    return;
-  }
-  const now = Date.now();
-  const current = db.prepare("SELECT failures, locked_until AS lockedUntil, reset_at AS resetAt FROM admin_login_attempts WHERE identifier = ?").get(identifier) as { failures?: number; lockedUntil?: number; resetAt?: number } | undefined;
-  const bucket = current && (current.resetAt ?? 0) > now
-    ? current
-    : { failures: 0, lockedUntil: 0, resetAt: now + loginWindowMs };
-  const failures = (bucket.failures ?? 0) + 1;
-  const lockedUntil = failures >= maxLoginFailures ? now + loginLockMs : (bucket.lockedUntil ?? 0);
-  const resetAt = failures >= maxLoginFailures ? lockedUntil : (bucket.resetAt ?? now + loginWindowMs);
-  db.prepare(`
-    INSERT INTO admin_login_attempts (identifier, failures, locked_until, reset_at, updated_at)
-    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(identifier) DO UPDATE SET
-      failures = excluded.failures,
-      locked_until = excluded.locked_until,
-      reset_at = excluded.reset_at,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(identifier, failures, lockedUntil, resetAt);
+// Reserva un intento antes de probar el código. Si la IP ya está frenada no se toca el global: si no, una
+// sola IP insistiendo podría llenar el tope y dejar afuera al dueño.
+export function reserveLoginAttempt(identifier: string): LoginReservation {
+  const byIp = loginReservation(bumpLoginCounter(identifier, maxLoginFailures, loginWindowMs, loginLockMs), maxLoginFailures, Date.now());
+  if (byIp.limited) return byIp;
+  return loginReservation(bumpLoginCounter(globalLoginIdentifier, maxGlobalLoginFailures, globalLoginWindowMs, globalLoginWindowMs), maxGlobalLoginFailures, Date.now());
+}
+
+// Entró bien: esa IP arranca de cero y el intento reservado no cuenta como fallo en el tope global.
+export function clearLoginFailures(identifier: string) {
+  db.prepare("DELETE FROM admin_login_attempts WHERE identifier = ?").run(identifier);
+  db.prepare("UPDATE admin_login_attempts SET failures = MAX(failures - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE identifier = ?").run(globalLoginIdentifier);
 }
 

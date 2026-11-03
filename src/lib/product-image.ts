@@ -40,3 +40,18 @@ export function productImageSrcFromSample(id: number, sample: string) {
   const second = fnv1a(sample, first);
   return `/api/product-image/${id}?v=${first.toString(36)}${second.toString(36)}`;
 }
+
+// Tope de una URL externa en el índice: va a la caché, y más largo que esto no es una foto razonable.
+export const maxIndexedImageUrl = 2048;
+
+// Índice id -> URL de la foto (la ruta con su versión, o la URL externa). Lo que no es foto queda afuera y
+// da 404, igual que antes, sin leer la base.
+export function buildProductImageIndex(rows: Array<{ id: number; imageSample: string; imageUrl: string }>) {
+  const index: Record<string, string> = {};
+  for (const row of rows) {
+    const external = row.imageUrl.trim();
+    if (row.imageSample) index[row.id] = productImageSrcFromSample(row.id, row.imageSample);
+    else if (/^https?:\/\//i.test(external) && external.length <= maxIndexedImageUrl) index[row.id] = external;
+  }
+  return index;
+}

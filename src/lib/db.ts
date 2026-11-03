@@ -47,6 +47,41 @@ function markSynced() {
   }
 }
 
+// Lecturas públicas de catálogo: cada visita a la tienda las pide varias veces y, sin caché, Neon no se suspendería
+// nunca. Mismo tag que la versión de sincronización, así cada escritura (withSync) las invalida; el vencimiento corto
+// cubre lo que se escribe durante una lectura. Si la caché no existe (scripts fuera de Next), se lee directo.
+// El panel no usa esto: getAdminSnapshot, getTrashItems y los *Fresh van siempre a la base.
+//
+// Las reservas vencidas se siguen liberando: cada recarga de la entrada corre driver.getProducts, que barre antes de
+// leer, y también barren createOrder, el webhook de Mercado Pago y el panel. Lo liberado aparece en la tienda enseguida
+// si lo barrió una escritura, y a más tardar en la siguiente recarga si lo barrió una lectura.
+//
+// Tamaño: Next no guarda entradas de más de 2 MB (no falla, solo no cachea). Hoy el catálogo entero ocupa ~420 KB.
+// Nada de esto trae fotos: las consultas de productos devuelven la ruta, nunca el data URL.
+const catalogRevalidateSeconds = 120;
+
+function catalogCache<A extends unknown[], R>(name: string, read: (...args: A) => Promise<R>) {
+  const cached = unstable_cache(read, ["catalogo", name], { tags: [syncVersionTag], revalidate: catalogRevalidateSeconds });
+  return async (...args: A): Promise<R> => {
+    try {
+      return await cached(...args);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("incrementalCache missing")) return read(...args);
+      throw error;
+    }
+  };
+}
+
+const readCachedProducts = catalogCache("productos", async (filters: CatalogFilters) => (await getDriver()).getProducts(filters));
+const readCachedFeaturedProducts = catalogCache("destacados", async () => (await getDriver()).getFeaturedProducts());
+const readCachedCategories = catalogCache("categorias", async () => (await getDriver()).getCategories());
+const readCachedSubcategories = catalogCache("subcategorias", async () => (await getDriver()).getSubcategories());
+const readCachedBranches = catalogCache("sucursales", async () => (await getDriver()).getBranches());
+const readCachedCatalogFacets = catalogCache("facetas", async () => (await getDriver()).getCatalogFacets());
+const readCachedSearchIndex = catalogCache("buscador", async () => (await getDriver()).getSearchIndex());
+const readCachedCatalogMenu = catalogCache("menu", async () => (await getDriver()).getCatalogMenu());
+const readCachedProductImageIndex = catalogCache("fotos", async () => (await getDriver()).getProductImageIndex());
+
 async function withSync<T>(write: T | Promise<T>): Promise<Awaited<T>> {
   try {
     return await write;
@@ -58,26 +93,43 @@ async function withSync<T>(write: T | Promise<T>): Promise<Awaited<T>> {
 }
 
 export async function getProducts(filters: CatalogFilters = {}) {
-  return (await getDriver()).getProducts(filters);
+  return readCachedProducts(filters);
 }
 
+// Sale del catálogo cacheado (mismo filtro que getProducts sin filtros): así un slug inventado no consulta la
+// base ni crea una entrada nueva en la caché por cada URL.
 export async function getProduct(slug: string) {
-  return (await getDriver()).getProduct(slug);
+  return (await readCachedProducts({})).find((product) => product.slug === slug);
 }
 
 export async function getProductImage(id: number) {
   return (await getDriver()).getProductImage(id);
 }
 
+export async function getProductImageIndex() {
+  return readCachedProductImageIndex();
+}
+
 export async function getFeaturedProducts() {
-  return (await getDriver()).getFeaturedProducts();
+  return readCachedFeaturedProducts();
 }
 
 export async function getCategories() {
-  return (await getDriver()).getCategories();
+  return readCachedCategories();
 }
 
 export async function getSubcategories() {
+  return readCachedSubcategories();
+}
+
+// Para el panel, que debe leer siempre fresco.
+export async function getCategoriesFresh() {
+  noStore();
+  return (await getDriver()).getCategories();
+}
+
+export async function getSubcategoriesFresh() {
+  noStore();
   return (await getDriver()).getSubcategories();
 }
 
@@ -86,7 +138,7 @@ export async function getSubcategoryBySlug(slug: string) {
 }
 
 export async function getBranches() {
-  return (await getDriver()).getBranches();
+  return readCachedBranches();
 }
 
 export async function getWholesaleClients() {
@@ -132,15 +184,15 @@ export async function emptyTrash() {
 }
 
 export async function getCatalogFacets() {
-  return (await getDriver()).getCatalogFacets();
+  return readCachedCatalogFacets();
 }
 
 export async function getSearchIndex() {
-  return (await getDriver()).getSearchIndex();
+  return readCachedSearchIndex();
 }
 
 export async function getCatalogMenu() {
-  return (await getDriver()).getCatalogMenu();
+  return readCachedCatalogMenu();
 }
 
 export async function createCategory(input: { name: string; slug?: string; description?: string; showInMenu?: boolean; parentCategoryId?: number | null }) {
@@ -260,10 +312,10 @@ export async function getLowStockItems(threshold: number) {
   return (await getDriver()).getLowStockItems(threshold);
 }
 
-export async function getLoginRateLimit(identifier: string) {
-  return (await getDriver()).getLoginRateLimit(identifier);
+export async function reserveLoginAttempt(identifier: string) {
+  return (await getDriver()).reserveLoginAttempt(identifier);
 }
 
-export async function recordLoginAttempt(identifier: string, success: boolean) {
-  return (await getDriver()).recordLoginAttempt(identifier, success);
+export async function clearLoginFailures(identifier: string) {
+  return (await getDriver()).clearLoginFailures(identifier);
 }

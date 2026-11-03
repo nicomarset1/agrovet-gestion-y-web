@@ -30,10 +30,10 @@ if (!existsSync(sqlitePath)) {
 }
 
 const sqlite = new Database(sqlitePath, { readonly: true });
+// Solo contra una base en esta máquina (certificado propio) no se verifica el certificado.
+const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(connectionUrl).hostname.toLowerCase());
 const sql = postgres(connectionUrl, {
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: isLocal ? "prefer" : { rejectUnauthorized: true },
 });
 
 const schema = `

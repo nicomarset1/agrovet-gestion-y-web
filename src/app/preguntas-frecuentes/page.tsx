@@ -11,7 +11,6 @@ export const metadata = infoPageMetadata({
   path: "/preguntas-frecuentes",
   description: "Respuestas sobre cómo comprar en Agrovet: pedidos online, envíos en Mar del Plata, retiro por sucursal, pagos, stock y medicamentos.",
 });
-export const dynamic = "force-dynamic";
 
 const deliveryMinimumCents = 5000000;
 

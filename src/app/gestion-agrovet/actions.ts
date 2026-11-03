@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { endAdminSession, getLoginRateLimit, isAdmin, isValidAdminPassword, recordLoginAttempt, requireAdmin, startAdminSession } from "@/lib/auth";
+import { clearLoginFailures, endAdminSession, isAdmin, isValidAdminPassword, requireAdmin, reserveLoginAttempt, startAdminSession } from "@/lib/auth";
 import { installmentsLabel, posMaxUnitPriceCents } from "@/lib/format";
 import { panelPath } from "@/lib/panel-path";
 import { safeInternalPath } from "@/lib/safe-redirect";
@@ -56,16 +56,17 @@ function loginIdentifier(headersList: Headers) {
 export async function loginAction(_: LoginState, formData: FormData): Promise<LoginState> {
   const password = String(formData.get("password") ?? "");
   const identifier = loginIdentifier(await headers());
-  const rateLimit = await getLoginRateLimit(identifier);
+  // El intento se cuenta ANTES de probar el código: si se contara después, una ráfaga en paralelo probaría
+  // muchos códigos antes de que quedara registrado el primer fallo.
+  const rateLimit = await reserveLoginAttempt(identifier);
   if (rateLimit.limited) {
     const minutes = Math.max(1, Math.ceil(rateLimit.retryAfterSeconds / 60));
     return { error: `Demasiados intentos. Probá de nuevo en ${minutes} min.` };
   }
   if (!isValidAdminPassword(password)) {
-    await recordLoginAttempt(identifier, false);
     return { error: "Código incorrecto." };
   }
-  await recordLoginAttempt(identifier, true);
+  await clearLoginFailures(identifier);
   await startAdminSession();
   return { to: panelPath };
 }
