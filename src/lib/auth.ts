@@ -10,7 +10,7 @@ const cookieName = "agrovet_admin";
 const sessionHours = 6;
 const numericPasswordPattern = /^\d{8,12}$/;
 
-function secret() {
+export function secret() {
   const value = process.env.AUTH_SECRET ?? "";
   if (process.env.NODE_ENV === "production" && value.length < 32) {
     throw new Error("AUTH_SECRET must be configured with at least 32 characters.");

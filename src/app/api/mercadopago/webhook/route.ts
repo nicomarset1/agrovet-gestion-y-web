@@ -1,5 +1,5 @@
-import { markOrderPaidByCode, markOrderPaymentFailedByCode, releaseExpiredReservations } from "@/lib/db";
-import { getMercadoPagoPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
+import { markOrderPaidByCode, markOrderPaymentFailedByCode, markOrderRefundedByCode, releaseExpiredReservations } from "@/lib/db";
+import { getMercadoPagoPayment, isRefundedPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
 import { hasMercadoPagoWebhookSecret, validateMercadoPagoWebhookSignature } from "@/lib/mercadopago-webhook";
 
 // Estados de un pago que ya no se va a acreditar: liberan la reserva. Un "rejected" NO libera: el cliente
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (payment.status === "approved" && payment.external_reference) {
       const amountCents = paymentAmountCents(payment);
       if (amountCents === null) throw new Error("Mercado Pago no informó un importe válido.");
-      const reconciliation = await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents);
+      const reconciliation = await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents, String(payment.id ?? paymentId));
       if (reconciliation !== "paid") {
         console.error("Mercado Pago webhook: pago aprobado que requiere revisión", {
           paymentId,
@@ -38,6 +38,8 @@ export async function POST(request: Request) {
           reconciliation,
         });
       }
+    } else if (payment.external_reference && isRefundedPayment(payment)) {
+      await markOrderRefundedByCode(payment.external_reference, String(payment.id ?? paymentId));
     } else if (payment.external_reference && failedPaymentStatuses.has(payment.status ?? "")) {
       await markOrderPaymentFailedByCode(payment.external_reference);
     }

@@ -208,6 +208,8 @@ export async function createOrder(input: {
   items: CartItemPayload[];
   // Solo para ventas de Caja desde el panel (server action con sesión de admin).
   cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
+  // Total que vio el cliente: si no coincide con el que calcula el servidor, no se crea el pedido.
+  expectedTotalCents?: number;
 }) {
   return withSync((await getDriver()).createOrder(input));
 }
@@ -220,8 +222,17 @@ export async function updateOrderPayment(input: { id: number; addCents?: number;
   return withSync((await getDriver()).updateOrderPayment(input));
 }
 
-export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number) {
-  return withSync((await getDriver()).markOrderPaidByCode(code, paymentMethod, amountCents));
+export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number, paymentRef = "") {
+  return withSync((await getDriver()).markOrderPaidByCode(code, paymentMethod, amountCents, paymentRef));
+}
+
+export async function markOrderRefundedByCode(code: string, paymentRef = "") {
+  return withSync((await getDriver()).markOrderRefundedByCode(code, paymentRef));
+}
+
+// Sin withSync: es un contador interno, el panel no tiene nada que refrescar.
+export async function hitRateLimit(key: string, limit: number, windowMs: number) {
+  return (await getDriver()).hitRateLimit(key, limit, windowMs);
 }
 
 export async function markOrderPaymentFailedByCode(code: string) {

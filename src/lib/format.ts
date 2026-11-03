@@ -13,6 +13,13 @@ export function deliveryMinimumMessage() {
   return `El envío requiere una compra mínima de ${formatPrice(deliveryMinimumCents)}. Para este pedido elegí retiro por sucursal.`;
 }
 
+// Tope de unidades por producto en una compra online. Lo valida el servidor y lo explica el carrito.
+export const maxOnlineUnitsPerProduct = 20;
+
+export function maxOnlineUnitsMessage(productName = "cada producto") {
+  return `Por la tienda online se pueden comprar hasta ${maxOnlineUnitsPerProduct} unidades de ${productName}, así el stock alcanza para todos. Si necesitás más, escribinos por WhatsApp.`;
+}
+
 export function applyCashDiscount(cents: number) {
   return Math.round(cents * 0.9);
 }

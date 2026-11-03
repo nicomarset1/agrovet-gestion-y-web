@@ -12,7 +12,10 @@ import {
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { resizeAllocations, settleEditedOrder } from "./order-edit";
-import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
+import { OrderRejectedError, outOfStockError, priceChangedError, productDisplayName, unavailableProductError } from "./order-errors";
+import { chargeReviewStatus, holdsStock, parsePaymentRefs, paymentReviewStatus, paymentStockReviewStatus, planApprovedPayment, refundNeedsReview, refundReviewStatus, webCashPaymentMethod } from "./order-status";
+import type { PaymentReconciliation } from "./order-status";
+import { cashPickupExpiry, isCashPickupExpired, mercadoPagoReservationHours, paymentFailedStatus, pickupExpiredStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
 import { getSpecialCategoryHref, isSpecialCategorySlug, specialCategories } from "./special-categories";
@@ -243,6 +246,11 @@ async function ensureSchema() {
         reset_at BIGINT NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS order_rate_limits (
+        key TEXT PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 0,
+        reset_at BIGINT NOT NULL DEFAULT 0
+      );
 
       CREATE INDEX IF NOT EXISTS products_category_idx ON products(category_id);
       CREATE INDEX IF NOT EXISTS products_subcategory_idx ON products(subcategory_slug);
@@ -258,6 +266,7 @@ async function ensureSchema() {
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_method TEXT NOT NULL DEFAULT ''`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_note TEXT NOT NULL DEFAULT ''`;
+      await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_ref TEXT`;
       await schemaTx`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`;
@@ -629,8 +638,63 @@ async function releaseExpiredReservationsIn(tx: Db) {
     RETURNING id, branch_id AS "branchId"
   ` as unknown as Array<{ id: number; branchId: number }>;
   for (const order of released) await restoreOrderStock(tx, Number(order.id), Number(order.branchId));
+  const pickups = await releaseExpiredCashPickupsIn(tx);
+  if (released.length) await bumpSyncVersion(tx);
+  return released.length + pickups;
+}
+
+// Pedidos web en efectivo sin cobrar. Los días hábiles se calculan en código: SQL solo descarta los que
+// todavía no pueden haber vencido (nunca pasan menos de 3 días corridos), así se revisan muy pocos.
+async function expiredCashPickupIds(db: Db) {
+  const candidates = await db`
+    SELECT id, created_at AS "createdAt" FROM orders
+    WHERE status = 'Pendiente de retiro' AND deleted_at IS NULL AND paid_cents = 0 AND source = 'Tienda online' AND fulfillment = 'retiro'
+      AND payment_method = ${webCashPaymentMethod} AND created_at < NOW() - interval '2 days'
+  ` as unknown as Array<{ id: number; createdAt: unknown }>;
+  return candidates.filter((order) => isCashPickupExpired(order.createdAt)).map((order) => Number(order.id));
+}
+
+// Vencidos: pasan a "Cancelado (no retirado)" y devuelven el stock. Se vuelve a filtrar con el lock tomado por si se
+// cobró en el medio, y SKIP LOCKED evita pisarse con el panel cuando lo está marcando como retirado.
+async function releaseExpiredCashPickupsIn(tx: Db) {
+  const ids = await expiredCashPickupIds(tx);
+  if (!ids.length) return 0;
+  const released = await tx`
+    UPDATE orders SET status = ${pickupExpiredStatus}
+    WHERE id IN (
+      SELECT id FROM orders
+      WHERE id IN ${tx(ids)} AND status = 'Pendiente de retiro' AND deleted_at IS NULL AND paid_cents = 0
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, branch_id AS "branchId"
+  ` as unknown as Array<{ id: number; branchId: number }>;
+  for (const order of released) await restoreOrderStock(tx, Number(order.id), Number(order.branchId));
   if (released.length) await bumpSyncVersion(tx);
   return released.length;
+}
+
+let lastRateLimitPrune = 0;
+
+// Límite de pedidos compartido entre instancias: el UPSERT cuenta en un solo paso, así dos pedidos a la vez no leen el mismo número.
+export async function hitRateLimit(key: string, limit: number, windowMs: number) {
+  await ensureSchema();
+  const now = Date.now();
+  const resetAt = now + windowMs;
+  // La tabla guarda una fila por IP: lo vencido se borra cada tanto para que siga chica.
+  if (now - lastRateLimitPrune > 10 * 60_000) {
+    lastRateLimitPrune = now;
+    await sql`DELETE FROM order_rate_limits WHERE reset_at <= ${now}`;
+  }
+  const [row] = await sql`
+    INSERT INTO order_rate_limits (key, count, reset_at) VALUES (${key}, 1, ${resetAt})
+    ON CONFLICT (key) DO UPDATE SET
+      count = CASE WHEN order_rate_limits.reset_at <= ${now} THEN 1 ELSE order_rate_limits.count + 1 END,
+      reset_at = CASE WHEN order_rate_limits.reset_at <= ${now} THEN ${resetAt}::bigint ELSE order_rate_limits.reset_at END
+    RETURNING count, reset_at AS "resetAt"
+  ` as unknown as { count: number; resetAt: string | number }[];
+  const count = Number(row.count);
+  const limited = count > limit;
+  return { limited, retryAfterSeconds: limited ? Math.max(1, Math.ceil((Number(row.resetAt) - now) / 1000)) : 0, remaining: Math.max(0, limit - count) };
 }
 
 // En lecturas (tienda, ficha, panel) se revisa como mucho una vez por minuto por instancia, y solo
@@ -646,7 +710,7 @@ export async function releaseExpiredReservations(options: { force?: boolean } = 
         AND created_at < NOW() - make_interval(hours => ${mercadoPagoReservationHours})
     ) AS "any"
   ` as unknown as { any: boolean }[];
-  if (!pending?.any) return 0;
+  if (!pending?.any && !(await expiredCashPickupIds(sql)).length) return 0;
   return sql.begin((tx) => releaseExpiredReservationsIn(tx));
 }
 
@@ -934,12 +998,16 @@ async function getAllocationBuckets(orderId: number, db: Db = sql) {
   return byVariant;
 }
 
+function isPendingCashPickup(order: { status: string; source: string; fulfillment: string; paymentMethod: string; paidCents: number }) {
+  return order.status === "Pendiente de retiro" && /^Tienda online/i.test(order.source) && order.fulfillment === "retiro" && order.paymentMethod === webCashPaymentMethod && !Number(order.paidCents);
+}
+
 async function mapAdminOrders(): Promise<OrderRecord[]> {
   const orders = await sql`
     SELECT o.id, o.code, o.customer_name AS "customerName", o.phone, o.email, o.fulfillment,
       o.delivery_address AS "deliveryAddress", o.delivery_distance_km AS "deliveryDistanceKm",
       o.branch_id AS "branchId", b.name AS "branchName", o.total_cents AS "totalCents", o.status,
-      o.source, o.payment_method AS "paymentMethod", o.paid_cents AS "paidCents", o.created_at AS "createdAt"
+      o.source, o.payment_method AS "paymentMethod", o.paid_cents AS "paidCents", o.created_at AS "createdAt", o.payment_ref AS "paymentRef"
     FROM orders o
     JOIN branches b ON b.id = o.branch_id
     WHERE o.deleted_at IS NULL
@@ -1002,6 +1070,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
     paidCents: Number(order.paidCents ?? order.totalCents),
     createdAt: toIso(order.createdAt),
     ...(order.status === reservedStatus ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}),
+    ...(isPendingCashPickup(order) ? { pickupExpiresAt: cashPickupExpiry(order.createdAt).toISOString() } : {}),
     itemCount: itemsByOrder.get(order.id)?.reduce((sum, item) => sum + item.quantity, 0) ?? 0,
     items: itemsByOrder.get(order.id) ?? [],
   }));
@@ -1525,6 +1594,11 @@ export async function addInventory(variantId: number, branchId: number, delta: n
   });
 }
 
+async function variantDisplayName(variantId: number, db: Db) {
+  const [row] = await db`SELECT p.brand, p.name, v.label FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ${variantId}` as unknown as { brand: string; name: string; label: string }[];
+  return productDisplayName(row);
+}
+
 async function resolveDeliveryAllocationPlan(items: CartItemPayload[], db: Db) {
   const branches = (await db`SELECT id FROM branches WHERE verified = TRUE ORDER BY id` as unknown as { id: number }[]).map((branch) => branch.id);
   const variantAllocations = [];
@@ -1544,7 +1618,7 @@ async function resolveDeliveryAllocationPlan(items: CartItemPayload[], db: Db) {
       allocations.push({ branchId: branch.branchId, quantity });
       remaining -= quantity;
     }
-    if (remaining > 0) throw new Error("No hay stock suficiente para armar el envío.");
+    if (remaining > 0) throw outOfStockError(await variantDisplayName(item.variantId, db), item.variantId, "para armar el envío");
     variantAllocations.push({ variantId: item.variantId, allocations });
   }
   const branchTotals = new Map<number, number>();
@@ -1574,7 +1648,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
@@ -1582,38 +1656,47 @@ export async function createOrder(input: {
     await releaseExpiredReservationsIn(tx);
     const deliveryPlan = input.fulfillment === "envio" ? await resolveDeliveryAllocationPlan(input.items, tx) : null;
     const resolvedBranchId = deliveryPlan?.primaryBranchId ?? input.branchId;
-    if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new Error("Sucursal inválida.");
+    if (!(await tx`SELECT id FROM branches WHERE id = ${resolvedBranchId}`).length) throw new OrderRejectedError("Sucursal inválida.", { reason: "invalid" });
     // Solo la venta de Caja (server action con sesión de admin) manda cashSale; la tienda nunca.
     const source = input.cashSale ? input.cashSale.source : "Tienda online";
     const isMercadoPago = !input.cashSale && input.paymentMethod === "mercado_pago";
     // Mercado Pago: el stock queda reservado 12 h ("Reservado") hasta que se acredite el pago.
     const status = input.cashSale ? "Cerrado" : isMercadoPago ? reservedStatus : input.fulfillment === "envio" ? "Pendiente de envío" : "Pendiente de retiro";
-    const paymentMethod = isMercadoPago ? "Mercado Pago" : "Efectivo en sucursal";
+    const paymentMethod = isMercadoPago ? "Mercado Pago" : webCashPaymentMethod;
+    // Retiro a pagar en efectivo: el 10% lo decide el servidor y queda guardado en cada unidad.
+    const isWebCashPickup = !input.cashSale && !isMercadoPago && input.fulfillment === "retiro";
     let totalCents = 0;
-    const lines: { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
+    const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const [row] = await tx`
-        SELECT v.price_cents AS "priceCents"
+        SELECT v.price_cents AS "priceCents", p.brand, p.name, v.label,
+          (p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL) AS available
         FROM variants v
         JOIN products p ON p.id = v.product_id
-        WHERE v.id = ${item.variantId} AND p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL
-      ` as unknown as { priceCents?: number }[];
-      if (!row || item.quantity < 1) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+        WHERE v.id = ${item.variantId}
+      ` as unknown as { priceCents: number; brand: string; name: string; label: string; available: boolean }[];
+      const displayName = productDisplayName(row);
+      if (!row || !row.available) throw unavailableProductError(displayName, item.variantId);
+      if (item.quantity < 1) throw outOfStockError(displayName, item.variantId);
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
-      if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+      if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw outOfStockError(displayName, item.variantId);
       for (const allocation of allocations) {
         const [stock] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${item.variantId} AND branch_id = ${allocation.branchId}` as unknown as { quantity?: number }[];
-        if (Number(stock?.quantity ?? 0) < allocation.quantity) throw new Error("El stock cambió. Revisá la sucursal o la cantidad seleccionada.");
+        if (Number(stock?.quantity ?? 0) < allocation.quantity) throw outOfStockError(displayName, item.variantId);
       }
-      // El 10% y el precio manual viven en cashSale: la tienda no puede mandarlos, siempre cobra el precio de lista.
-      const unitPrice = posUnitPriceCents(Number(row.priceCents), { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale?.cashDiscount });
+      // El precio manual y el 10% de Caja viven en cashSale: la tienda no puede mandarlos. Su 10% sale de arriba, nunca del navegador.
+      const unitPrice = posUnitPriceCents(Number(row.priceCents), { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale ? input.cashSale.cashDiscount : isWebCashPickup });
       totalCents += unitPrice * item.quantity;
-      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, allocations });
+      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, listPrice: Number(row.priceCents), allocations });
     }
     // Varios lleva el 10% igual que un producto; se guarda el monto final, como unit_price_cents.
     const extras = (input.cashSale?.extras ?? []).map((extra) => ({ ...extra, amountCents: posUnitPriceCents(extra.amountCents, { cashDiscount: input.cashSale?.cashDiscount }) }));
     totalCents += extrasTotalCents(extras);
-    if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new Error(deliveryMinimumMessage());
+    // El carrito mostraba otro total (precio cambiado o carrito viejo): se avisa antes de crear nada.
+    if (input.expectedTotalCents !== undefined && input.expectedTotalCents !== totalCents) {
+      throw priceChangedError(lines.map((line) => ({ variantId: line.variantId, priceCents: line.listPrice })));
+    }
+    if (input.fulfillment === "envio" && totalCents < deliveryMinimumCents) throw new OrderRejectedError(deliveryMinimumMessage(), { reason: "invalid" });
     let code = "";
     let order: { id: number; createdAt: unknown } | undefined;
     for (let attempt = 0; !order; attempt++) {
@@ -1622,7 +1705,7 @@ export async function createOrder(input: {
         // Savepoint: si el INSERT choca por código repetido, se reintenta sin abortar la transacción.
         [order] = await tx.savepoint((sp) => sp`
           INSERT INTO orders (code, customer_name, phone, email, fulfillment, delivery_address, delivery_distance_km, branch_id, total_cents, status, source, payment_method, paid_cents)
-          VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${isMercadoPago ? 0 : totalCents})
+          VALUES (${code}, ${input.name}, ${input.phone}, ${input.email}, ${input.fulfillment}, ${input.address ?? ""}, ${input.distanceKm ?? null}, ${resolvedBranchId}, ${totalCents}, ${status}, ${source}, ${paymentMethod}, ${input.cashSale ? totalCents : 0})
           RETURNING id, created_at AS "createdAt"
         `) as unknown as { id: number; createdAt: unknown }[];
       } catch (error) {
@@ -1634,7 +1717,7 @@ export async function createOrder(input: {
       for (const allocation of line.allocations) {
         // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
         const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
-        if (!result.count) throw new Error("No hay stock suficiente para reservar.");
+        if (!result.count) throw outOfStockError(await variantDisplayName(line.variantId, tx), line.variantId);
         await insertOrderAllocation(tx, Number(order.id), line.variantId, allocation.branchId, allocation.quantity);
       }
     }
@@ -1642,53 +1725,60 @@ export async function createOrder(input: {
       await tx`INSERT INTO order_extras (order_id, description, amount_cents) VALUES (${order.id}, ${extra.description}, ${extra.amountCents})`;
     }
     await bumpSyncVersion(tx);
-    return { code, totalCents, ...(isMercadoPago ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}) };
+    return {
+      code,
+      totalCents,
+      ...(isMercadoPago ? { reservedUntil: reservationExpiry(order.createdAt).toISOString() } : {}),
+      ...(isWebCashPickup ? { pickupExpiresAt: cashPickupExpiry(order.createdAt).toISOString() } : {}),
+    };
   });
 }
 
-export type PaymentReconciliation = "paid" | "review" | "missing";
+export type { PaymentReconciliation };
 
-const paymentReviewStatus = "Pago recibido - revisar";
 const stockRaceError = "No hay stock suficiente para acreditar el pago.";
 
-// Pedidos de Mercado Pago sin cobro que NO tienen stock tomado: los "Esperando pago" anteriores a la
-// reserva y los cancelados sin pago (reserva vencida o pago no completado, ya devolvieron el stock).
-// Si después llega un pago aprobado, markOrderPaidByCode los reactiva descontando el stock de nuevo.
-function isAwaitingPaymentStatus(status: string) {
-  return /^(Esperando pago|Pendiente de pago|Cancelado \(pago no completado\)|Cancelado \(reserva vencida\))$/i.test(status.trim());
-}
-
-export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number): Promise<PaymentReconciliation> {
+export async function markOrderPaidByCode(code: string, paymentMethod: string, amountCents: number, paymentRef = ""): Promise<PaymentReconciliation> {
   await ensureSchema();
-  return sql.begin(async (tx) => {
+  return sql.begin(async (tx): Promise<PaymentReconciliation> => {
+    // FOR UPDATE: la vuelta del checkout y los webhooks del mismo pago se hacen de a uno y el segundo ve el id ya guardado.
     const [order] = await tx`
-      SELECT id, branch_id AS "branchId", fulfillment, status, total_cents AS "totalCents", paid_cents AS "paidCents", deleted_at AS "deletedAt"
+      SELECT id, branch_id AS "branchId", fulfillment, status, total_cents AS "totalCents", paid_cents AS "paidCents", deleted_at AS "deletedAt", payment_ref AS "paymentRef"
       FROM orders
       WHERE code = ${code}
       ORDER BY (deleted_at IS NULL) DESC, id DESC
       LIMIT 1
       FOR UPDATE
-    ` as unknown as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: unknown }[];
+    ` as unknown as { id: number; branchId: number; fulfillment: string; status: string; totalCents: number; paidCents: number; deletedAt: unknown; paymentRef: string | null }[];
     if (!order) return "missing";
 
     const method = paymentMethod.trim() || "Mercado Pago";
     const deleted = Boolean(order.deletedAt);
-    const validAmount = Number.isSafeInteger(amountCents) && amountCents > 0;
-    const amountMatches = validAmount && amountCents === Number(order.totalCents);
-    const awaitingPayment = !deleted && isAwaitingPaymentStatus(order.status);
-    const reserved = !deleted && order.status === reservedStatus;
+    const plan = planApprovedPayment({ status: order.status, paidCents: Number(order.paidCents), totalCents: Number(order.totalCents), deleted, paymentRef: order.paymentRef }, amountCents, paymentRef);
+    const logReview = () => console.error("Pago de Mercado Pago aprobado que requiere revisión", {
+      code,
+      amountCents,
+      totalCents: Number(order.totalCents),
+      previousStatus: order.status,
+      paymentRef: plan.paymentRef,
+      deleted,
+    });
 
-    // Ya acreditado antes (return + webhook, o webhooks repetidos): no se toca nada.
-    if (!deleted && !awaitingPayment && !reserved && Number(order.paidCents) >= Number(order.totalCents)) {
-      return /revisar/i.test(order.status) ? "review" : "paid";
+    if (plan.action === "none") {
+      if (plan.paymentRef !== parsePaymentRefs(order.paymentRef).join(",")) {
+        await tx`UPDATE orders SET payment_ref = ${plan.paymentRef} WHERE id = ${order.id}`;
+        await bumpSyncVersion(tx);
+        if (plan.result === "review") logReview();
+      }
+      return plan.result;
     }
 
-    // Reserva vigente (aunque ya pasaron las 12 h, si todavía no se liberó): el stock ya está descontado.
-    if (reserved && amountMatches) {
+    if (plan.action === "settle-reserved") {
       await tx`
         UPDATE orders
         SET paid_cents = total_cents,
             payment_method = ${method},
+            payment_ref = ${plan.paymentRef},
             status = CASE WHEN fulfillment = 'envio' THEN 'Pendiente de envío' ELSE 'Pendiente de retiro' END
         WHERE id = ${order.id}
       `;
@@ -1696,23 +1786,23 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       return "paid";
     }
 
-    // Cobrado pero no concilia (monto distinto, pedido borrado o cancelado desde el panel):
-    // queda visible en el panel para revisar, con lo realmente cobrado y sin stock tomado.
-    if (!awaitingPayment || !amountMatches) {
-      if (reserved) await restoreOrderStock(tx, order.id, order.branchId);
+    // Tiene el stock tomado y así sigue: pasa a revisión con un estado que lo retiene, sin moverlo ni perderlo al borrarlo.
+    if (plan.action === "review-keep-stock") {
+      await tx`UPDATE orders SET status = ${chargeReviewStatus}, paid_cents = ${plan.paidCents}, payment_ref = ${plan.paymentRef} WHERE id = ${order.id}`;
+      await bumpSyncVersion(tx);
+      logReview();
+      return "review";
+    }
+
+    if (plan.action === "review-no-stock") {
+      if (plan.restoreStock) await restoreOrderStock(tx, order.id, order.branchId);
       await tx`
         UPDATE orders
-        SET paid_cents = ${validAmount ? amountCents : 0}, payment_method = ${method}, status = ${paymentReviewStatus}, deleted_at = NULL
+        SET paid_cents = ${plan.paidCents}, payment_method = ${method}, payment_ref = ${plan.paymentRef}, status = ${paymentReviewStatus}, deleted_at = NULL
         WHERE id = ${order.id}
       `;
       await bumpSyncVersion(tx);
-      console.error("Pago de Mercado Pago aprobado que requiere revisión", {
-        code,
-        amountCents,
-        totalCents: Number(order.totalCents),
-        previousStatus: order.status,
-        deleted,
-      });
+      logReview();
       return "review";
     }
 
@@ -1724,13 +1814,15 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       for (const allocation of buckets) required.push({ variantId: item.variantId, branchId: allocation.branchId, quantity: allocation.quantity });
     }
 
+    const markStockReview = async () => {
+      await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method}, payment_ref = ${plan.paymentRef}, status = ${paymentStockReviewStatus} WHERE id = ${order.id}`;
+      await bumpSyncVersion(tx);
+      return "review" as const;
+    };
+
     for (const allocation of required) {
       const [stock] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${allocation.variantId} AND branch_id = ${allocation.branchId}` as unknown as { quantity?: number }[];
-      if (Number(stock?.quantity ?? 0) < allocation.quantity) {
-        await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method}, status = 'Pago recibido - revisar stock' WHERE id = ${order.id}`;
-        await bumpSyncVersion(tx);
-        return "review";
-      }
+      if (Number(stock?.quantity ?? 0) < allocation.quantity) return markStockReview();
     }
 
     // Otro pedido pudo llevarse la última unidad entre la verificación y el descuento: se deshace solo este
@@ -1749,16 +1841,13 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
       if (error instanceof Error && error.message === stockRaceError) return false;
       throw error;
     });
-    if (!deducted) {
-      await tx`UPDATE orders SET paid_cents = total_cents, payment_method = ${method}, status = 'Pago recibido - revisar stock' WHERE id = ${order.id}`;
-      await bumpSyncVersion(tx);
-      return "review";
-    }
+    if (!deducted) return markStockReview();
 
     await tx`
       UPDATE orders
       SET paid_cents = total_cents,
           payment_method = ${method},
+          payment_ref = ${plan.paymentRef},
           status = CASE
             WHEN fulfillment = 'envio' THEN 'Pendiente de envío'
             ELSE 'Pendiente de retiro'
@@ -1767,6 +1856,29 @@ export async function markOrderPaidByCode(code: string, paymentMethod: string, a
     `;
     await bumpSyncVersion(tx);
     return "paid";
+  });
+}
+
+// Devolución o contracargo avisado por Mercado Pago. El stock no se toca: la mercadería puede haber salido,
+// así que queda retenido y destacado hasta que alguien lo cancele desde el panel.
+export async function markOrderRefundedByCode(code: string, paymentRef = "") {
+  await ensureSchema();
+  return sql.begin(async (tx) => {
+    const [order] = await tx`
+      SELECT id, status, deleted_at AS "deletedAt", payment_ref AS "paymentRef" FROM orders
+      WHERE code = ${code}
+      ORDER BY (deleted_at IS NULL) DESC, id DESC
+      LIMIT 1
+      FOR UPDATE
+    ` as unknown as { id: number; status: string; deletedAt: unknown; paymentRef: string | null }[];
+    if (!order || !refundNeedsReview({ status: order.status, deleted: Boolean(order.deletedAt) })) return false;
+    const refs = parsePaymentRefs(order.paymentRef);
+    const ref = paymentRef.trim();
+    const nextRef = (ref && !refs.includes(ref) ? [...refs, ref] : refs).join(",");
+    await tx`UPDATE orders SET status = ${refundReviewStatus}, payment_ref = ${nextRef} WHERE id = ${order.id}`;
+    await bumpSyncVersion(tx);
+    console.error("Mercado Pago informó una devolución o contracargo", { code, paymentRef: ref, previousStatus: order.status });
+    return true;
   });
 }
 
@@ -1892,16 +2004,6 @@ export async function updateOrderPayment(input: { id: number; addCents?: number;
   });
 }
 
-function isCanceledStatus(status: string) {
-  return /cancelad/i.test(status);
-}
-
-// Un pedido tiene stock tomado salvo que esté cancelado, esperando el cobro de Mercado Pago
-// o pagado pendiente de revisión: esos nunca descontaron stock, así que tampoco hay que devolverlo.
-function holdsStock(status: string) {
-  return !isCanceledStatus(status) && !isAwaitingPaymentStatus(status) && !/^Pago recibido - revisar/i.test(status.trim());
-}
-
 async function readCurrentAllocations(orderId: number, fallbackBranchId: number, currentItems: Array<{ variantId: number; quantity: number }>, db: Db) {
   const grouped = await getAllocationBuckets(orderId, db);
   return currentItems.map((item) => ({
@@ -2009,7 +2111,7 @@ export async function updateOrder(input: {
       await tx`UPDATE inventory SET quantity = quantity + ${delta.delta}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId}`;
     }
     const totalCents = extrasCents + nextItems.reduce((sum, item) => sum + (Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
-    const settled = settleEditedOrder({ source: order.source, status: input.status, paidCents: Number(order.paidCents), totalCents });
+    const settled = settleEditedOrder({ source: order.source, status: input.status, paidCents: Number(order.paidCents), totalCents, paymentMethod: order.paymentMethod });
     await tx`
       UPDATE orders
       SET customer_name = ${input.customerName.trim()}, phone = ${input.phone.trim()}, email = ${input.email.trim()}, fulfillment = ${input.fulfillment.trim()}, branch_id = ${resolvedBranchId},

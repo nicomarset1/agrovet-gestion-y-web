@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot } from "@/lib/db";
 import { extrasTotalCents, fixInstallmentsText } from "@/lib/format";
+import { isExcludedFromIncome } from "@/lib/order-status";
 import { reservedStatus } from "@/lib/reservation";
 
 function ascii(value: string) {
@@ -247,6 +248,8 @@ export async function GET(request: Request) {
     if (isCancelledOrder(order)) return false;
     // Reservados de Mercado Pago: todavía no están pagos, no son ventas.
     if (order.status === reservedStatus) return false;
+    // Efectivo que todavía no se cobró o pago devuelto: no es plata que entró.
+    if (isExcludedFromIncome(order)) return false;
     const day = orderDayKey(order.createdAt);
     if (hasRange ? day < from || day > to : day.slice(0, 7) !== month) return false;
     if (branch !== "all" && !orderHasBranch(order, branch)) return false;

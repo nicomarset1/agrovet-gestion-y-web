@@ -196,6 +196,10 @@ export type OrderRecord = {
   createdAt: string;
   // Solo en pedidos "Reservado" (Mercado Pago con stock reservado): cuándo vence la reserva (ISO 8601).
   reservedUntil?: string;
+  // Solo en pedidos web en efectivo sin cobrar, pendientes de retiro: cuándo vencen (ISO 8601).
+  pickupExpiresAt?: string;
+  // Ids de pago de Mercado Pago, separados por coma. Más de uno es un segundo cobro.
+  paymentRef?: string | null;
   itemCount: number;
   extras: OrderExtraRecord[];
   items: OrderItemRecord[];
