@@ -243,9 +243,19 @@ function SubmitButton({ children, pendingText, className = "button button-primar
 
 // ===== Modal de alta y edición =====
 
-type VariantRow = { id?: number; label: string; sku: string; barcode: string; price: string; stock1: string; stock2: string };
+// originalStock: lo que había al abrir la ficha. Viaja oculto para que el servidor guarde solo lo que cambió y no pise las ventas del medio.
+type VariantRow = { id?: number; label: string; sku: string; barcode: string; price: string; stock1: string; stock2: string; originalStock1: string; originalStock2: string };
 
-const emptyVariantRow = (): VariantRow => ({ label: "", sku: "", barcode: "", price: "", stock1: "0", stock2: "0" });
+function OriginalStockInputs({ row }: { row: VariantRow }) {
+  return (
+    <>
+      <input name="variantOriginalStock1" type="hidden" value={row.originalStock1} />
+      <input name="variantOriginalStock2" type="hidden" value={row.originalStock2} />
+    </>
+  );
+}
+
+const emptyVariantRow = (): VariantRow => ({ label: "", sku: "", barcode: "", price: "", stock1: "0", stock2: "0", originalStock1: "", originalStock2: "" });
 
 function variantRowsOf(product?: Product): VariantRow[] {
   return product?.variants.length
@@ -257,6 +267,8 @@ function variantRowsOf(product?: Product): VariantRow[] {
       price: String(variant.priceCents / 100),
       stock1: String(variant.stocks.find((stock) => stock.branchId === 1)?.quantity ?? 0),
       stock2: String(variant.stocks.find((stock) => stock.branchId === 2)?.quantity ?? 0),
+      originalStock1: String(variant.stocks.find((stock) => stock.branchId === 1)?.quantity ?? 0),
+      originalStock2: String(variant.stocks.find((stock) => stock.branchId === 2)?.quantity ?? 0),
     }))
     : [emptyVariantRow()];
 }
@@ -563,6 +575,7 @@ export function ProductModal({
                     <span>Código de barras</span>
                     <input className="field" name="variantBarcode" onChange={(event) => updateRow(index, { barcode: event.target.value })} placeholder="Escaneá o escribí el número" value={variant.barcode} />
                   </label>
+                  <OriginalStockInputs row={variant} />
                   <label className="admin-field">
                     <span>Precio</span>
                     <input className="field" inputMode="decimal" min="1" name="variantPrice" onChange={(event) => updateRow(index, { price: event.target.value })} required step="0.01" type="number" value={variant.price} />
@@ -755,6 +768,7 @@ function QuickEdit({
             <input name="variantLabel" type="hidden" value={row.label} />
             <input name="variantSku" type="hidden" value={row.sku} />
             <input name="variantBarcode" type="hidden" value={row.barcode} />
+            <OriginalStockInputs row={row} />
             <strong role="cell">{row.label}</strong>
             <span role="cell">
               <input

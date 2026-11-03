@@ -13,6 +13,7 @@ import {
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
+import { resizeAllocations, settleEditedOrder } from "./order-edit";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
@@ -1339,7 +1340,8 @@ type ProductVariantInput = {
   sku: string;
   barcode: string;
   priceCents: number;
-  stockByBranch: { branchId: number; quantity: number }[];
+  /** originalQuantity: el stock que veía el panel al abrir la ficha. Con él se guarda la diferencia y no se pisan las ventas del medio. */
+  stockByBranch: { branchId: number; quantity: number; originalQuantity?: number }[];
 };
 
 export function updateProduct(input: {
@@ -1394,6 +1396,7 @@ export function updateProduct(input: {
     const insertVariant = db.prepare("INSERT INTO variants (product_id, label, sku, barcode, price_cents) VALUES (?, ?, ?, ?, ?)");
     const updateVariant = db.prepare("UPDATE variants SET label = ?, sku = ?, barcode = ?, price_cents = ? WHERE id = ?");
     const insertInventory = db.prepare("INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (?, ?, ?) ON CONFLICT(variant_id, branch_id) DO UPDATE SET quantity = excluded.quantity, updated_at = CURRENT_TIMESTAMP");
+    const adjustInventory = db.prepare("INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (?, ?, ?) ON CONFLICT(variant_id, branch_id) DO UPDATE SET quantity = MAX(0, inventory.quantity + ?), updated_at = CURRENT_TIMESTAMP");
     const takenSkus = new Set<string>();
     const takenBarcodes = new Set<string>();
     for (const variant of input.variants) {
@@ -1404,7 +1407,8 @@ export function updateProduct(input: {
         updateVariant.run(variant.label.trim(), nextSku, nextBarcode, variant.priceCents, variant.id);
       }
       for (const stock of variant.stockByBranch) {
-        insertInventory.run(variantId, stock.branchId, Math.max(0, stock.quantity));
+        if (stock.originalQuantity === undefined) insertInventory.run(variantId, stock.branchId, Math.max(0, stock.quantity));
+        else adjustInventory.run(variantId, stock.branchId, Math.max(0, stock.quantity), stock.quantity - stock.originalQuantity);
       }
     }
     bumpSyncVersion();
@@ -1865,12 +1869,13 @@ export function createWholesaleOrder(input: {
   })();
 }
 
-export function updateOrderPayment(input: { id: number; paidCents: number; paymentMethod?: string }) {
+// Registra una entrega: se suma a lo ya pagado, sin pasarse del total. settle salda lo que falta.
+export function updateOrderPayment(input: { id: number; addCents?: number; settle?: boolean; paymentMethod?: string }) {
   db.transaction(() => {
-    const order = db.prepare("SELECT id, total_cents AS totalCents, source, payment_method AS paymentMethod FROM orders WHERE id = ?").get(input.id) as { id: number; totalCents: number; source: string; paymentMethod: string } | undefined;
+    const order = db.prepare("SELECT id, total_cents AS totalCents, paid_cents AS paidCents, source, payment_method AS paymentMethod FROM orders WHERE id = ? AND deleted_at = ''").get(input.id) as { id: number; totalCents: number; paidCents: number; source: string; paymentMethod: string } | undefined;
     if (!order) throw new Error("Pedido inválido.");
     if (!/^Mayorista\b/i.test(order.source)) throw new Error("Solo se cierran pagos mayoristas desde esta acción.");
-    const paidCents = Math.min(order.totalCents, Math.max(0, Math.round(input.paidCents)));
+    const paidCents = input.settle ? order.totalCents : Math.min(order.totalCents, order.paidCents + Math.max(0, Math.round(input.addCents ?? 0)));
     db.prepare("UPDATE orders SET paid_cents = ?, payment_method = ?, status = ? WHERE id = ?")
       .run(paidCents, input.paymentMethod?.trim() || order.paymentMethod || "Cuenta corriente", paidCents >= order.totalCents ? "Cerrado mayorista" : "Cuenta corriente", input.id);
     bumpSyncVersion();
@@ -1915,8 +1920,8 @@ export function updateOrder(input: {
   allocations?: { variantId: number; allocations: { branchId: number; quantity: number }[] }[];
 }) {
   return db.transaction(() => {
-    const order = db.prepare("SELECT id, branch_id AS branchId, status, payment_method AS paymentMethod, source FROM orders WHERE id = ?").get(input.id) as { id: number; branchId: number; status: string; paymentMethod: string; source: string } | undefined;
-    if (!order) throw new Error("Pedido inválido.");
+    const order = db.prepare("SELECT id, branch_id AS branchId, status, payment_method AS paymentMethod, paid_cents AS paidCents, source FROM orders WHERE id = ? AND deleted_at = ''").get(input.id) as { id: number; branchId: number; status: string; paymentMethod: string; paidCents: number; source: string } | undefined;
+    if (!order) throw new Error("Pedido inválido: puede estar en la papelera.");
     const isCashSale = /^Caja\b/i.test(order.source);
     if (isCashSale && order.branchId !== input.branchId) throw new Error("No se puede cambiar la sucursal de una venta de caja desde este panel.");
     const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(input.branchId);
@@ -1965,6 +1970,8 @@ export function updateOrder(input: {
         nextAllocationMap.set(item.variantId, item.allocations);
       }
     }
+    // Sin reparto nuevo, el actual se ajusta a las unidades: de ahí sale cuánto stock se devuelve o se descuenta.
+    for (const item of nextItems) nextAllocationMap.set(item.variantId, resizeAllocations(nextAllocationMap.get(item.variantId) ?? [], item.quantity, input.branchId));
 
     const inventoryDeltas = new Map<string, { variantId: number; branchId: number; delta: number }>();
     const currentAllocationBuckets = getAllocationBuckets(input.id);
@@ -2016,10 +2023,11 @@ export function updateOrder(input: {
     }
 
     const totalCents = extrasCents + nextItems.reduce((sum, item) => sum + ((currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
+    const settled = settleEditedOrder({ source: order.source, status: input.status, paidCents: order.paidCents, totalCents });
     db.prepare(`
       UPDATE orders
       SET customer_name = ?, phone = ?, email = ?, fulfillment = ?, branch_id = ?,
-        delivery_address = ?, delivery_distance_km = ?, status = ?, source = ?, total_cents = ?, payment_method = ?,
+        delivery_address = ?, delivery_distance_km = ?, status = ?, source = ?, total_cents = ?, paid_cents = ?, payment_method = ?,
         refund_method = CASE WHEN ? != '' THEN ? ELSE refund_method END,
         refund_note = CASE WHEN ? != '' THEN ? ELSE refund_note END
       WHERE id = ?
@@ -2031,10 +2039,11 @@ export function updateOrder(input: {
       resolvedBranchId,
       input.deliveryAddress ?? "",
       input.deliveryDistanceKm ?? null,
-      input.status.trim(),
+      settled.status.trim(),
       input.source.trim(),
       totalCents,
-      input.paymentMethod?.trim() ?? order.paymentMethod ?? "",
+      settled.paidCents,
+      input.paymentMethod?.trim() || order.paymentMethod || "",
       input.refundMethod?.trim() ?? "",
       input.refundMethod?.trim() ?? "",
       input.refundNote?.trim() ?? "",

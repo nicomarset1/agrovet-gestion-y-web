@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { extrasTotalCents, fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
 import { Select } from "@/components/ui/select";
@@ -13,7 +13,7 @@ import { NumberInput } from "@/components/ui/form-controls";
 import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
-import { updateOrderAction, updateStockAction } from "@/app/gestion-agrovet/actions";
+import { saveOrderEditAction, updateOrderAction, updateStockAction } from "@/app/gestion-agrovet/actions";
 
 export type Subcategory = { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number };
 
@@ -457,6 +457,7 @@ export function OrderModal({
   const [paymentMethod, setPaymentMethod] = useState(initialPaymentMethod);
   const [installments, setInstallments] = useState(initialInstallments);
   const [itemQuantities, setItemQuantities] = useState(() => order.items.map((item) => String(item.quantity)));
+  const [editState, saveEdit, savingEdit] = useActionState(saveOrderEditAction, null);
   const sourceValue = isCashOrder(order)
     ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments)})` : ""}`
     : order.source;
@@ -477,7 +478,7 @@ export function OrderModal({
       subtitle={`${order.code} | ${order.branchName} | ${formatAdminDateTime(order.createdAt, { dateStyle: "long", timeStyle: "short" })}`}
       title={isCashOrder(order) ? "Editar venta" : "Editar pedido"}
     >
-      <form action={updateOrderAction} className="admin-modal-form">
+      <form action={saveEdit} className="admin-modal-form">
         <input name="id" type="hidden" value={order.id} />
         {isCashOrder(order) ? (
           <>
@@ -555,12 +556,13 @@ export function OrderModal({
           <strong>{formatPrice(itemTotalCents)}</strong>
           <span>{order.items.length + order.extras.length} {order.items.length + order.extras.length === 1 ? "producto" : "productos"} | {isCashOrder(order) ? "Venta de caja" : `Pedido ${order.fulfillment}`}</span>
         </div>
+        {editState?.error ? <p className="notice error admin-span-2" role="alert">{editState.error}</p> : null}
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light danger" onClick={() => onRequestDelete(order)} type="button">
             <Trash2 size={16} /> Borrar registro
           </button>
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
-          <button className="button button-primary" type="submit">Guardar cambios</button>
+          <button className="button button-primary" disabled={savingEdit} type="submit">{savingEdit ? "Guardando…" : "Guardar cambios"}</button>
         </div>
       </form>
     </AdminModal>

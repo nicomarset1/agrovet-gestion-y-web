@@ -235,6 +235,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
 const orderPaymentSchema = z.object({
   id: z.coerce.number().int().positive(),
   paidAmount: z.coerce.number().min(0).max(999999999),
+  settle: z.string().optional(),
   paymentMethod: z.string().trim().max(80).optional(),
   returnTo: z.string().trim().min(1).optional(),
 });
@@ -245,7 +246,8 @@ export async function updateOrderPaymentAction(formData: FormData) {
   if (!parsed.success) throw new Error("Pago inválido.");
   await updateOrderPayment({
     id: parsed.data.id,
-    paidCents: Math.round(parsed.data.paidAmount * 100),
+    addCents: Math.round(parsed.data.paidAmount * 100),
+    settle: Boolean(parsed.data.settle),
     paymentMethod: parsed.data.paymentMethod ?? "",
   });
   revalidatePath(panelPath);
@@ -395,6 +397,9 @@ const variantRowSchema = z.object({
   price: z.coerce.number().min(1).max(99999999),
   stock1: z.coerce.number().int().min(0).max(99999),
   stock2: z.coerce.number().int().min(0).max(99999),
+  // El stock que veía el panel al abrir la ficha: con él se guarda solo lo que cambió. Vacío en presentaciones nuevas.
+  originalStock1: z.number().int().min(0).optional(),
+  originalStock2: z.number().int().min(0).optional(),
 });
 
 function readVariantRows(formData: FormData) {
@@ -405,6 +410,9 @@ function readVariantRows(formData: FormData) {
   const prices = formData.getAll("variantPrice").map((value) => String(value));
   const stock1s = formData.getAll("variantStock1").map((value) => String(value));
   const stock2s = formData.getAll("variantStock2").map((value) => String(value));
+  const originalStock = (name: string) => formData.getAll(name).map((value) => (String(value).trim() ? Number(value) : undefined));
+  const originalStock1s = originalStock("variantOriginalStock1");
+  const originalStock2s = originalStock("variantOriginalStock2");
   const rows = labels.map((_, index) => ({
     id: ids[index] ? Number(ids[index]) : undefined,
     label: labels[index],
@@ -413,6 +421,8 @@ function readVariantRows(formData: FormData) {
     price: prices[index],
     stock1: stock1s[index],
     stock2: stock2s[index],
+    originalStock1: originalStock1s[index],
+    originalStock2: originalStock2s[index],
   }));
   const parsed = rows.map((row) => variantRowSchema.safeParse(row));
   if (parsed.some((row) => !row.success)) throw new Error("Las presentaciones son inválidas.");
@@ -477,6 +487,27 @@ const orderSchema = z.object({
 
 export async function updateOrderAction(formData: FormData) {
   await requireAdmin();
+  const returnTo = await applyOrderUpdate(formData);
+  if (returnTo) redirect(safeInternalPath(returnTo));
+}
+
+export type OrderEditState = { error: string } | null;
+
+// Igual que updateOrderAction, pero el error vuelve al formulario: faltar stock al subir unidades es un caso
+// normal y no debe llevar a la pantalla de error ni perder lo cargado.
+export async function saveOrderEditAction(_previous: OrderEditState, formData: FormData): Promise<OrderEditState> {
+  await requireAdmin();
+  let returnTo: string | undefined;
+  try {
+    returnTo = await applyOrderUpdate(formData);
+  } catch (error) {
+    return { error: error instanceof z.ZodError ? "Revisá las cantidades." : error instanceof Error ? error.message : "No se pudo guardar." };
+  }
+  if (returnTo) redirect(safeInternalPath(returnTo));
+  return null;
+}
+
+async function applyOrderUpdate(formData: FormData) {
   const parsed = orderSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) throw new Error("Registro inválido.");
   const variantIds = formData.getAll("itemVariantId").map((value) => z.coerce.number().int().positive().parse(value));
@@ -516,7 +547,7 @@ export async function updateOrderAction(formData: FormData) {
       : undefined,
   });
   revalidatePath(panelPath);
-  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
+  return parsed.data.returnTo;
 }
 
 export async function deleteOrderAction(formData: FormData) {
@@ -617,8 +648,8 @@ export async function updateProductAction(formData: FormData) {
       barcode: variant.barcode,
       priceCents: Math.round(variant.price * 100),
       stockByBranch: [
-        { branchId: 1, quantity: variant.stock1 },
-        { branchId: 2, quantity: variant.stock2 },
+        { branchId: 1, quantity: variant.stock1, originalQuantity: variant.originalStock1 },
+        { branchId: 2, quantity: variant.stock2, originalQuantity: variant.originalStock2 },
       ],
     })),
   });

@@ -491,23 +491,25 @@ export function WholesaleClientsPanel({
                     </div>
                     <div className="admin-wholesale-due-pay">
                       <input
-                        aria-label={`Total pagado por ${order.customerName}`}
+                        aria-label={`Lo que entregó hoy ${order.customerName}`}
                         className="field"
-                        defaultValue={Math.round(order.totalCents / 100)}
                         inputMode="decimal"
-                        min="0"
+                        max={dueCents / 100}
+                        min="0.01"
                         name="paidAmount"
+                        placeholder="Entrega de hoy"
+                        required
                         step="0.01"
-                        title="Total pagado hasta hoy (no solo esta entrega)"
                         type="number"
                       />
-                      <button className="button button-primary" type="submit">Guardar pago</button>
+                      <button className="button button-primary" type="submit">Registrar</button>
+                      <button className="button button-light" formNoValidate name="settle" type="submit" value="1">Saldar</button>
                     </div>
                   </form>
                 );
               }) : <p className="description">No hay clientes con deuda de cuenta corriente.</p>}
             </div>
-            {pendingAccountOrders.length ? <small className="description">Anotá el total pagado hasta hoy. Con el total del pedido queda saldado.</small> : null}
+            {pendingAccountOrders.length ? <small className="description">Anotá lo que entregó hoy: se suma a lo ya pagado. Saldar cancela toda la deuda.</small> : null}
           </section>
           <section className="card admin-panel" aria-labelledby="admin-wholesale-last-title">
             <h2 id="admin-wholesale-last-title">Últimos pedidos mayoristas</h2>

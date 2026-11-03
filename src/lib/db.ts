@@ -216,7 +216,7 @@ export async function createWholesaleOrder(input: Parameters<SqliteDriver["creat
   return withSync((await getDriver()).createWholesaleOrder(input));
 }
 
-export async function updateOrderPayment(input: { id: number; paidCents: number; paymentMethod?: string }) {
+export async function updateOrderPayment(input: { id: number; addCents?: number; settle?: boolean; paymentMethod?: string }) {
   return withSync((await getDriver()).updateOrderPayment(input));
 }
 

@@ -11,6 +11,7 @@ import {
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
+import { resizeAllocations, settleEditedOrder } from "./order-edit";
 import { mercadoPagoReservationHours, paymentFailedStatus, reservationExpiredStatus, reservationExpiry, reservedStatus } from "./reservation";
 import { productImageSrcFromSample } from "./product-image";
 import { buildOrderImpacts } from "./trash-impact";
@@ -1374,7 +1375,8 @@ type ProductVariantInput = {
   sku: string;
   barcode: string;
   priceCents: number;
-  stockByBranch: { branchId: number; quantity: number }[];
+  /** originalQuantity: el stock que veía el panel al abrir la ficha. Con él se guarda la diferencia y no se pisan las ventas del medio. */
+  stockByBranch: { branchId: number; quantity: number; originalQuantity?: number }[];
 };
 
 export async function updateProduct(input: {
@@ -1429,9 +1431,16 @@ export async function updateProduct(input: {
         variantId = Number(inserted.id);
       }
       for (const stock of variant.stockByBranch) {
+        if (stock.originalQuantity === undefined) {
+          await tx`
+            INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (${variantId}, ${stock.branchId}, ${Math.max(0, stock.quantity)})
+            ON CONFLICT (variant_id, branch_id) DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+          `;
+          continue;
+        }
         await tx`
           INSERT INTO inventory (variant_id, branch_id, quantity) VALUES (${variantId}, ${stock.branchId}, ${Math.max(0, stock.quantity)})
-          ON CONFLICT (variant_id, branch_id) DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+          ON CONFLICT (variant_id, branch_id) DO UPDATE SET quantity = GREATEST(0, inventory.quantity + ${stock.quantity - stock.originalQuantity}), updated_at = CURRENT_TIMESTAMP
         `;
       }
     }
@@ -1511,8 +1520,7 @@ export async function getInventoryQuantity(variantId: number, branchId: number, 
 export async function addInventory(variantId: number, branchId: number, delta: number) {
   await ensureSchema();
   await sql.begin(async (tx) => {
-    const current = await getInventoryQuantity(variantId, branchId, tx);
-    await tx`UPDATE inventory SET quantity = ${current + Math.max(0, delta)}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${variantId} AND branch_id = ${branchId}`;
+    await tx`UPDATE inventory SET quantity = quantity + ${Math.max(0, delta)}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${variantId} AND branch_id = ${branchId}`;
     await bumpSyncVersion(tx);
   });
 }
@@ -1871,13 +1879,14 @@ export async function createWholesaleOrder(input: {
   });
 }
 
-export async function updateOrderPayment(input: { id: number; paidCents: number; paymentMethod?: string }) {
+// Registra una entrega: se suma a lo ya pagado, sin pasarse del total. settle salda lo que falta.
+export async function updateOrderPayment(input: { id: number; addCents?: number; settle?: boolean; paymentMethod?: string }) {
   await ensureSchema();
   await sql.begin(async (tx) => {
-    const [order] = await tx`SELECT id, total_cents AS "totalCents", source, payment_method AS "paymentMethod" FROM orders WHERE id = ${input.id}` as unknown as { id: number; totalCents: number; source: string; paymentMethod: string }[];
+    const [order] = await tx`SELECT id, total_cents AS "totalCents", paid_cents AS "paidCents", source, payment_method AS "paymentMethod" FROM orders WHERE id = ${input.id} AND deleted_at IS NULL FOR UPDATE` as unknown as { id: number; totalCents: number; paidCents: number; source: string; paymentMethod: string }[];
     if (!order) throw new Error("Pedido inválido.");
     if (!/^Mayorista\b/i.test(order.source)) throw new Error("Solo se cierran pagos mayoristas desde esta acción.");
-    const paidCents = Math.min(Number(order.totalCents), Math.max(0, Math.round(input.paidCents)));
+    const paidCents = input.settle ? Number(order.totalCents) : Math.min(Number(order.totalCents), Number(order.paidCents) + Math.max(0, Math.round(input.addCents ?? 0)));
     await tx`UPDATE orders SET paid_cents = ${paidCents}, payment_method = ${input.paymentMethod?.trim() || order.paymentMethod || "Cuenta corriente"}, status = ${paidCents >= Number(order.totalCents) ? "Cerrado mayorista" : "Cuenta corriente"} WHERE id = ${input.id}`;
     await bumpSyncVersion(tx);
   });
@@ -1920,8 +1929,9 @@ export async function updateOrder(input: {
 }) {
   await ensureSchema();
   await sql.begin(async (tx) => {
-    const [order] = await tx`SELECT id, branch_id AS "branchId", status, payment_method AS "paymentMethod", source FROM orders WHERE id = ${input.id}` as unknown as { id: number; branchId: number; status: string; paymentMethod: string; source: string }[];
-    if (!order) throw new Error("Pedido inválido.");
+    // FOR UPDATE: dos ediciones o cancelaciones a la vez se hacen de a una y la segunda ve el estado real.
+    const [order] = await tx`SELECT id, branch_id AS "branchId", status, payment_method AS "paymentMethod", paid_cents AS "paidCents", source FROM orders WHERE id = ${input.id} AND deleted_at IS NULL FOR UPDATE` as unknown as { id: number; branchId: number; status: string; paymentMethod: string; paidCents: number; source: string }[];
+    if (!order) throw new Error("Pedido inválido: puede estar en la papelera.");
     const isCashSale = /^Caja\b/i.test(order.source);
     if (isCashSale && order.branchId !== input.branchId) throw new Error("No se puede cambiar la sucursal de una venta de caja desde este panel.");
     if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal inválida.");
@@ -1960,6 +1970,8 @@ export async function updateOrder(input: {
         nextAllocationMap.set(item.variantId, item.allocations);
       }
     }
+    // Sin reparto nuevo, el actual se ajusta a las unidades: de ahí sale cuánto stock se devuelve o se descuenta.
+    for (const item of nextItems) nextAllocationMap.set(item.variantId, resizeAllocations(nextAllocationMap.get(item.variantId) ?? [], item.quantity, input.branchId));
     const inventoryDeltas = new Map<string, { variantId: number; branchId: number; delta: number }>();
     const currentAllocationBuckets = await getAllocationBuckets(input.id, tx);
     for (const item of nextItems) {
@@ -1997,11 +2009,12 @@ export async function updateOrder(input: {
       await tx`UPDATE inventory SET quantity = quantity + ${delta.delta}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${delta.variantId} AND branch_id = ${delta.branchId}`;
     }
     const totalCents = extrasCents + nextItems.reduce((sum, item) => sum + (Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0) * item.quantity), 0);
+    const settled = settleEditedOrder({ source: order.source, status: input.status, paidCents: Number(order.paidCents), totalCents });
     await tx`
       UPDATE orders
       SET customer_name = ${input.customerName.trim()}, phone = ${input.phone.trim()}, email = ${input.email.trim()}, fulfillment = ${input.fulfillment.trim()}, branch_id = ${resolvedBranchId},
-        delivery_address = ${input.deliveryAddress ?? ""}, delivery_distance_km = ${input.deliveryDistanceKm ?? null}, status = ${input.status.trim()}, source = ${input.source.trim()},
-        total_cents = ${totalCents}, payment_method = ${input.paymentMethod?.trim() ?? order.paymentMethod ?? ""},
+        delivery_address = ${input.deliveryAddress ?? ""}, delivery_distance_km = ${input.deliveryDistanceKm ?? null}, status = ${settled.status.trim()}, source = ${input.source.trim()},
+        total_cents = ${totalCents}, paid_cents = ${settled.paidCents}, payment_method = ${input.paymentMethod?.trim() || order.paymentMethod || ""},
         refund_method = CASE WHEN ${input.refundMethod?.trim() ?? ""} != '' THEN ${input.refundMethod?.trim() ?? ""} ELSE refund_method END,
         refund_note = CASE WHEN ${input.refundNote?.trim() ?? ""} != '' THEN ${input.refundNote?.trim() ?? ""} ELSE refund_note END
       WHERE id = ${input.id}
@@ -2023,7 +2036,7 @@ export async function deleteOrder(input: number | { id: number; refundMethod?: s
   const refundMethod = typeof input === "number" ? "" : input.refundMethod?.trim() ?? "";
   const refundNote = typeof input === "number" ? "" : input.refundNote?.trim() ?? "";
   await sql.begin(async (tx) => {
-    const [order] = await tx`SELECT id, branch_id AS "branchId", status, deleted_at AS "deletedAt" FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string; deletedAt: unknown }[];
+    const [order] = await tx`SELECT id, branch_id AS "branchId", status, deleted_at AS "deletedAt" FROM orders WHERE id = ${id} FOR UPDATE` as unknown as { id: number; branchId: number; status: string; deletedAt: unknown }[];
     if (!order) return;
     if (order.deletedAt) return;
     const items = await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }>;
@@ -2245,7 +2258,7 @@ export async function restoreTrashItem(input: { type: TrashItem["type"]; id: str
       await tx`UPDATE wholesale_clients SET deleted_at = NULL WHERE id = ${Number(input.id)}`;
     } else if (input.type === "order") {
       const id = Number(input.id);
-      const [order] = await tx`SELECT id, branch_id AS "branchId", status, fulfillment, deleted_at AS "deletedAt" FROM orders WHERE id = ${id}` as unknown as { id: number; branchId: number; status: string; fulfillment: string; deletedAt: unknown }[];
+      const [order] = await tx`SELECT id, branch_id AS "branchId", status, fulfillment, deleted_at AS "deletedAt" FROM orders WHERE id = ${id} FOR UPDATE` as unknown as { id: number; branchId: number; status: string; fulfillment: string; deletedAt: unknown }[];
       if (!order?.deletedAt) return;
       // Solo vuelve a descontar si el pedido retiene stock: es lo mismo que devolvió deleteOrder al borrarlo.
       const items = holdsStock(order.status) ? await tx`SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = ${id}` as unknown as Array<{ variantId: number; quantity: number }> : [];
