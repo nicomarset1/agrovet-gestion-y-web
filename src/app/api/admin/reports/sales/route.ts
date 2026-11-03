@@ -1,8 +1,10 @@
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot } from "@/lib/db";
+import { argentinaDayKey, formatArgentinaDateTime, parseOrderDate } from "@/lib/argentina-time";
 import { extrasTotalCents, fixInstallmentsText } from "@/lib/format";
 import { isExcludedFromIncome } from "@/lib/order-status";
-import { reservedStatus } from "@/lib/reservation";
+import { isUnpaidOnlineOrder, paymentKindLabel, paymentKindOf, salesChannelOf } from "@/lib/sales-payment";
+import type { PaymentKind } from "@/lib/sales-payment";
 
 function ascii(value: string) {
   return value
@@ -15,28 +17,12 @@ function formatCurrency(cents: number) {
   return `$${new Intl.NumberFormat("es-AR").format(Math.round(cents / 100))}`;
 }
 
+// El servidor corre en UTC: sin zona, una venta del 31/10 a las 23:30 figuraba 1/11 a las 2:30.
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
-}
-
-// Día del pedido en hora de Argentina ("2026-09-29"), igual que lo muestra el panel. created_at viene en
-// UTC; sin esto, una venta de las 22 h caía en el día (o el mes) siguiente.
-const argentinaDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
-function orderDayKey(createdAt: string) {
-  const normalized = createdAt.includes("T") ? createdAt : createdAt.replace(" ", "T");
-  const date = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized) ? new Date(normalized) : new Date(`${normalized}Z`);
-  return Number.isNaN(date.getTime()) ? createdAt.slice(0, 10) : argentinaDay.format(date);
+  return formatArgentinaDateTime(value, { dateStyle: "short", timeStyle: "short", hourCycle: "h23" });
 }
 
 const isoDay = /^\d{4}-\d{2}-\d{2}$/;
-
-function parsePayment(source: string) {
-  // Acepta "(3 cuotas)" y "(1 cuota)": las ventas viejas guardaron "(1 cuotas)".
-  const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas?\))?/i.exec(source);
-  if (match) return match[1].trim().toLowerCase();
-  if (source.toLowerCase().includes("mayorista")) return "mayorista";
-  return source.toLowerCase().includes("tienda online") ? "web" : "otro";
-}
 
 type ReportOrder = Awaited<ReturnType<typeof getAdminSnapshot>>["orders"][number];
 
@@ -204,7 +190,7 @@ function buildSalesReportPdf(input: {
   };
   tableHeader();
 
-  const sortedOrders = [...input.orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const sortedOrders = [...input.orders].sort((a, b) => parseOrderDate(b.createdAt).getTime() - parseOrderDate(a.createdAt).getTime());
   if (!sortedOrders.length) {
     commands.push(drawText("No hay ventas para los filtros seleccionados.", margin + 10, y, 10));
   }
@@ -235,7 +221,7 @@ export async function GET(request: Request) {
   await requireAdmin();
   const snapshot = await getAdminSnapshot();
   const url = new URL(request.url);
-  const month = url.searchParams.get("month") || new Date().toISOString().slice(0, 7);
+  const month = url.searchParams.get("month") || argentinaDayKey(new Date()).slice(0, 7);
   // Rango de fechas (yyyy-mm-dd) que manda la sección Ventas; si no viene, se usa el mes como antes.
   const fromParam = url.searchParams.get("from") ?? "";
   const toParam = url.searchParams.get("to") ?? "";
@@ -246,17 +232,15 @@ export async function GET(request: Request) {
   const payment = url.searchParams.get("payment") || "all";
   const orders = snapshot.orders.filter((order) => {
     if (isCancelledOrder(order)) return false;
-    // Reservados de Mercado Pago: todavía no están pagos, no son ventas.
-    if (order.status === reservedStatus) return false;
+    // Igual que la sección Ventas: reservados o esperando a Mercado Pago todavía no son ventas.
+    if (isUnpaidOnlineOrder(order)) return false;
     // Efectivo que todavía no se cobró o pago devuelto: no es plata que entró.
     if (isExcludedFromIncome(order)) return false;
-    const day = orderDayKey(order.createdAt);
+    const day = argentinaDayKey(order.createdAt);
     if (hasRange ? day < from || day > to : day.slice(0, 7) !== month) return false;
     if (branch !== "all" && !orderHasBranch(order, branch)) return false;
-    if (channel === "web" && !order.source.toLowerCase().includes("tienda online")) return false;
-    if (channel === "store" && !order.source.toLowerCase().includes("caja")) return false;
-    if (channel === "wholesale" && !order.source.toLowerCase().includes("mayorista")) return false;
-    if (payment !== "all" && parsePayment(order.source) !== payment) return false;
+    if (channel !== "all" && salesChannelOf(order.source) !== channel) return false;
+    if (payment !== "all" && paymentKindOf(order) !== payment) return false;
     return true;
   });
 
@@ -271,7 +255,7 @@ export async function GET(request: Request) {
       const branchTotal = getOrderBranchRevenueCents(order, reportBranch.id);
       if (branchTotal > 0) byBranch.set(reportBranch.name, (byBranch.get(reportBranch.name) ?? 0) + branchTotal);
     }
-    const method = parsePayment(order.source);
+    const method = paymentKindLabel(paymentKindOf(order));
     byPayment.set(method, (byPayment.get(method) ?? 0) + amountForOrder(order));
   }
 
@@ -280,7 +264,7 @@ export async function GET(request: Request) {
     month: hasRange ? (from === to ? from : `${from} a ${to}`) : month,
     branchLabel: branch === "all" ? "Todas" : snapshot.branches.find((item) => String(item.id) === branch)?.name ?? branch,
     channelLabel,
-    paymentLabel: payment === "all" ? "Todos" : payment,
+    paymentLabel: payment === "all" ? "Todos" : paymentKindLabel(payment as PaymentKind),
     orders,
     totalCents,
     byBranch,

@@ -5,6 +5,8 @@
 import { useRouter } from "next/navigation";
 import { Minus, PackagePlus, Pencil, Plus, RotateCcw, ScanBarcode, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { cajaStorageKey, matchVariantsByCode, restoreCajaSale } from "@/lib/caja";
+import type { PosExtra, PosLine } from "@/lib/caja";
 import { extrasTotalCents, formatPrice, installmentsLabel, posMaxUnitPriceCents, posUnitPriceCents } from "@/lib/format";
 import { Switch } from "@/components/ui/form-controls";
 import { Select } from "@/components/ui/select";
@@ -14,6 +16,7 @@ import type { Branch, OrderRecord, Product } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import { closePosSaleAction } from "@/app/gestion-agrovet/actions";
 import { INSTALLMENT_OPTIONS, PAYMENT_OPTIONS, SectionHeader, dateKey, formatAdminDateTime, isCancelledOrder, isCashOrder, toDate } from "@/components/admin/shared";
+import { VariantPicker } from "@/components/admin/variant-picker";
 
 // Acepta como se escribe un precio acá: 25000, 25.000, 25.000,50 o $ 25000. Vacío = volver al de lista.
 function parsePosPrice(raw: string): number | "empty" | "invalid" {
@@ -143,12 +146,10 @@ function PointOfSalePanel({
 }) {
   const router = useRouter();
   const { push } = useToast();
-  // priceCents es el precio de lista; manualPriceCents, el escrito a mano solo para esta venta.
-  type PosLine = { variantId: number; productName: string; brand: string; label: string; sku: string; barcode: string; quantity: number; priceCents: number; manualPriceCents: number | null; stock: number };
   const [scanValue, setScanValue] = useState("");
   const [cart, setCart] = useState<PosLine[]>([]);
   // "Varios": renglones libres con descripción y monto, sin producto ni stock.
-  const [extras, setExtras] = useState<{ id: number; description: string; amountCents: number }[]>([]);
+  const [extras, setExtras] = useState<PosExtra[]>([]);
   const nextExtraId = useRef(1);
   const [extraFormOpen, setExtraFormOpen] = useState(false);
   const [extraDescription, setExtraDescription] = useState("");
@@ -158,7 +159,12 @@ function PointOfSalePanel({
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
   const [flash, setFlash] = useState<{ variantId: number; tick: number } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
-  const focusScan = () => requestAnimationFrame(() => scanRef.current?.focus());
+  // Con el selector de presentación abierto, el foco queda en él: lo devuelve al cerrarse.
+  const focusScan = () => requestAnimationFrame(() => {
+    if (!document.querySelector(".admin-variant-picker")) scanRef.current?.focus();
+  });
+  // Código que coincide con más de una presentación, a la espera de que el cajero elija.
+  const [codeChoice, setCodeChoice] = useState<{ code: string; variantIds: number[] } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("Efectivo");
   const [installments, setInstallments] = useState("1");
   // El 10% de efectivo arranca aplicado, como promete la tienda; se puede sacar venta por venta.
@@ -176,6 +182,13 @@ function PointOfSalePanel({
     priceCents: variant.priceCents,
     stock: variant.stocks.find((stock) => stock.branchId === branch.id)?.quantity ?? 0,
   }))), [branch.id, products]);
+  const catalogById = useMemo(() => new Map(catalogVariants.map((variant) => [variant.variantId, variant])), [catalogVariants]);
+  // El carrito guarda el precio con el que se agregó el renglón. Lo que se muestra y se cobra (lista y stock) sale
+  // siempre del catálogo, que LiveSync mantiene al día: si cambia con la venta abierta, se ve acá.
+  const lines = useMemo(() => cart.map((item) => {
+    const live = catalogById.get(item.variantId);
+    return { ...item, ...(live ?? { stock: 0 }), addedPriceCents: item.priceCents, gone: !live };
+  }), [cart, catalogById]);
   // Ventas del día por defecto; se puede elegir otro día o un rango.
   const todayKey = dateKey(new Date());
   const [salesRange, setSalesRange] = useState<{ from: string; to: string } | null>(null);
@@ -190,13 +203,55 @@ function PointOfSalePanel({
   const isCashPayment = paymentMethod === "Efectivo";
   const discountActive = isCashPayment && cashDiscountOn;
   // Las líneas muestran el precio sin el 10%; el descuento se ve aparte en el resumen, como en un ticket.
-  const subtotalCents = extrasTotalCents(extras) + cart.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
+  const subtotalCents = extrasTotalCents(extras) + lines.reduce((sum, item) => sum + (item.manualPriceCents ?? item.priceCents) * item.quantity, 0);
   const totalCents = extras.reduce((sum, extra) => sum + posUnitPriceCents(extra.amountCents, { cashDiscount: discountActive }), 0)
-    + cart.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
+    + lines.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
   const discountCents = subtotalCents - totalCents;
-  const hasManualPrice = cart.some((item) => item.manualPriceCents !== null);
-  const totalUnits = extras.length + cart.reduce((sum, item) => sum + item.quantity, 0);
+  const hasManualPrice = lines.some((item) => item.manualPriceCents !== null);
+  const totalUnits = extras.length + lines.reduce((sum, item) => sum + item.quantity, 0);
   const lineCount = cart.length + extras.length;
+  // La venta en curso sobrevive a un refresco o a volver a entrar por sesión vencida. Se lee en un efecto y no
+  // en el estado inicial: el HTML del servidor siempre trae la venta vacía y tiene que coincidir al hidratar.
+  const storageKey = cajaStorageKey(branch.id);
+  const restoreDone = useRef(false);
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    if (restoreDone.current) return;
+    restoreDone.current = true;
+    let stored: string | null = null;
+    try {
+      stored = window.sessionStorage.getItem(storageKey);
+    } catch {
+      // Sin almacenamiento, la venta dura hasta recargar.
+    }
+    const sale = restoreCajaSale(stored, new Set(catalogVariants.map((variant) => variant.variantId)));
+    queueMicrotask(() => {
+      if (sale) {
+        setCart(sale.cart);
+        setExtras(sale.extras);
+        setPaymentMethod(sale.paymentMethod);
+        setInstallments(sale.installments);
+        setCashDiscountOn(sale.cashDiscountOn);
+        nextExtraId.current = Math.max(0, ...sale.extras.map((extra) => extra.id)) + 1;
+        setNotice({
+          text: sale.dropped
+            ? `Se recuperó la venta en curso. Se quitó ${sale.dropped === 1 ? "1 producto que ya no existe" : `${sale.dropped} productos que ya no existen`}.`
+            : "Se recuperó la venta en curso.",
+          tone: "ok",
+        });
+      }
+      setRestored(true);
+    });
+  }, [catalogVariants, storageKey]);
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      if (cart.length || extras.length) window.sessionStorage.setItem(storageKey, JSON.stringify({ cart, extras, paymentMethod, installments, cashDiscountOn }));
+      else window.sessionStorage.removeItem(storageKey);
+    } catch {
+      // Sin almacenamiento, la venta dura hasta recargar.
+    }
+  }, [cart, cashDiscountOn, extras, installments, paymentMethod, restored, storageKey]);
   function closeExtraForm() {
     setExtraFormOpen(false);
     setExtraDescription("");
@@ -246,11 +301,20 @@ function PointOfSalePanel({
     const value = rawValue.trim();
     if (!value) return;
     const compact = value.replace(/\s+/g, "");
-    const match = catalogVariants.find((variant) => [variant.barcode, variant.sku, variant.barcode.replace(/\s+/g, ""), variant.sku.replace(/\s+/g, "")].includes(value) || [variant.barcode.replace(/\s+/g, ""), variant.sku.replace(/\s+/g, ""), variant.label].includes(compact));
-    if (!match) {
+    const byCode = matchVariantsByCode(catalogVariants, value);
+    const matches = byCode.length ? byCode : catalogVariants.filter((variant) => variant.label === compact);
+    if (!matches.length) {
       setNotice({ text: `No se encontró un producto con el código "${value}".`, tone: "error" });
       return;
     }
+    if (matches.length > 1) {
+      setNotice(null);
+      setCodeChoice({ code: value, variantIds: matches.map((variant) => variant.variantId) });
+      return;
+    }
+    addVariant(matches[0]);
+  }
+  function addVariant(match: (typeof catalogVariants)[number]) {
     const existing = cart.find((item) => item.variantId === match.variantId);
     if ((existing?.quantity ?? 0) >= match.stock) {
       setNotice({ text: `No queda stock de ${match.brand} ${match.productName} ${match.label} en ${branch.name}.`, tone: "error" });
@@ -267,7 +331,7 @@ function PointOfSalePanel({
   }
   // Suma una unidad sin pasar el stock de la sucursal (antes se podía y la venta fallaba al cerrar).
   function increaseLine(variantId: number) {
-    const line = cart.find((item) => item.variantId === variantId);
+    const line = lines.find((item) => item.variantId === variantId);
     if (line && line.quantity >= line.stock) {
       setNotice({ text: `No hay más stock de ${line.brand} ${line.productName} ${line.label} en ${branch.name}.`, tone: "error" });
       return;
@@ -285,7 +349,19 @@ function PointOfSalePanel({
     setCart((current) => current.filter((item) => item.variantId !== variantId));
   }
   async function closeSale() {
-    if (!lineCount || submitting || priceDraftInvalid) return;
+    if (submitting || priceDraftInvalid) return;
+    // Lo escrito sin agregar no se pierde en silencio: el cliente se iría sin ese producto y sin pagarlo.
+    if (scanValue.trim()) {
+      setNotice({ text: `El código "${scanValue.trim()}" está escrito pero no se agregó. Apretá Enter para sumarlo o borralo antes de cerrar.`, tone: "error" });
+      scanRef.current?.focus();
+      return;
+    }
+    if (extraFormOpen && extraAmount.trim()) {
+      setNotice({ text: "Quedó un Varios a medio cargar. Apretá Enter para sumarlo o Esc para descartarlo antes de cerrar.", tone: "error" });
+      extraAmountRef.current?.focus();
+      return;
+    }
+    if (!lineCount) return;
     setSubmitting(true);
     setNotice(null);
     try {
@@ -294,10 +370,10 @@ function PointOfSalePanel({
         paymentMethod,
         installments: paymentMethod === "Tarjeta" ? installments : undefined,
         cashDiscount: discountActive,
-        items: cart.map((item) => ({
+        items: lines.map((item) => ({
           variantId: item.variantId,
           quantity: item.quantity,
-          ...(item.manualPriceCents !== null ? { manualPriceCents: item.manualPriceCents } : {}),
+          ...(item.manualPriceCents !== null ? { manualPriceCents: item.manualPriceCents } : { expectedPriceCents: item.priceCents }),
         })),
         extras: extras.map(({ description, amountCents }) => ({ description, amountCents })),
       });
@@ -312,6 +388,8 @@ function PointOfSalePanel({
       router.refresh();
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : "No se pudo cerrar la venta.", tone: "error" });
+      // Si fue por un precio o un stock que cambió, la pantalla tiene que mostrar el dato nuevo sin esperar a LiveSync.
+      router.refresh();
     } finally {
       setSubmitting(false);
       focusScan();
@@ -384,7 +462,7 @@ function PointOfSalePanel({
         <div className="admin-pos-cart">
           {lineCount ? (
             <ul className="admin-pos-lines">
-              {cart.map((item) => (
+              {lines.map((item) => (
                 <li
                   className={`admin-pos-line${flash?.variantId === item.variantId ? " is-flash" : ""}`}
                   key={flash?.variantId === item.variantId ? `${item.variantId}-${flash.tick}` : item.variantId}
@@ -392,6 +470,9 @@ function PointOfSalePanel({
                   <div className="admin-pos-line-copy">
                     <strong>{item.brand} {item.productName}</strong>
                     <small>{item.label} · {item.barcode}{item.manualPriceCents !== null ? ` · lista ${formatPrice(item.priceCents)}` : ""}</small>
+                    {item.gone ? <small className="admin-pos-line-alert">Ya no está en el catálogo: quitalo para cerrar la venta.</small> : null}
+                    {!item.gone && item.quantity > item.stock ? <small className="admin-pos-line-alert">{item.stock > 0 ? `Solo quedan ${item.stock} en ${branch.name}.` : `No queda stock en ${branch.name}.`}</small> : null}
+                    {!item.gone && item.manualPriceCents === null && item.addedPriceCents !== item.priceCents ? <small className="admin-pos-line-alert">Precio actualizado: antes {formatPrice(item.addedPriceCents)}.</small> : null}
                   </div>
                   <PosPriceField
                     listCents={item.priceCents}
@@ -561,6 +642,24 @@ function PointOfSalePanel({
           </div>
         ) : null}
       </aside>
+      {codeChoice ? (
+        <VariantPicker
+          code={codeChoice.code}
+          onCancel={() => { setCodeChoice(null); focusScan(); }}
+          onPick={(variantId) => {
+            const match = catalogById.get(variantId);
+            if (match) addVariant(match);
+            setCodeChoice(null);
+            focusScan();
+          }}
+          options={codeChoice.variantIds.flatMap((variantId) => {
+            const variant = catalogById.get(variantId);
+            if (!variant) return [];
+            const free = variant.stock - (cart.find((item) => item.variantId === variantId)?.quantity ?? 0);
+            return [{ id: variantId, brand: variant.brand, name: variant.productName, label: variant.label, priceCents: variant.priceCents, stock: variant.stock, available: free > 0, stockNote: variant.stock > 0 && free <= 0 ? "Todo en la venta" : undefined }];
+          })}
+        />
+      ) : null}
     </div>
   );
 }

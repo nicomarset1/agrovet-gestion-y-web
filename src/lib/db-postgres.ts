@@ -10,6 +10,7 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
+import { cajaLineName, cajaPriceChangedMessage, cajaUnavailableMessage, stockShortageMessage } from "./caja";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { resizeAllocations, settleEditedOrder } from "./order-edit";
 import { OrderRejectedError, outOfStockError, priceChangedError, productDisplayName, unavailableProductError } from "./order-errors";
@@ -1670,7 +1671,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export async function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
 }) {
   await ensureSchema();
   return sql.begin(async (tx) => {
@@ -1691,20 +1692,27 @@ export async function createOrder(input: {
     const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const [row] = await tx`
-        SELECT v.price_cents AS "priceCents", p.brand, p.name, v.label,
-          (p.active = TRUE AND p.archived_at IS NULL AND p.purged_at IS NULL) AS available
+        SELECT v.price_cents AS "priceCents", p.brand, p.name, v.label, p.active, p.archived_at AS "archivedAt", p.purged_at AS "purgedAt"
         FROM variants v
         JOIN products p ON p.id = v.product_id
         WHERE v.id = ${item.variantId}
-      ` as unknown as { priceCents: number; brand: string; name: string; label: string; available: boolean }[];
+      ` as unknown as { priceCents: number; brand: string; name: string; label: string; active: boolean; archivedAt: unknown; purgedAt: unknown }[];
       const displayName = productDisplayName(row);
-      if (!row || !row.available) throw unavailableProductError(displayName, item.variantId);
+      // La Caja vende también lo desactivado en la tienda (sigue en el local); lo archivado o borrado, no.
+      const available = Boolean(row) && !row?.archivedAt && !row?.purgedAt && (Boolean(input.cashSale) || Boolean(row?.active));
+      if (!row || !available) throw input.cashSale ? new Error(cajaUnavailableMessage(row ? cajaLineName(row) : "Un producto de la venta")) : unavailableProductError(displayName, item.variantId);
       if (item.quantity < 1) throw outOfStockError(displayName, item.variantId);
+      const lineName = cajaLineName(row);
+      // Lo que la pantalla le mostró al cajero: si el catálogo cambió en el medio, no se cobra otro precio sin avisar.
+      const expected = input.cashSale?.expectedPrices?.[item.variantId];
+      if (expected !== undefined && input.cashSale?.manualPrices?.[item.variantId] === undefined && expected !== Number(row.priceCents)) {
+        throw new Error(cajaPriceChangedMessage(lineName, Number(row.priceCents)));
+      }
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
       if (allocations.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) throw outOfStockError(displayName, item.variantId);
       for (const allocation of allocations) {
         const [stock] = await tx`SELECT quantity FROM inventory WHERE variant_id = ${item.variantId} AND branch_id = ${allocation.branchId}` as unknown as { quantity?: number }[];
-        if (Number(stock?.quantity ?? 0) < allocation.quantity) throw outOfStockError(displayName, item.variantId);
+        if (Number(stock?.quantity ?? 0) < allocation.quantity) throw input.cashSale ? new Error(stockShortageMessage(lineName, Number(stock?.quantity ?? 0))) : outOfStockError(displayName, item.variantId);
       }
       // El precio manual y el 10% de Caja viven en cashSale: la tienda no puede mandarlos. Su 10% sale de arriba, nunca del navegador.
       const unitPrice = posUnitPriceCents(Number(row.priceCents), { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale ? input.cashSale.cashDiscount : isWebCashPickup });
@@ -1739,7 +1747,10 @@ export async function createOrder(input: {
       for (const allocation of line.allocations) {
         // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
         const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
-        if (!result.count) throw outOfStockError(await variantDisplayName(line.variantId, tx), line.variantId);
+        if (!result.count) {
+          const name = await variantDisplayName(line.variantId, tx);
+          throw input.cashSale ? new Error(stockShortageMessage(name, 0)) : outOfStockError(name, line.variantId);
+        }
         await insertOrderAllocation(tx, Number(order.id), line.variantId, allocation.branchId, allocation.quantity);
       }
     }
@@ -1977,13 +1988,15 @@ export async function createWholesaleOrder(input: {
     const linesByVariant = new Map<number, { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }>();
     for (const item of merged.values()) {
       const [row] = await tx`
-        SELECT v.price_cents AS "priceCents", i.quantity AS stock
+        SELECT v.price_cents AS "priceCents", i.quantity AS stock, v.label, p.name, p.brand, b.name AS "branchName"
         FROM variants v
-        JOIN inventory i ON i.variant_id = v.id AND i.branch_id = ${item.branchId}
+        JOIN products p ON p.id = v.product_id
+        JOIN branches b ON b.id = ${item.branchId}
+        JOIN inventory i ON i.variant_id = v.id AND i.branch_id = b.id
         WHERE v.id = ${item.variantId}
-      ` as unknown as { priceCents: number; stock: number }[];
+      ` as unknown as { priceCents: number; stock: number; label: string; name: string; brand: string; branchName: string }[];
       if (!row) throw new Error("Producto o sucursal inválidos.");
-      if (Number(row.stock) < item.quantity) throw new Error("No hay stock suficiente para el pedido mayorista.");
+      if (Number(row.stock) < item.quantity) throw new Error(stockShortageMessage(cajaLineName(row), Number(row.stock), row.branchName));
       const line = linesByVariant.get(item.variantId) ?? { variantId: item.variantId, quantity: 0, unitPrice: Number(row.priceCents), allocations: [] };
       line.quantity += item.quantity;
       line.allocations.push({ branchId: item.branchId, quantity: item.quantity });
@@ -2351,8 +2364,18 @@ export async function emptyTrash() {
   await purgeTrashItems();
 }
 
+// Corre cada vez que se lee la papelera, y el panel la lee en cada render. Sin nada vencido no toca la base:
+// subir la versión de sincronización en una lectura hace que LiveSync refresque, ese refresco la vuelva a subir, y así cada 2 s.
 export async function purgeExpiredTrashItems() {
-  await purgeTrashItems(30);
+  await ensureSchema();
+  const [{ expired }] = await sql`
+    SELECT EXISTS (SELECT 1 FROM orders WHERE deleted_at < NOW() - INTERVAL '30 days')
+      OR EXISTS (SELECT 1 FROM products WHERE purged_at IS NULL AND archived_at < NOW() - INTERVAL '30 days')
+      OR EXISTS (SELECT 1 FROM subcategories WHERE deleted_at < NOW() - INTERVAL '30 days')
+      OR EXISTS (SELECT 1 FROM categories WHERE deleted_at < NOW() - INTERVAL '30 days')
+      OR EXISTS (SELECT 1 FROM wholesale_clients WHERE deleted_at < NOW() - INTERVAL '30 days') AS expired
+  ` as unknown as { expired: boolean }[];
+  if (expired) await purgeTrashItems(30);
 }
 
 export async function restoreTrashItem(input: { type: TrashItem["type"]; id: string | number }) {

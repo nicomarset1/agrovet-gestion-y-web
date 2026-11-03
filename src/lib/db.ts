@@ -259,7 +259,7 @@ export async function createOrder(input: {
   distanceKm?: number | null;
   items: CartItemPayload[];
   // Solo para ventas de Caja desde el panel (server action con sesión de admin).
-  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
+  cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[] };
   // Total que vio el cliente: si no coincide con el que calcula el servidor, no se crea el pedido.
   expectedTotalCents?: number;
 }) {

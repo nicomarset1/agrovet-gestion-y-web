@@ -5,14 +5,13 @@
 import Image from "next/image";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, PackagePlus, Pencil, Search, Trash2, X, Zap } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { useFormStatus } from "react-dom";
 import { formatPrice } from "@/lib/format";
 import { productImageSrc } from "@/lib/product-image";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { Checkbox, NumberInput, Switch } from "@/components/ui/form-controls";
 import type { Category, Product } from "@/lib/types";
 import { createProductAction, deleteProductAction, updateProductActiveAction, updateProductAction } from "@/app/gestion-agrovet/actions";
-import { AdminModal, SectionHeader, UNCATEGORIZED_CATEGORY_VALUE, UNCATEGORIZED_SUBCATEGORY_SLUG, leafCategories } from "@/components/admin/shared";
+import { AdminModal, SectionHeader, SubmitButton, UNCATEGORIZED_CATEGORY_VALUE, UNCATEGORIZED_SUBCATEGORY_SLUG, leafCategories } from "@/components/admin/shared";
 import type { AdminModalState, Subcategory } from "@/components/admin/shared";
 import "./productos.css";
 
@@ -236,11 +235,6 @@ function categoryOptions(categories: Category[], valueOf: (category: Category) =
   }));
 }
 
-function SubmitButton({ children, pendingText, className = "button button-primary", disabled }: { children: React.ReactNode; pendingText: string; className?: string; disabled?: boolean }) {
-  const { pending } = useFormStatus();
-  return <button className={className} disabled={disabled || pending} type="submit">{pending ? pendingText : children}</button>;
-}
-
 // ===== Modal de alta y edición =====
 
 // originalStock: lo que había al abrir la ficha. Viaja oculto para que el servidor guarde solo lo que cambió y no pise las ventas del medio.
@@ -287,20 +281,24 @@ function ModalSection({ title, hint, children }: { title: string; hint?: string;
 
 export function ProductModal({
   categories,
-  returnTo,
   subcategories,
   onClose,
   mode,
   product,
 }: {
   categories: Category[];
-  returnTo: string;
   subcategories: Subcategory[];
   onClose: () => void;
   mode: "create" | "edit";
   product?: Product;
 }) {
-  const action = mode === "create" ? createProductAction : updateProductAction;
+  // Guardar no navega: se cierra el modal y el listado conserva búsqueda, filtros y página. Si la acción
+  // falla, el error sigue yendo a la pantalla de error, como antes.
+  const save = mode === "create" ? createProductAction : updateProductAction;
+  const action = async (formData: FormData) => {
+    await save(formData);
+    onClose();
+  };
   const selectableCategories = leafCategories(categories);
   const initialCategoryId = product
     ? selectableCategories.find((category) => category.slug === product.categorySlug)?.id ?? null
@@ -379,7 +377,6 @@ export function ProductModal({
         }
       }}>
         {mode === "edit" && product ? <input name="id" type="hidden" value={product.id} /> : null}
-        <input name="returnTo" type="hidden" value={returnTo} />
         <input name="color" type="hidden" value={product?.color ?? "#5b0f73"} />
         {keepTrashedCategory ? (
           <>
@@ -712,13 +709,11 @@ function QuickEdit({
   onCancel,
   onFullEdit,
   product,
-  returnTo,
 }: {
   categories: Category[];
   onCancel: () => void;
   onFullEdit: () => void;
   product: Product;
-  returnTo: string;
 }) {
   const [rows, setRows] = useState<VariantRow[]>(() => variantRowsOf(product));
   const category = categories.find((item) => item.slug === product.categorySlug);
@@ -739,9 +734,16 @@ function QuickEdit({
   }
 
   return (
-    <form action={updateProductAction} className="product-quick" aria-label={`Edición rápida de ${product.name}`}>
+    <form
+      action={async (formData) => {
+        await updateProductAction(formData);
+        // Guardar sin cambios no mueve la firma de precios y stock: la edición se cierra acá, no solo por la firma.
+        onCancel();
+      }}
+      className="product-quick"
+      aria-label={`Edición rápida de ${product.name}`}
+    >
       <input name="id" type="hidden" value={product.id} />
-      <input name="returnTo" type="hidden" value={returnTo} />
       <input name="name" type="hidden" value={product.name} />
       <input name="brand" type="hidden" value={product.brand} />
       <input name="categoryId" type="hidden" value={categoryId} />
@@ -839,13 +841,11 @@ function SortHeader({ label, sortKey, sort, onSort, className }: { label: string
 export function ProductsSection({
   categories,
   openModal,
-  productReturnTo,
   products,
   subcategories,
 }: {
   categories: Category[];
   openModal: (modal: AdminModalState) => void;
-  productReturnTo: string;
   products: Product[];
   subcategories: Subcategory[];
 }) {
@@ -1059,8 +1059,9 @@ export function ProductsSection({
                     <td className="products-col-active">
                       <form action={updateProductActiveAction}>
                         <input name="id" type="hidden" value={product.id} />
-                        <input name="returnTo" type="hidden" value={productReturnTo} />
+                        {/* Con la clave: al terminar la acción React devuelve los campos sueltos a su valor inicial, y sin remontar volvería al estado anterior. */}
                         <Switch
+                          key={product.active ? "activo" : "inactivo"}
                           aria-label={product.active ? `Desactivar ${product.name} de la tienda` : `Activar ${product.name} en la tienda`}
                           defaultChecked={product.active}
                           label={<span className="sr-only">En tienda</span>}
@@ -1094,7 +1095,6 @@ export function ProductsSection({
                           onCancel={() => setQuickEdit(null)}
                           onFullEdit={() => { setQuickEdit(null); openModal({ type: "product-edit", product }); }}
                           product={product}
-                          returnTo={productReturnTo}
                         />
                       </td>
                     </tr>

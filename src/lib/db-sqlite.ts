@@ -11,6 +11,7 @@ import {
   catalogVersion,
 } from "./catalog-data";
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
+import { cajaLineName, cajaPriceChangedMessage, cajaUnavailableMessage, stockShortageMessage } from "./caja";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
 import { resizeAllocations, settleEditedOrder } from "./order-edit";
 import { OrderRejectedError, outOfStockError, priceChangedError, productDisplayName, unavailableProductError } from "./order-errors";
@@ -1595,7 +1596,7 @@ function isOrderCodeConflict(error: unknown) {
 }
 
 export function createOrder(input: {
-  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
+  name: string; phone: string; email: string; fulfillment: string; branchId: number; source: string; paymentMethod?: "mercado_pago" | "efectivo"; address?: string; distanceKm?: number | null; items: CartItemPayload[]; cashSale?: { source: string; cashDiscount?: boolean; manualPrices?: Record<number, number>; expectedPrices?: Record<number, number>; extras?: OrderExtraRecord[] }; expectedTotalCents?: number;
 }) {
   return db.transaction(() => {
     // Primero se liberan las reservas vencidas, así el stock que se valida está al día.
@@ -1621,21 +1622,28 @@ export function createOrder(input: {
     const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const row = db.prepare(`
-        SELECT v.price_cents AS priceCents, p.brand, p.name, v.label,
-          (p.active = 1 AND p.archived_at = '' AND p.purged_at = '') AS available
+        SELECT v.price_cents AS priceCents, p.brand, p.name, v.label, p.active, p.archived_at AS archivedAt, p.purged_at AS purgedAt
         FROM variants v
         JOIN products p ON p.id = v.product_id
         WHERE v.id = ?
-      `).get(item.variantId) as { priceCents: number; brand: string; name: string; label: string; available: number } | undefined;
+      `).get(item.variantId) as { priceCents: number; brand: string; name: string; label: string; active: number; archivedAt: string; purgedAt: string } | undefined;
       const displayName = productDisplayName(row);
-      if (!row || !row.available) throw unavailableProductError(displayName, item.variantId);
+      // La Caja vende también lo desactivado en la tienda (sigue en el local); lo archivado o borrado, no.
+      const available = Boolean(row) && !row?.archivedAt && !row?.purgedAt && (Boolean(input.cashSale) || Boolean(row?.active));
+      if (!row || !available) throw input.cashSale ? new Error(cajaUnavailableMessage(row ? cajaLineName(row) : "Un producto de la venta")) : unavailableProductError(displayName, item.variantId);
       if (item.quantity < 1) throw outOfStockError(displayName, item.variantId);
+      const lineName = cajaLineName(row);
+      // Lo que la pantalla le mostró al cajero: si el catálogo cambió en el medio, no se cobra otro precio sin avisar.
+      const expected = input.cashSale?.expectedPrices?.[item.variantId];
+      if (expected !== undefined && input.cashSale?.manualPrices?.[item.variantId] === undefined && expected !== row.priceCents) {
+        throw new Error(cajaPriceChangedMessage(lineName, row.priceCents));
+      }
       const allocations = deliveryPlan?.variantAllocations.find((entry) => entry.variantId === item.variantId)?.allocations ?? [{ branchId: resolvedBranchId, quantity: item.quantity }];
       const totalAllocated = allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
       if (totalAllocated !== item.quantity) throw outOfStockError(displayName, item.variantId);
       for (const allocation of allocations) {
         const stock = db.prepare("SELECT quantity FROM inventory WHERE variant_id = ? AND branch_id = ?").get(item.variantId, allocation.branchId) as { quantity?: number } | undefined;
-        if ((stock?.quantity ?? 0) < allocation.quantity) throw outOfStockError(displayName, item.variantId);
+        if ((stock?.quantity ?? 0) < allocation.quantity) throw input.cashSale ? new Error(stockShortageMessage(lineName, stock?.quantity ?? 0)) : outOfStockError(displayName, item.variantId);
       }
       // El precio manual y el 10% de Caja viven en cashSale: la tienda no puede mandarlos. Su 10% sale de arriba, nunca del navegador.
       const priceCents = posUnitPriceCents(row.priceCents, { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale ? input.cashSale.cashDiscount : isWebCashPickup });
@@ -1672,7 +1680,10 @@ export function createOrder(input: {
       for (const allocation of line.allocations) {
         // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
         const result = deduct.run(allocation.quantity, line.variantId, allocation.branchId, allocation.quantity);
-        if (result.changes === 0) throw outOfStockError(variantDisplayName(line.variantId), line.variantId);
+        if (result.changes === 0) {
+          const name = variantDisplayName(line.variantId);
+          throw input.cashSale ? new Error(stockShortageMessage(name, 0)) : outOfStockError(name, line.variantId);
+        }
         insertOrderAllocation.run(order.lastInsertRowid, line.variantId, allocation.branchId, allocation.quantity);
       }
     }
@@ -1895,13 +1906,15 @@ export function createWholesaleOrder(input: {
     const linesByVariant = new Map<number, { variantId: number; quantity: number; unitPrice: number; allocations: { branchId: number; quantity: number }[] }>();
     for (const item of merged.values()) {
       const row = db.prepare(`
-        SELECT v.price_cents AS priceCents, i.quantity AS stock
+        SELECT v.price_cents AS priceCents, i.quantity AS stock, v.label, p.name, p.brand, b.name AS branchName
         FROM variants v
-        JOIN inventory i ON i.variant_id = v.id AND i.branch_id = ?
+        JOIN products p ON p.id = v.product_id
+        JOIN branches b ON b.id = ?
+        JOIN inventory i ON i.variant_id = v.id AND i.branch_id = b.id
         WHERE v.id = ?
-      `).get(item.branchId, item.variantId) as { priceCents: number; stock: number } | undefined;
+      `).get(item.branchId, item.variantId) as { priceCents: number; stock: number; label: string; name: string; brand: string; branchName: string } | undefined;
       if (!row) throw new Error("Producto o sucursal inválidos.");
-      if (row.stock < item.quantity) throw new Error("No hay stock suficiente para el pedido mayorista.");
+      if (row.stock < item.quantity) throw new Error(stockShortageMessage(cajaLineName(row), row.stock, row.branchName));
       const line = linesByVariant.get(item.variantId) ?? { variantId: item.variantId, quantity: 0, unitPrice: row.priceCents, allocations: [] };
       line.quantity += item.quantity;
       line.allocations.push({ branchId: item.branchId, quantity: item.quantity });
@@ -2359,8 +2372,17 @@ export function emptyTrash() {
   purgeTrashItems();
 }
 
+// Corre cada vez que se lee la papelera, y el panel la lee en cada render. Sin nada vencido no toca la base:
+// subir la versión de sincronización en una lectura hace que LiveSync refresque, ese refresco la vuelva a subir, y así cada 2 s.
 export function purgeExpiredTrashItems() {
-  purgeTrashItems(30);
+  const { expired } = db.prepare(`
+    SELECT EXISTS (SELECT 1 FROM orders WHERE deleted_at != '' AND deleted_at < datetime('now', '-30 days'))
+      OR EXISTS (SELECT 1 FROM products WHERE archived_at != '' AND purged_at = '' AND archived_at < datetime('now', '-30 days'))
+      OR EXISTS (SELECT 1 FROM subcategories WHERE deleted_at != '' AND deleted_at < datetime('now', '-30 days'))
+      OR EXISTS (SELECT 1 FROM categories WHERE deleted_at != '' AND deleted_at < datetime('now', '-30 days'))
+      OR EXISTS (SELECT 1 FROM wholesale_clients WHERE deleted_at != '' AND deleted_at < datetime('now', '-30 days')) AS expired
+  `).get() as { expired: number };
+  if (expired) purgeTrashItems(30);
 }
 
 export function restoreTrashItem(input: { type: TrashItem["type"]; id: string | number }) {

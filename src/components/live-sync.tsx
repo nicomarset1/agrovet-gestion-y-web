@@ -14,11 +14,14 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
   const versionRef = useRef(initialVersion);
   const timerRef = useRef<number | null>(null);
   const delayRef = useRef(isPanelPath(pathname) ? adminDelay : publicBaseDelay);
-  const pollingRef = useRef(false);
-  const pollAgainRef = useRef(false);
 
   useEffect(() => {
     let active = true;
+    // Propios de cada efecto: compartidos entre efectos, una consulta en vuelo al cambiar de ruta (o en el doble
+    // efecto de desarrollo) dejaba la siguiente en manos del efecto viejo, que ya no hacía nada, y el panel
+    // no se volvía a enterar de los cambios hasta recuperar el foco.
+    let polling = false;
+    let pollAgain = false;
     const isAdmin = isPanelPath(pathname);
     const baseDelay = isAdmin ? adminDelay : publicBaseDelay;
     const maxDelay = isAdmin ? adminDelay : publicMaxDelay;
@@ -35,8 +38,8 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
 
     async function poll() {
       if (!active) return;
-      if (pollingRef.current) {
-        pollAgainRef.current = true;
+      if (polling) {
+        pollAgain = true;
         return;
       }
       if (timerRef.current !== null) {
@@ -48,7 +51,7 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
         return;
       }
 
-      pollingRef.current = true;
+      polling = true;
       try {
         const response = await fetch("/api/sync-version", { cache: "no-store" });
         if (response.ok) {
@@ -66,11 +69,11 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
       } catch {
         delayRef.current = baseDelay;
       } finally {
-        pollingRef.current = false;
+        polling = false;
       }
 
-      if (pollAgainRef.current) {
-        pollAgainRef.current = false;
+      if (pollAgain) {
+        pollAgain = false;
         void poll();
         return;
       }
@@ -93,7 +96,6 @@ export function LiveSync({ initialVersion }: { initialVersion: number }) {
 
     return () => {
       active = false;
-      pollAgainRef.current = false;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       window.removeEventListener("focus", pollNow);
       window.removeEventListener("online", pollNow);
