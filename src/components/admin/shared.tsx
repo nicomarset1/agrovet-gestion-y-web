@@ -599,6 +599,15 @@ function OrderStatusButton({
 }) {
   return (
     <form action={updateOrderAction} className="admin-order-status-form">
+      <OrderStatusFields order={order} returnTo={returnTo} status={status} />
+      <button className="button button-light" type="submit">{label}</button>
+    </form>
+  );
+}
+
+function OrderStatusFields({ order, returnTo, status }: { order: OrderRecord; returnTo: string; status: string }) {
+  return (
+    <>
       <input name="id" type="hidden" value={order.id} />
       <input name="customerName" type="hidden" value={order.customerName} />
       <input name="phone" type="hidden" value={order.phone} />
@@ -617,7 +626,20 @@ function OrderStatusButton({
           <input name="itemQuantity" type="hidden" value={item.quantity} />
         </div>
       ))}
-      <button className="button button-light" type="submit">{label}</button>
+    </>
+  );
+}
+
+// Salida de una revisión: alguien ya miró el pago y el pedido sigue como uno normal. Si no tenía stock
+// tomado lo toma ahora, y si no alcanza lo dice en la misma tarjeta sin cambiar nada.
+function ReviewDoneButton({ order, returnTo }: { order: OrderRecord; returnTo: string }) {
+  const [state, save, saving] = useActionState(saveOrderEditAction, null);
+  const nextStatus = order.fulfillment.toLowerCase().includes("envio") ? "Pendiente de envío" : "Pendiente de retiro";
+  return (
+    <form action={save} className="admin-order-status-form">
+      <OrderStatusFields order={order} returnTo={returnTo} status={nextStatus} />
+      <button className="button button-light" disabled={saving} type="submit">{saving ? "Guardando…" : "Revisado"}</button>
+      {state && "error" in state ? <p className="admin-order-payment-note" role="alert">{state.error}</p> : null}
     </form>
   );
 }
@@ -680,11 +702,15 @@ export function PendingOrderCard({
       <div className="admin-pending-card-footer">
         <div className="admin-order-status-actions">
           {showStatusActions && cancelOnly ? (
-            onCancelOrder ? (
-              <button className="button button-light" onClick={() => onCancelOrder(order)} type="button">Cancelar</button>
-            ) : (
-              <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
-            )
+            <>
+              {/* Con una devolución de Mercado Pago no hay nada que entregar: solo se puede cancelar. */}
+              {review && order.status.trim() !== refundReviewStatus ? <ReviewDoneButton order={order} returnTo={returnTo} /> : null}
+              {onCancelOrder ? (
+                <button className="button button-light" onClick={() => onCancelOrder(order)} type="button">Cancelar</button>
+              ) : (
+                <OrderStatusButton label="Cancelar" order={order} returnTo={returnTo} status="Cancelado" />
+              )}
+            </>
           ) : showStatusActions ? (
             order.fulfillment.toLowerCase().includes("envio") ? (
               <>
@@ -746,6 +772,8 @@ export function WebOrderStatusModal({
   const [refundMethod, setRefundMethod] = useState("");
   const [refundMissing, setRefundMissing] = useState(false);
   const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installmentsLabel(installments)})` : paymentMethod;
+  // El pedido se guardó con el 10% de efectivo: cobrarlo con otro medio no lo recalcula, y conviene saberlo antes de cobrar.
+  const cashPriceWarning = !isCancellation && isWebOrder(order) && /efectivo/i.test(order.paymentMethod) && order.paidCents < order.totalCents && paymentMethod !== "Efectivo";
   return (
     <AdminModal
       dismissible={!submitting}
@@ -824,6 +852,11 @@ export function WebOrderStatusModal({
                 <Select ariaLabelledBy={`web-order-${order.id}-installments`} onChange={setInstallments} options={INSTALLMENT_OPTIONS} value={installments} />
               </div>
             ) : null}
+            <div aria-live="polite" className={`admin-pos-reveal admin-span-2${cashPriceWarning ? " is-open" : ""}`} inert={!cashPriceWarning}>
+              <div>
+                <p className="admin-order-payment-note">Este pedido tiene el precio con 10% por pago en efectivo. Con otro medio el sistema no lo recalcula: queda en {formatPrice(order.totalCents)}.</p>
+              </div>
+            </div>
           </>
         )}
         <div className="admin-detail-summary compact admin-span-2">
