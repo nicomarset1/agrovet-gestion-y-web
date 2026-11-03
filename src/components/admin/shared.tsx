@@ -7,6 +7,9 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Trash2, X } from "lucide-react";
 import { useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+import { useFormStatus } from "react-dom";
+import { ARGENTINA_TIME_ZONE, addDaysToKey, addMonthsToKey, argentinaDayKey, argentinaMidnight, parseOrderDate } from "@/lib/argentina-time";
+import { isUnpaidOnlineOrder } from "@/lib/sales-payment";
 import { extrasTotalCents, fixInstallmentsText, formatPrice, installmentsLabel } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { NumberInput } from "@/components/ui/form-controls";
@@ -14,6 +17,7 @@ import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } fr
 import { isSpecialCategorySlug } from "@/lib/special-categories";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { saveOrderEditAction, updateOrderAction, updateStockAction } from "@/app/gestion-agrovet/actions";
+import type { OrderEditState } from "@/app/gestion-agrovet/actions";
 
 export type Subcategory = { slug: string; name: string; description: string; categoryId: number | null; categorySlug: string | null; categoryName: string | null; count: number };
 
@@ -27,7 +31,11 @@ export const UNCATEGORIZED_CATEGORY_VALUE = "__none";
 
 export const UNCATEGORIZED_SUBCATEGORY_SLUG = "sin-subcategoria";
 
-const ADMIN_TIME_ZONE = "America/Argentina/Buenos_Aires";
+// Se deshabilita mientras el formulario guarda: un doble clic no suma ni crea dos veces.
+export function SubmitButton({ children, pendingText, className = "button button-primary", disabled }: { children: ReactNode; pendingText: string; className?: string; disabled?: boolean }) {
+  const { pending } = useFormStatus();
+  return <button className={className} disabled={disabled || pending} type="submit">{pending ? pendingText : children}</button>;
+}
 
 export function AdminModal({
   title,
@@ -197,22 +205,19 @@ export type DashboardDetail =
   | { type: "branch-stock" };
 
 export function toDate(value: string) {
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized)) return new Date(normalized);
-  return new Date(`${normalized}Z`);
+  return parseOrderDate(value);
 }
 
 export function formatAdminDateTime(value: string | Date, options: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat("es-AR", { timeZone: ADMIN_TIME_ZONE, ...options })
+  return new Intl.DateTimeFormat("es-AR", { timeZone: ARGENTINA_TIME_ZONE, ...options })
     .format(typeof value === "string" ? toDate(value) : value)
     .replace(/[\u00a0\u202f]/g, " ");
 }
 
+// Los días del panel son los de Argentina, igual que el PDF: con la hora del navegador, una misma venta
+// podía caer en días distintos en cada lugar.
 export function dateKey(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return argentinaDayKey(value);
 }
 
 export function isCashOrder(order: OrderRecord) {
@@ -238,7 +243,7 @@ export function isReservedWebOrder(order: OrderRecord) {
 
 // Sin cobro todavía: no suma ingresos ni entra en pendientes de retiro/envío (los reservados van en su propio grupo).
 export function isAwaitingOnlinePayment(order: OrderRecord) {
-  return isReservedWebOrder(order) || (isWebOrder(order) && /mercado pago/i.test(order.paymentMethod) && order.paidCents < order.totalCents && /pendiente de pago|esperando pago/i.test(order.status));
+  return isUnpaidOnlineOrder(order);
 }
 
 // "Reservado · vence 23:15" (o "vence 30/09 09:15" si es otro día).
@@ -270,16 +275,13 @@ export function trashDaysUntilPurge(deletedAt: string) {
   return Math.max(0, Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
-function dashboardBranchId(order: OrderRecord) {
-  return getPrimaryOrderBranchId(order);
-}
-
-export function belongsToDashboardBranch(order: OrderRecord, branchId: number) {
-  return dashboardBranchId(order) === branchId;
-}
-
 export function isPendingWebOrder(order: OrderRecord) {
   return isWebOrder(order) && !isAwaitingOnlinePayment(order) && !/entregado|completado|cancelado|cerrado|retirado/i.test(order.status);
+}
+
+// El mismo filtro para la tarjeta del Dashboard y su detalle: el pedido cuenta en toda sucursal que tenga que prepararlo.
+export function pendingWebOrdersForBranch(orders: OrderRecord[], branchId: number) {
+  return orders.filter((order) => isPendingWebOrder(order) && orderHasBranch(order, branchId));
 }
 
 export function isCompletedWebOrder(order: OrderRecord) {
@@ -330,13 +332,6 @@ export function getOrderBranchName(order: OrderRecord) {
   return "Mixto";
 }
 
-function getPrimaryOrderBranchId(order: OrderRecord) {
-  const buckets = getOrderBranchBuckets(order);
-  if (!buckets.length) return order.branchId;
-  const ranked = [...buckets].sort((a, b) => b.quantity - a.quantity || a.branchId - b.branchId);
-  return ranked[0].branchId;
-}
-
 export function orderHasBranch(order: OrderRecord, branchId: number) {
   return getOrderBranchBuckets(order).some((bucket) => bucket.branchId === branchId);
 }
@@ -368,9 +363,7 @@ function getOrderDisplayItems(order: OrderRecord, branchId?: number) {
 }
 
 export function startOfDay(value: Date) {
-  const copy = new Date(value);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
+  return argentinaMidnight(dateKey(value));
 }
 
 export function formatDayLabel(value: Date) {
@@ -378,10 +371,9 @@ export function formatDayLabel(value: Date) {
 }
 
 function weekStart(value: Date) {
-  const copy = startOfDay(value);
-  const day = (copy.getDay() + 6) % 7;
-  copy.setDate(copy.getDate() - day);
-  return copy;
+  const key = dateKey(value);
+  const day = (new Date(`${key}T12:00:00Z`).getUTCDay() + 6) % 7;
+  return argentinaMidnight(addDaysToKey(key, -day));
 }
 
 export function weekKey(value: Date) {
@@ -389,19 +381,15 @@ export function weekKey(value: Date) {
 }
 
 export function monthKey(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+  return dateKey(value).slice(0, 7);
 }
 
 export function startOfMonth(value: Date) {
-  const copy = startOfDay(value);
-  copy.setDate(1);
-  return copy;
+  return argentinaMidnight(`${monthKey(value)}-01`);
 }
 
 function startOfYear(value: Date) {
-  const copy = startOfDay(value);
-  copy.setMonth(0, 1);
-  return copy;
+  return argentinaMidnight(`${dateKey(value).slice(0, 4)}-01-01`);
 }
 
 export function periodBounds(period: Period, anchor: Date) {
@@ -413,12 +401,13 @@ export function periodBounds(period: Period, anchor: Date) {
         : period === "month"
           ? startOfMonth(anchor)
           : startOfYear(anchor);
-  const end = new Date(start);
-  if (period === "day") end.setDate(end.getDate() + 1);
-  if (period === "week") end.setDate(end.getDate() + 7);
-  if (period === "month") end.setMonth(end.getMonth() + 1);
-  if (period === "year") end.setFullYear(end.getFullYear() + 1);
-  return { end, start };
+  const startKey = dateKey(start);
+  const endKey = period === "day"
+    ? addDaysToKey(startKey, 1)
+    : period === "week"
+      ? addDaysToKey(startKey, 7)
+      : addMonthsToKey(startKey, period === "month" ? 1 : 12);
+  return { end: argentinaMidnight(endKey), start };
 }
 
 export function buildAdminHref(base: string, params: Record<string, string | null | undefined>) {
@@ -440,12 +429,10 @@ export const PAYMENT_OPTIONS = ["Efectivo", "Tarjeta", "Transferencia", "QR"].ma
 export const INSTALLMENT_OPTIONS = ["1", "2", "3", "6", "12"].map((value) => ({ value, label: installmentsLabel(value) }));
 
 export function OrderModal({
-  returnTo,
   onClose,
   onRequestDelete,
   order,
 }: {
-  returnTo: string;
   onClose: () => void;
   onRequestDelete: (order: OrderRecord) => void;
   order: OrderRecord;
@@ -457,7 +444,15 @@ export function OrderModal({
   const [paymentMethod, setPaymentMethod] = useState(initialPaymentMethod);
   const [installments, setInstallments] = useState(initialInstallments);
   const [itemQuantities, setItemQuantities] = useState(() => order.items.map((item) => String(item.quantity)));
-  const [editState, saveEdit, savingEdit] = useActionState(saveOrderEditAction, null);
+  // Guardar no navega: se cierra el modal y lo demás queda como estaba (sección, venta en curso, filtros).
+  // Los datos nuevos llegan con la misma respuesta de la acción, por el revalidatePath.
+  const [editState, saveEdit, savingEdit] = useActionState(async (previous: OrderEditState, formData: FormData) => {
+    const result = await saveOrderEditAction(previous, formData);
+    if (result && "ok" in result) onClose();
+    return result;
+  }, null);
+  const editError = editState && "error" in editState ? editState.error : "";
+  const paymentChanged = isCashOrder(order) && paymentMethod !== initialPaymentMethod;
   const sourceValue = isCashOrder(order)
     ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments)})` : ""}`
     : order.source;
@@ -492,6 +487,12 @@ export function OrderModal({
                 <Select ariaLabelledBy={`order-${order.id}-installments`} onChange={setInstallments} options={INSTALLMENT_OPTIONS} value={installments} />
               </div>
             ) : null}
+            {/* Cambiar el medio corrige el registro, no el cobro: el 10% de efectivo o el recargo no se recalculan. */}
+            <div aria-live="polite" className={`admin-pos-reveal admin-span-2${paymentChanged ? " is-open" : ""}`} inert={!paymentChanged}>
+              <div>
+                <p className="admin-order-payment-note">El precio queda como se cobró ({formatPrice(order.totalCents)}). Cambiar el medio de pago no recalcula descuentos ni recargos.</p>
+              </div>
+            </div>
           </>
         ) : null}
         <input name="customerName" type="hidden" value={order.customerName} />
@@ -502,7 +503,6 @@ export function OrderModal({
         <input name="deliveryAddress" type="hidden" value={order.deliveryAddress} />
         <input name="deliveryDistanceKm" type="hidden" value={order.deliveryDistanceKm ?? ""} />
         <input name="status" type="hidden" value={order.status} />
-        <input name="returnTo" type="hidden" value={returnTo} />
         <input name="source" type="hidden" value={sourceValue} />
         <div className="admin-detail-summary compact admin-span-2">
           <strong>Datos del cliente</strong>
@@ -556,7 +556,7 @@ export function OrderModal({
           <strong>{formatPrice(itemTotalCents)}</strong>
           <span>{order.items.length + order.extras.length} {order.items.length + order.extras.length === 1 ? "producto" : "productos"} | {isCashOrder(order) ? "Venta de caja" : `Pedido ${order.fulfillment}`}</span>
         </div>
-        {editState?.error ? <p className="notice error admin-span-2" role="alert">{editState.error}</p> : null}
+        {editError ? <p className="notice error admin-span-2" role="alert">{editError}</p> : null}
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light danger" onClick={() => onRequestDelete(order)} type="button">
             <Trash2 size={16} /> Borrar registro
@@ -943,7 +943,7 @@ export function StockEditModal({
         </label>
         <div className="admin-modal-actions admin-span-2 admin-modal-actions-sticky">
           <button className="button button-light" onClick={onClose} type="button">Cancelar</button>
-          <button className="button button-primary" type="submit">Guardar stock</button>
+          <SubmitButton pendingText="Guardando…">Guardar stock</SubmitButton>
         </div>
       </form>
     </AdminModal>

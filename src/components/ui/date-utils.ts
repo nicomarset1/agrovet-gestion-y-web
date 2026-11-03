@@ -1,6 +1,8 @@
 // Helpers de fecha puros para DatePicker y DateRangePicker (portados de proyecto-conmebol).
 // Todo en horario local (no UTC) a propósito: son fechas de calendario sin hora, no timestamps.
 
+import { argentinaDayKey } from "@/lib/argentina-time";
+
 export const MONTHS_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 export const MONTHS_LONG = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 export const WEEKDAYS_SHORT = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
@@ -40,9 +42,9 @@ export function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0);
 }
 
+// "Hoy" es el día de Argentina, el mismo con el que el panel corta las ventas, aunque el navegador tenga otra zona.
 export function today() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return parseIsoDate(argentinaDayKey(new Date())) as Date;
 }
 
 /** "29 sep 2026" */

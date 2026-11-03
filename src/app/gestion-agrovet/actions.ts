@@ -150,33 +150,40 @@ const wholesaleOrderSchema = z.object({
   paymentMethod: z.string().trim().max(80).optional(),
   paidAmount: z.string().trim().optional().refine((value) => !value || Number.isFinite(Number(value)), "Monto inválido"),
   notes: z.string().trim().max(180).optional(),
-  returnTo: z.string().trim().min(1).optional(),
 });
 
-export async function createWholesaleOrderAction(formData: FormData) {
+export type WholesaleOrderState = { ok: true; code: string } | { error: string } | null;
+
+// El error vuelve al formulario: quedarse sin stock mientras se carga un pedido grande es un caso normal
+// y no debe llevar a la pantalla de error ni perder lo cargado. Sin redirect: el panel no se remonta.
+export async function createWholesaleOrderAction(_previous: WholesaleOrderState, formData: FormData): Promise<WholesaleOrderState> {
   await requireAdmin();
-  const parsed = wholesaleOrderSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) throw new Error("Pedido mayorista inválido.");
-  const variantIds = formData.getAll("itemVariantId").map((value) => z.coerce.number().int().positive().parse(value));
-  const quantities = formData.getAll("itemQuantity").map((value) => z.coerce.number().int().min(1).max(99999).parse(value));
-  const branchIds = formData.getAll("itemBranchId").map((value) => z.coerce.number().int().positive().parse(value));
-  if (!variantIds.length || variantIds.length !== quantities.length || quantities.length !== branchIds.length) {
-    throw new Error("Agregá productos válidos al pedido.");
+  try {
+    const parsed = wholesaleOrderSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) throw new Error("Revisá el cliente y el monto del pedido.");
+    const variantIds = formData.getAll("itemVariantId").map((value) => z.coerce.number().int().positive().parse(value));
+    const quantities = formData.getAll("itemQuantity").map((value) => z.coerce.number().int().min(1).max(99999).parse(value));
+    const branchIds = formData.getAll("itemBranchId").map((value) => z.coerce.number().int().positive().parse(value));
+    if (!variantIds.length || variantIds.length !== quantities.length || quantities.length !== branchIds.length) {
+      throw new Error("Agregá productos válidos al pedido.");
+    }
+    const order = await createWholesaleOrder({
+      clientId: parsed.data.clientId,
+      branchId: parsed.data.branchId,
+      paymentMethod: parsed.data.paymentMethod ?? "",
+      paidCents: parsed.data.paymentMethod === "Cuenta corriente"
+        ? Math.round(Number(parsed.data.paidAmount || "0") * 100)
+        : undefined,
+      notes: parsed.data.notes ?? "",
+      items: variantIds.map((variantId, index) => ({ variantId, quantity: quantities[index], branchId: branchIds[index] })),
+    });
+    revalidatePath("/");
+    revalidatePath("/tienda");
+    revalidatePath(panelPath);
+    return { ok: true, code: order.code };
+  } catch (error) {
+    return { error: error instanceof z.ZodError ? "Revisá las cantidades: cada producto tiene que llevar al menos 1 unidad." : error instanceof Error ? error.message : "No se pudo crear el pedido." };
   }
-  await createWholesaleOrder({
-    clientId: parsed.data.clientId,
-    branchId: parsed.data.branchId,
-    paymentMethod: parsed.data.paymentMethod ?? "",
-    paidCents: parsed.data.paymentMethod === "Cuenta corriente"
-      ? Math.round(Number(parsed.data.paidAmount || "0") * 100)
-      : undefined,
-    notes: parsed.data.notes ?? "",
-    items: variantIds.map((variantId, index) => ({ variantId, quantity: quantities[index], branchId: branchIds[index] })),
-  });
-  revalidatePath("/");
-  revalidatePath("/tienda");
-  revalidatePath(panelPath);
-  if (parsed.data.returnTo) redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 // Venta de mostrador (Caja). Camino propio con sesión de admin: /api/orders es solo para la tienda
@@ -190,6 +197,8 @@ const posSaleSchema = z.object({
     variantId: z.number().int().positive(),
     quantity: z.number().int().min(1).max(999),
     manualPriceCents: z.number().int().positive().max(posMaxUnitPriceCents).optional(),
+    // El precio de lista que veía el cajero: si el catálogo cambió, createOrder rechaza la venta en vez de cobrar otro.
+    expectedPriceCents: z.number().int().min(0).optional(),
   })).max(100),
   extras: z.array(z.object({
     description: z.string().trim().max(80),
@@ -209,6 +218,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
   if (paymentMethod === "Tarjeta" && !installments) return { ok: false, error: "Elegí la cantidad de cuotas." };
   // El precio manual vale solo para esta venta: no toca el precio del producto.
   const manualPrices = Object.fromEntries(items.flatMap((item) => (item.manualPriceCents === undefined ? [] : [[item.variantId, item.manualPriceCents]])));
+  const expectedPrices = Object.fromEntries(items.flatMap((item) => (item.manualPriceCents === undefined && item.expectedPriceCents !== undefined ? [[item.variantId, item.expectedPriceCents]] : [])));
   // Mismo formato que usan isCashOrder, el cierre del día y el reporte: "Caja / Tarjeta (3 cuotas)" o "(1 cuota)".
   const source = `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments ?? "1")})` : ""}`;
   try {
@@ -220,7 +230,7 @@ export async function closePosSaleAction(input: unknown): Promise<PosSaleResult>
       branchId,
       source,
       items: items.map(({ variantId, quantity }) => ({ variantId, quantity })),
-      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices, extras },
+      cashSale: { source, cashDiscount: paymentMethod === "Efectivo" && cashDiscount === true, manualPrices, expectedPrices, extras },
     });
     revalidatePath("/");
     revalidatePath("/tienda");
@@ -386,7 +396,6 @@ const productBaseSchema = z.object({
   active: z.enum(["on"]).optional(),
   // "1" cuando el panel no tocó una categoría que está en la papelera: se conserva (ver updateProduct).
   keepCategory: z.enum(["1"]).optional(),
-  returnTo: z.string().trim().min(1),
 });
 
 const variantRowSchema = z.object({
@@ -453,10 +462,10 @@ export async function createProductAction(formData: FormData) {
       ],
     })),
   });
+  // Sin redirect: conserva la búsqueda y la página del listado. revalidatePath trae los datos nuevos en esta misma respuesta.
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath(panelPath);
-  redirect(safeInternalPath(parsed.data.returnTo));
 }
 
 export async function deleteProductAction(formData: FormData) {
@@ -471,7 +480,8 @@ export async function deleteProductAction(formData: FormData) {
 const orderSchema = z.object({
   id: z.coerce.number().int().positive(),
   customerName: z.string().trim().min(2).max(120),
-  phone: z.string().trim().min(6).max(40),
+  // Sin largo mínimo: en un pedido mayorista es el teléfono (o el contacto) del cliente, que el modal no deja corregir.
+  phone: z.string().trim().min(1).max(40),
   email: z.string().trim().email(),
   fulfillment: z.string().trim().min(2).max(60),
   branchId: z.coerce.number().int().positive(),
@@ -491,20 +501,20 @@ export async function updateOrderAction(formData: FormData) {
   if (returnTo) redirect(safeInternalPath(returnTo));
 }
 
-export type OrderEditState = { error: string } | null;
+export type OrderEditState = { ok: true } | { error: string } | null;
 
 // Igual que updateOrderAction, pero el error vuelve al formulario: faltar stock al subir unidades es un caso
-// normal y no debe llevar a la pantalla de error ni perder lo cargado.
+// normal y no debe llevar a la pantalla de error ni perder lo cargado. Al guardar bien tampoco redirige: el
+// redirect remontaba el panel, perdía la venta en curso y llevaba siempre a Caja. revalidatePath ya trae los
+// datos nuevos en esta misma respuesta, sin remontar.
 export async function saveOrderEditAction(_previous: OrderEditState, formData: FormData): Promise<OrderEditState> {
   await requireAdmin();
-  let returnTo: string | undefined;
   try {
-    returnTo = await applyOrderUpdate(formData);
+    await applyOrderUpdate(formData);
+    return { ok: true };
   } catch (error) {
     return { error: error instanceof z.ZodError ? "Revisá las cantidades." : error instanceof Error ? error.message : "No se pudo guardar." };
   }
-  if (returnTo) redirect(safeInternalPath(returnTo));
-  return null;
 }
 
 async function applyOrderUpdate(formData: FormData) {
@@ -653,8 +663,8 @@ export async function updateProductAction(formData: FormData) {
       ],
     })),
   });
+  // Sin redirect: conserva la búsqueda y la página del listado. revalidatePath trae los datos nuevos en esta misma respuesta.
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath(panelPath);
-  redirect(safeInternalPath(parsed.data.returnTo));
 }

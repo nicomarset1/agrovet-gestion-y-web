@@ -20,7 +20,7 @@ import type { MouseEvent } from "react";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { useToast } from "@/components/toast-provider";
 import { logoutAction } from "@/app/gestion-agrovet/actions";
-import { BranchPickerModal, DeleteOrderModal, OrderModal, StockEditModal, WebOrderDistributionModal, WebOrderStatusModal, belongsToDashboardBranch, buildAdminHref, isPendingWebOrder, trashTypeSingular } from "@/components/admin/shared";
+import { BranchPickerModal, DeleteOrderModal, OrderModal, StockEditModal, WebOrderDistributionModal, WebOrderStatusModal, buildAdminHref, pendingWebOrdersForBranch, trashTypeSingular } from "@/components/admin/shared";
 import type { AdminModalState, DashboardDetail, Section, Subcategory, WebOrderStatus } from "@/components/admin/shared";
 import { DashboardDetailModal, DashboardSection } from "@/components/admin/dashboard";
 import { ProductDeleteModal, ProductModal, ProductsSection } from "@/components/admin/productos";
@@ -209,12 +209,11 @@ export function AdminConsole({
     const quantity = variant.stocks.find((stock) => stock.branchId === selectedBranch.id)?.quantity ?? 0;
     return quantity > 0 && quantity <= 3;
   }).length;
-  const pendingOrders = orders.filter((order) => belongsToDashboardBranch(order, selectedBranch.id) && isPendingWebOrder(order));
+  const pendingOrders = pendingWebOrdersForBranch(orders, selectedBranch.id);
   const sectionHref = (target: Section) => buildAdminHref(pathname, { section: target, detail: null, order: null, branch: String(selectedBranch.id) });
   const detailCloseHref = buildAdminHref(pathname, { section: "resumen", detail: null, order: null, branch: String(selectedBranch.id) });
   const currentDetailHref = detail ? buildAdminHref(pathname, { section: "resumen", detail: detail.type, order: null, branch: String(selectedBranch.id) }) : detailCloseHref;
   const branchHref = (branchId: number) => buildAdminHref(pathname, { section, detail: null, order: null, branch: String(branchId) });
-  const productReturnTo = sectionHref("productos");
   const categoryDeletionImpactById = useMemo(() => {
     const impactById = new Map<number, ReturnType<typeof getCategoryDeletionImpact>>();
     for (const category of categories) {
@@ -335,7 +334,6 @@ export function AdminConsole({
           <ProductsSection
             categories={categories}
             openModal={setModal}
-            productReturnTo={productReturnTo}
             products={products}
             subcategories={subcategories}
           />
@@ -438,8 +436,8 @@ export function AdminConsole({
           subcategory={modal.subcategory}
         />
       ) : null}
-      {modal?.type === "product-create" ? <ProductModal categories={categories} mode="create" onClose={() => setModal(null)} returnTo={productReturnTo} subcategories={subcategories} /> : null}
-      {modal?.type === "product-edit" ? <ProductModal categories={categories} mode="edit" onClose={() => setModal(null)} product={modal.product} returnTo={productReturnTo} subcategories={subcategories} /> : null}
+      {modal?.type === "product-create" ? <ProductModal categories={categories} mode="create" onClose={() => setModal(null)} subcategories={subcategories} /> : null}
+      {modal?.type === "product-edit" ? <ProductModal categories={categories} mode="edit" onClose={() => setModal(null)} product={modal.product} subcategories={subcategories} /> : null}
       {modal?.type === "product-delete" ? <ProductDeleteModal onClose={() => setModal(null)} product={modal.product} /> : null}
       {trashItemToRestore ? <RestoreTrashItemModal item={trashItemToRestore} onClose={() => setTrashItemToRestore(null)} returnTo={sectionHref("papelera")} /> : null}
       {emptyTrashOpen ? <EmptyTrashModal count={trashItems.length} items={trashItems} onClose={() => setEmptyTrashOpen(false)} returnTo={sectionHref("papelera")} /> : null}
@@ -481,7 +479,7 @@ export function AdminConsole({
           selectedBranch={selectedBranch}
         />
       ) : null}
-      {orderToEdit ? <OrderModal key={orderToEdit.id} onClose={() => setOrderToEdit(null)} onRequestDelete={requestDeleteOrder} order={orderToEdit} returnTo={sectionHref("punto-venta")} /> : null}
+      {orderToEdit ? <OrderModal key={orderToEdit.id} onClose={() => setOrderToEdit(null)} onRequestDelete={requestDeleteOrder} order={orderToEdit} /> : null}
       {orderToDelete ? <DeleteOrderModal onClose={() => setOrderToDelete(null)} order={orderToDelete} /> : null}
     </div>
   );

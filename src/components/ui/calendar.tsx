@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { addDays, addMonths, formatLongDate, getCalendarGrid, monthTitle, toIsoDate, WEEKDAYS_SHORT } from "./date-utils";
+import { addDays, addMonths, formatLongDate, getCalendarGrid, monthTitle, toIsoDate, today, WEEKDAYS_SHORT } from "./date-utils";
 
 export type DayState = {
   selected?: boolean;
@@ -37,7 +37,7 @@ export function Calendar({
   const gridRef = useRef<HTMLDivElement>(null);
   const focusedIso = toIsoDate(focusedDate);
   const grid = getCalendarGrid(focusedDate.getFullYear(), focusedDate.getMonth());
-  const todayIso = toIsoDate(new Date());
+  const todayIso = toIsoDate(today());
   const weeks = Array.from({ length: 6 }, (_, week) => grid.slice(week * 7, week * 7 + 7));
 
   // Si el foco ya estaba dentro de la grilla, acompaña al día activo al moverse con el teclado.

@@ -8,9 +8,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { formatPrice } from "@/lib/format";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { formatRange, parseIsoDate, toIsoDate } from "@/components/ui/date-utils";
+import { formatRange, parseIsoDate } from "@/components/ui/date-utils";
+import { addDaysToKey, addMonthsToKey, argentinaMidnight } from "@/lib/argentina-time";
+import { paymentKindLabel, paymentKindOf } from "@/lib/sales-payment";
 import type { Branch, OrderRecord, Product } from "@/lib/types";
-import { AdminModal, CountUp, PendingOrderCard, SectionHeader, buildAdminHref, dateKey, formatAdminDateTime, formatDayLabel, getOrderBranchRevenueCents, isCancelledOrder, isCashOrder, isPendingWebOrder, isWholesaleOrder, monthKey, startOfDay, startOfMonth, toDate, weekKey } from "@/components/admin/shared";
+import { AdminModal, CountUp, PendingOrderCard, SectionHeader, buildAdminHref, dateKey, formatAdminDateTime, formatDayLabel, getOrderBranchRevenueCents, isCancelledOrder, isCashOrder, isWholesaleOrder, monthKey, pendingWebOrdersForBranch, startOfDay, startOfMonth, toDate, weekKey } from "@/components/admin/shared";
 import type { DashboardDetail, WebOrderStatus } from "@/components/admin/shared";
 
 export function DashboardDetailModal({
@@ -86,7 +88,7 @@ export function DashboardDetailModal({
     [rangeFrom, rangeTo, selectedBranchOrders],
   );
   const todayOrders = useMemo(() => selectedBranchOrders.filter((order) => isCashOrder(order) && dateKey(toDate(order.createdAt)) === todayKey), [selectedBranchOrders, todayKey]);
-  const pendingOrders = useMemo(() => selectedBranchOrders.filter((order) => isPendingWebOrder(order)), [selectedBranchOrders]);
+  const pendingOrders = useMemo(() => pendingWebOrdersForBranch(orders, selectedBranch.id), [orders, selectedBranch.id]);
   const channelWeeks = useMemo(() => {
     const groups = new Map<string, Record<string, number>>();
     for (const order of orders) {
@@ -353,21 +355,18 @@ const DASHBOARD_PERIODS: { id: DashboardPeriod; label: string }[] = [
 
 const DASHBOARD_PALETTE = ["#5b0f73", "#8b5cf6", "#c4a5f5", "#2f9e5b", "#d58a18", "#6c5a7d"];
 
+// En milisegundos y no con setDate: los días son de Argentina, que no cambia de hora, aunque el navegador sí.
 function addDays(value: Date, days: number) {
-  const copy = new Date(value);
-  copy.setDate(copy.getDate() + days);
-  return copy;
+  return new Date(value.getTime() + days * 86_400_000);
 }
 
-// Período actual y el anterior equivalente, en hora local (igual que el resto del panel).
+// Período actual y el anterior equivalente, en hora de Argentina (igual que el resto del panel).
 function dashboardRanges(period: DashboardPeriod, now: Date, custom: DashboardCustomRange | null) {
   const today = startOfDay(now);
-  const customStart = custom ? parseIsoDate(custom.from) : null;
-  const customEnd = custom ? parseIsoDate(custom.to) : null;
-  if (period === "custom" && custom && customStart && customEnd) {
+  if (period === "custom" && custom && parseIsoDate(custom.from) && parseIsoDate(custom.to)) {
     // Rango elegido: el anterior es un tramo del mismo largo que termina justo antes.
-    const start = startOfDay(customStart);
-    const end = addDays(startOfDay(customEnd), 1);
+    const start = argentinaMidnight(custom.from);
+    const end = argentinaMidnight(addDaysToKey(custom.to, 1));
     const length = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
     const label = formatRange(custom.from, custom.to);
     return {
@@ -398,8 +397,7 @@ function dashboardRanges(period: DashboardPeriod, now: Date, custom: DashboardCu
     };
   }
   const monthStart = startOfMonth(now);
-  const previousMonthStart = new Date(monthStart);
-  previousMonthStart.setMonth(previousMonthStart.getMonth() - 1);
+  const previousMonthStart = argentinaMidnight(addMonthsToKey(dateKey(monthStart), -1));
   // Mes pasado hasta el mismo día, para comparar períodos del mismo largo.
   const elapsedDays = Math.round((today.getTime() - monthStart.getTime()) / 86_400_000) + 1;
   const previousEnd = addDays(previousMonthStart, elapsedDays);
@@ -413,15 +411,7 @@ function dashboardRanges(period: DashboardPeriod, now: Date, custom: DashboardCu
 }
 
 function orderPaymentLabel(order: OrderRecord) {
-  const cash = /^Caja \/ ([^(]+)/i.exec(order.source);
-  const raw = (cash ? cash[1] : order.paymentMethod || "").trim();
-  if (/mercado pago/i.test(raw)) return "Mercado Pago";
-  if (/efectivo/i.test(raw)) return "Efectivo";
-  if (/tarjeta/i.test(raw)) return "Tarjeta";
-  if (/transferencia/i.test(raw)) return "Transferencia";
-  if (/^qr$/i.test(raw)) return "QR";
-  if (/cuenta corriente/i.test(raw)) return "Cuenta corriente";
-  return raw || "Otro";
+  return paymentKindLabel(paymentKindOf(order));
 }
 
 function orderChannelLabel(order: OrderRecord) {
@@ -618,7 +608,7 @@ function DashboardOverview({
             ariaLabel="Elegir fechas del dashboard"
             className={`admin-dashboard-range${isCustom ? " is-active" : ""}`}
             from={isCustom ? customRange.from : ""}
-            max={toIsoDate(new Date())}
+            max={dateKey(new Date())}
             onChange={chooseCustomRange}
             placeholder="Elegir fechas"
             to={isCustom ? customRange.to : ""}

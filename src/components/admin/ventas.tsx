@@ -8,7 +8,9 @@ import { useMemo, useState } from "react";
 import { fixInstallmentsText, formatPrice } from "@/lib/format";
 import { Select } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { formatRange, startOfMonth, toIsoDate } from "@/components/ui/date-utils";
+import { formatRange } from "@/components/ui/date-utils";
+import { paymentFilterOptions, paymentKindLabel, paymentKindOf, salesChannelOf } from "@/lib/sales-payment";
+import type { SalesChannel } from "@/lib/sales-payment";
 import type { Branch, OrderRecord } from "@/lib/types";
 import {
   SectionHeader,
@@ -18,32 +20,15 @@ import {
   getOrderBranchRevenueCents,
   isAwaitingOnlinePayment,
   isCancelledOrder,
+  monthKey,
   orderHasBranch,
   toDate,
 } from "@/components/admin/shared";
 
 const PAGE_SIZE = 50;
 
-type SalesChannel = "all" | "store" | "web" | "wholesale";
+type ChannelFilter = "all" | SalesChannel;
 type SortKey = "date" | "code" | "customer" | "channel" | "payment" | "branch" | "total" | "status";
-
-// Mismos valores que el reporte PDF (parsePayment en /api/admin/reports/sales).
-const PAYMENT_FILTERS = [
-  { value: "all", label: "Todos los medios" },
-  { value: "efectivo", label: "Efectivo" },
-  { value: "tarjeta", label: "Tarjeta" },
-  { value: "transferencia", label: "Transferencia" },
-  { value: "qr", label: "QR" },
-  { value: "web", label: "Tienda online" },
-  { value: "mayorista", label: "Mayorista" },
-];
-
-function paymentKey(order: OrderRecord) {
-  const match = /Caja \/ ([^(]+)(?: \((\d+) cuotas?\))?/i.exec(order.source);
-  if (match) return match[1].trim().toLowerCase();
-  if (order.source.toLowerCase().includes("mayorista")) return "mayorista";
-  return order.source.toLowerCase().includes("tienda online") ? "web" : "otro";
-}
 
 function paymentLabel(order: OrderRecord) {
   const cash = /Caja \/ (.+)$/i.exec(order.source);
@@ -52,14 +37,11 @@ function paymentLabel(order: OrderRecord) {
   return fixInstallmentsText(order.paymentMethod || "Tienda online");
 }
 
-function channelOf(order: OrderRecord): Exclude<SalesChannel, "all"> {
-  const source = order.source.toLowerCase();
-  if (source.includes("caja")) return "store";
-  if (source.includes("mayorista")) return "wholesale";
-  return "web";
+function channelOf(order: OrderRecord) {
+  return salesChannelOf(order.source);
 }
 
-const CHANNEL_LABEL: Record<Exclude<SalesChannel, "all">, string> = { store: "Mostrador", web: "Tienda online", wholesale: "Mayorista" };
+const CHANNEL_LABEL: Record<SalesChannel, string> = { store: "Mostrador", web: "Tienda online", wholesale: "Mayorista" };
 
 export function VentasSection({
   branches,
@@ -74,11 +56,11 @@ export function VentasSection({
   orders: OrderRecord[];
   selectedBranch: Branch;
 }) {
-  const todayIso = toIsoDate(new Date());
-  const [from, setFrom] = useState(() => toIsoDate(startOfMonth(new Date())));
+  const todayIso = dateKey(new Date());
+  const [from, setFrom] = useState(() => `${monthKey(new Date())}-01`);
   const [to, setTo] = useState(todayIso);
   const [branchFilter, setBranchFilter] = useState(() => String(selectedBranch.id));
-  const [channel, setChannel] = useState<SalesChannel>("all");
+  const [channel, setChannel] = useState<ChannelFilter>("all");
   const [payment, setPayment] = useState("all");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "date", dir: -1 });
   const [page, setPage] = useState(1);
@@ -93,7 +75,7 @@ export function VentasSection({
     if (key < from || key > to) return false;
     if (branchId && !orderHasBranch(order, branchId)) return false;
     if (channel !== "all" && channelOf(order) !== channel) return false;
-    if (payment !== "all" && paymentKey(order) !== payment) return false;
+    if (payment !== "all" && paymentKindOf(order) !== payment) return false;
     return true;
   }), [branchId, channel, from, orders, payment, to]);
 
@@ -122,7 +104,8 @@ export function VentasSection({
   const averageCents = filtered.length ? Math.round(totalCents / filtered.length) : 0;
   const byPayment = new Map<string, number>();
   for (const order of filtered) {
-    const label = paymentLabel(order).replace(/ \(\d+ cuotas?\)$/, "");
+    // La misma clasificación que el filtro y el PDF: el desglose de un medio siempre da lo mismo que filtrar por él.
+    const label = paymentKindLabel(paymentKindOf(order));
     byPayment.set(label, (byPayment.get(label) ?? 0) + amountFor(order));
   }
   const paymentBreakdown = [...byPayment.entries()].sort((a, b) => b[1] - a[1]);
@@ -133,6 +116,7 @@ export function VentasSection({
   const firstRow = sorted.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
   const lastRow = Math.min(currentPage * PAGE_SIZE, sorted.length);
 
+  const paymentOptions = useMemo(() => [{ value: "all", label: "Todos los medios" }, ...paymentFilterOptions(orders)], [orders]);
   const resetPage = () => setPage(1);
   const toggleSort = (key: SortKey) => {
     setSort((current) => (current.key === key ? { key, dir: current.dir === 1 ? -1 : 1 } : { key, dir: key === "date" || key === "total" ? -1 : 1 }));
@@ -188,7 +172,7 @@ export function VentasSection({
         />
         <Select
           ariaLabel="Canal"
-          onChange={(value) => { setChannel(value as SalesChannel); resetPage(); }}
+          onChange={(value) => { setChannel(value as ChannelFilter); resetPage(); }}
           options={[
             { value: "all", label: "Todos los canales" },
             { value: "store", label: "Mostrador (Caja)" },
@@ -200,7 +184,7 @@ export function VentasSection({
         <Select
           ariaLabel="Medio de pago"
           onChange={(value) => { setPayment(value); resetPage(); }}
-          options={PAYMENT_FILTERS}
+          options={paymentOptions}
           value={payment}
         />
       </div>

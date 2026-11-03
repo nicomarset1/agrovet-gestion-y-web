@@ -3,11 +3,15 @@
 // Panel de gestión: sección Clientes (mayoristas y pedidos por mayor).
 
 import { ChevronRight, PackagePlus, Pencil, Search, Trash2, Users } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useActionState, useId, useMemo, useRef, useState } from "react";
+import { matchVariantsByCode } from "@/lib/caja";
 import { formatPrice } from "@/lib/format";
 import type { Branch, OrderRecord, Product, WholesaleClient } from "@/lib/types";
 import { createWholesaleClientAction, createWholesaleOrderAction, deleteWholesaleClientAction, updateOrderPaymentAction, updateWholesaleClientAction } from "@/app/gestion-agrovet/actions";
-import { AdminModal, SectionHeader, buildAdminHref, formatAdminDateTime } from "@/components/admin/shared";
+import type { WholesaleOrderState } from "@/app/gestion-agrovet/actions";
+import { useToast } from "@/components/toast-provider";
+import { AdminModal, SectionHeader, SubmitButton, buildAdminHref, formatAdminDateTime } from "@/components/admin/shared";
+import { VariantPicker } from "@/components/admin/variant-picker";
 import { NumberInput } from "@/components/ui/form-controls";
 import { Select } from "@/components/ui/select";
 
@@ -146,8 +150,29 @@ export function WholesaleClientsPanel({
   const [paymentMethod, setPaymentMethod] = useState("Cuenta corriente");
   const [installments, setInstallments] = useState("1");
   const [paidAmount, setPaidAmount] = useState("");
+  // Controlada y no con defaultValue: React limpia los campos sueltos al terminar la acción, y con error hay que conservarla.
+  const [notes, setNotes] = useState("");
   const [view, setView] = useState<"order" | "clients">("order");
+  // Código que coincide con más de una presentación: se elige en el selector, no se toma la primera.
+  const [codeChoice, setCodeChoice] = useState<{ code: string; variantIds: number[] } | null>(null);
+  const productQueryRef = useRef<HTMLInputElement>(null);
+  const { push } = useToast();
   const fieldId = useId();
+  const [orderState, submitOrder] = useActionState(async (previous: WholesaleOrderState, formData: FormData) => {
+    const result = await createWholesaleOrderAction(previous, formData);
+    if (result && "ok" in result) {
+      setClientId("");
+      setClientQuery("");
+      setQuery("");
+      setLines([]);
+      setPaymentMethod("Cuenta corriente");
+      setInstallments("1");
+      setPaidAmount("");
+      setNotes("");
+      push({ title: "Pedido mayorista creado", message: result.code, type: "success" });
+    }
+    return result;
+  }, null);
   const variants = useMemo(() => products.flatMap((product) => product.variants.map((variant) => ({
     variant,
     product,
@@ -195,10 +220,13 @@ export function WholesaleClientsPanel({
     setQuery("");
   };
   const submitSearch = () => {
-    const value = query.trim().toLowerCase();
-    if (!value) return;
-    const exact = variants.find((entry) => entry.variant.barcode.toLowerCase() === value || entry.variant.sku.toLowerCase() === value);
-    if (exact) addVariant(exact);
+    const matches = matchVariantsByCode(variants.map((entry) => ({ entry, barcode: entry.variant.barcode, sku: entry.variant.sku })), query);
+    if (matches.length === 1) addVariant(matches[0].entry);
+    else if (matches.length > 1) setCodeChoice({ code: query.trim(), variantIds: matches.map((match) => match.entry.variant.id) });
+  };
+  const closeCodeChoice = () => {
+    setCodeChoice(null);
+    requestAnimationFrame(() => productQueryRef.current?.focus());
   };
   const totalCents = lines.reduce((sum, line) => sum + line.priceCents * line.quantity, 0);
   if (view === "clients") {
@@ -262,8 +290,7 @@ export function WholesaleClientsPanel({
       <div className="admin-wholesale-layout">
         <section className="card admin-panel admin-wholesale-form" aria-labelledby="admin-wholesale-title">
           <h2 id="admin-wholesale-title">Crear pedido mayorista</h2>
-          <form action={createWholesaleOrderAction} className="admin-wholesale-steps">
-            <input name="returnTo" type="hidden" value={clientesHref} />
+          <form action={submitOrder} className="admin-wholesale-steps">
             <input name="clientId" type="hidden" value={clientId} />
             <input name="branchId" type="hidden" value={selectedBranch.id} />
             <div className="admin-wholesale-step">
@@ -329,6 +356,7 @@ export function WholesaleClientsPanel({
                     }
                   }}
                   placeholder="Producto, SKU o código de barras..."
+                  ref={productQueryRef}
                   value={query}
                 />
                 <button aria-label="Buscar producto" className="button button-primary" onClick={submitSearch} type="button"><Search size={18} /></button>
@@ -452,8 +480,9 @@ export function WholesaleClientsPanel({
                   <input name="paidAmount" type="hidden" value={Math.round(totalCents / 100)} />
                 )}
               </div>
-              <input aria-label="Notas del pedido" className="field" name="notes" placeholder="Notas: remito, entrega, observaciones..." />
+              <input aria-label="Notas del pedido" className="field" name="notes" onChange={(event) => setNotes(event.target.value)} placeholder="Notas: remito, entrega, observaciones..." value={notes} />
             </div>
+            {orderState && "error" in orderState ? <p className="notice error admin-form-error" role="alert">{orderState.error} No se creó el pedido.</p> : null}
             <div className="admin-wholesale-footer">
               <div className="admin-wholesale-total">
                 <span>Total</span>
@@ -464,7 +493,7 @@ export function WholesaleClientsPanel({
                 </small>
               </div>
               <div className="admin-wholesale-submit">
-                <button className="button button-primary" disabled={missingSteps.length > 0} type="submit">Crear pedido y descontar stock</button>
+                <SubmitButton disabled={missingSteps.length > 0} pendingText="Creando pedido…">Crear pedido y descontar stock</SubmitButton>
                 {missingSteps.length ? <small>Para crearlo: {missingSteps.join(", ")}.</small> : null}
               </div>
             </div>
@@ -518,7 +547,7 @@ export function WholesaleClientsPanel({
                 <div className="admin-table-row compact" key={order.id}>
                   <div>
                     <strong>{order.customerName}</strong>
-                    <small>{order.code} | {order.itemCount} unidades | {formatAdminDateTime(order.createdAt, { dateStyle: "short", timeStyle: "short" })}</small>
+                    <small>{order.code} | {order.itemCount} {order.itemCount === 1 ? "unidad" : "unidades"} | {formatAdminDateTime(order.createdAt, { dateStyle: "short", timeStyle: "short" })}</small>
                   </div>
                   <div className="admin-row-actions">
                     <span className="admin-stock-pill">{formatPrice(order.totalCents)}</span>
@@ -530,6 +559,24 @@ export function WholesaleClientsPanel({
           </section>
         </div>
       </div>
+      {codeChoice ? (
+        <VariantPicker
+          code={codeChoice.code}
+          onCancel={closeCodeChoice}
+          onPick={(variantId) => {
+            const entry = variants.find((item) => item.variant.id === variantId);
+            if (entry) addVariant(entry);
+            closeCodeChoice();
+          }}
+          options={codeChoice.variantIds.flatMap((variantId) => {
+            const entry = variants.find((item) => item.variant.id === variantId);
+            if (!entry) return [];
+            // El pedido mayorista puede repartirse entre sucursales: cuenta el stock de todas.
+            const stock = entry.variant.stocks.reduce((sum, item) => sum + item.quantity, 0);
+            return [{ id: variantId, brand: entry.product.brand, name: entry.product.name, label: entry.variant.label, priceCents: entry.variant.priceCents, stock, available: stock > 0 }];
+          })}
+        />
+      ) : null}
     </div>
   );
 }
