@@ -87,6 +87,8 @@ jobs:
             BACKUP_PATH="$BACKUP_PATH.enc"
           else
             echo "::warning::BACKUP_ENCRYPTION_PASSPHRASE no definido: el backup se sube sin cifrar."
+            # Visible en el resumen de la corrida. Es solo un aviso: el backup sigue corriendo sin el secreto.
+            echo "### AVISO: backup sin cifrar. Falta el secreto BACKUP_ENCRYPTION_PASSPHRASE." >> "$GITHUB_STEP_SUMMARY"
           fi
           sha256sum "$BACKUP_PATH" > "$BACKUP_PATH.sha256"
           echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"

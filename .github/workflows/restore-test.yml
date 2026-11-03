@@ -19,6 +19,41 @@ jobs:
       BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
 
     steps:
+      # pg_restore --clean borra lo que hay en el destino: corta si el destino puede ser producción. El repo es
+      # público, así que el log nunca muestra hosts ni URLs. La URL de producción llega solo a este paso.
+      # El host directo y el del pooler de Neon (-pooler) son la misma base.
+      - name: Refuse to restore over production
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          node - <<'GUARD'
+          function hostOf(name) {
+            const value = process.env[name] ?? "";
+            if (!value) throw new Error(name + " no está definida");
+            let url;
+            try {
+              url = new URL(value);
+            } catch {
+              throw new Error(name + " no se puede interpretar");
+            }
+            const host = url.hostname.toLowerCase();
+            if (!host || host.includes(",") || url.searchParams.has("host") || url.searchParams.has("hostaddr")) {
+              throw new Error(name + " no tiene un host único");
+            }
+            return host.replace(/-pooler(?=\.)/, "");
+          }
+          try {
+            if (hostOf("DATABASE_URL") === hostOf("RESTORE_TEST_DATABASE_URL")) {
+              throw new Error("el destino de la restauración es la base de producción");
+            }
+          } catch (error) {
+            console.log("ERROR: " + error.message + ". No se restaura nada.");
+            process.exit(1);
+          }
+          console.log("Destino de la restauración: OK");
+          GUARD
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -71,36 +106,43 @@ jobs:
       - name: Restore backup into test database
         shell: bash
         run: |
-          docker run --rm \
-            -e BACKUP_FILE \
-            -v "$RUNNER_TEMP:/backup" \
-            postgres:17-alpine \
-            sh -c 'pg_restore --list "/backup/$BACKUP_FILE" | head -n 40'
+          # La salida no va al log público: un error de pg_restore puede citar filas con datos de clientes.
           docker run --rm \
             -e RESTORE_TEST_DATABASE_URL \
             -e BACKUP_FILE \
             -v "$RUNNER_TEMP:/backup" \
             postgres:17-alpine \
-            sh -c 'pg_restore --clean --if-exists --no-owner --no-acl --dbname="$RESTORE_TEST_DATABASE_URL" "/backup/$BACKUP_FILE"'
+            sh -c 'pg_restore --clean --if-exists --no-owner --no-acl --dbname="$RESTORE_TEST_DATABASE_URL" "/backup/$BACKUP_FILE"' > /dev/null 2>&1 || {
+              echo "Restauración: ERROR"
+              exit 1
+            }
+          echo "Restauración: OK"
 
       - name: Verify restored data
         shell: bash
         run: |
-          docker run --rm \
+          # Solo OK o error: las cantidades de pedidos no se publican en un log público.
+          docker run --rm -i \
             -e RESTORE_TEST_DATABASE_URL \
             postgres:17-alpine \
-            sh -c 'psql "$RESTORE_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "\dt *.*" -c "
-              DO \$\$
-              BEGIN
-                IF to_regclass('\''public.products'\'') IS NULL THEN
-                  RAISE EXCEPTION '\''public.products was not restored'\'';
-                END IF;
-              END
-              \$\$;
-              SELECT '\''products'\'' AS table_name, COUNT(*) FROM public.products
-              UNION ALL SELECT '\''variants'\'', COUNT(*) FROM public.variants
-              UNION ALL SELECT '\''orders'\'', COUNT(*) FROM public.orders
-              UNION ALL SELECT '\''order_items'\'', COUNT(*) FROM public.order_items
-              UNION ALL SELECT '\''inventory'\'', COUNT(*) FROM public.inventory
-              UNION ALL SELECT '\''wholesale_clients'\'', COUNT(*) FROM public.wholesale_clients;
-            "'
+            sh -c 'psql "$RESTORE_TEST_DATABASE_URL" -q -v ON_ERROR_STOP=1' > /dev/null 2>&1 <<'SQL' || {
+          DO $$
+          DECLARE
+            tabla TEXT;
+          BEGIN
+            FOREACH tabla IN ARRAY ARRAY['products', 'variants', 'orders', 'order_items', 'inventory', 'wholesale_clients'] LOOP
+              IF to_regclass('public.' || tabla) IS NULL THEN
+                RAISE EXCEPTION 'falta una tabla';
+              END IF;
+            END LOOP;
+            PERFORM 1 FROM public.products LIMIT 1;
+            IF NOT FOUND THEN
+              RAISE EXCEPTION 'no hay productos';
+            END IF;
+          END
+          $$;
+          SQL
+            echo "Verificación: ERROR"
+            exit 1
+          }
+          echo "Verificación: OK"
