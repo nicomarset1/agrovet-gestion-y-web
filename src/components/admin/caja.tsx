@@ -208,7 +208,6 @@ function PointOfSalePanel({
   const totalCents = extras.reduce((sum, extra) => sum + posUnitPriceCents(extra.amountCents, { cashDiscount: discountActive }), 0)
     + lines.reduce((sum, item) => sum + posUnitPriceCents(item.priceCents, { manualCents: item.manualPriceCents, cashDiscount: discountActive }) * item.quantity, 0);
   const discountCents = subtotalCents - totalCents;
-  const hasManualPrice = lines.some((item) => item.manualPriceCents !== null);
   const totalUnits = extras.length + lines.reduce((sum, item) => sum + item.quantity, 0);
   const lineCount = cart.length + extras.length;
   // La venta en curso sobrevive a un refresco o a volver a entrar por sesión vencida. Se lee en un efecto y no
@@ -636,11 +635,6 @@ function PointOfSalePanel({
                     <div><dt>Subtotal</dt><dd>{formatPrice(subtotalCents)}</dd></div>
                     <div className="is-discount"><dt>Descuento</dt><dd>−{formatPrice(discountCents)}</dd></div>
                   </dl>
-                </div>
-              </div>
-              <div className={`admin-pos-reveal${discountActive && hasManualPrice ? " is-open" : ""}`}>
-                <div>
-                  <small className="admin-pos-cash-note">Los precios escritos a mano no llevan el 10%.</small>
                 </div>
               </div>
             </div>

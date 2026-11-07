@@ -28,10 +28,11 @@ export function applyCashDiscount(cents: number) {
 export const posMaxUnitPriceCents = 999_999_900;
 
 // Precio final por unidad de una línea de Caja, el mismo cálculo en pantalla y en el servidor.
-// Un precio escrito a mano es lo que se cobra, sin 10% encima. El 10% se redondea al peso, igual que lo muestra la tienda.
+// Un precio escrito a mano reemplaza al de lista y el 10% de efectivo se le aplica igual (pedido del cliente, 07/11).
+// El 10% se redondea al peso, igual que lo muestra la tienda.
 export function posUnitPriceCents(listCents: number, options: { manualCents?: number | null; cashDiscount?: boolean }) {
-  if (options.manualCents != null) return options.manualCents;
-  return options.cashDiscount ? Math.round(applyCashDiscount(listCents) / 100) * 100 : listCents;
+  const baseCents = options.manualCents ?? listCents;
+  return options.cashDiscount ? Math.round(applyCashDiscount(baseCents) / 100) * 100 : baseCents;
 }
 
 export function extrasTotalCents(extras: { amountCents: number }[]) {
