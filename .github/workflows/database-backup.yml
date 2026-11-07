@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: read
+  # actions: mantener activo el cron. issues: avisar si el backup falla.
+  actions: write
+  issues: write
 
 jobs:
   backup:
@@ -104,3 +107,30 @@ jobs:
         shell: bash
         run: |
           rclone delete "gdrive:" --include "agrovet-postgres-*.dump*" --min-age 45d
+
+      # GitHub apaga los cron de un repo sin actividad en 60 días (pasó el 04/09/2026). Volver a habilitarlo en cada corrida lo evita.
+      - name: Keep the schedule enabled
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/database-backup.yml/enable"
+
+      # Aviso por mail: GitHub notifica al dueño del repo cada issue nuevo. Si ya hay uno abierto, suma un comentario.
+      - name: Open an issue when the backup fails
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Falló el backup diario de la base"
+          BODY="La copia de seguridad del $(TZ=America/Buenos_Aires date '+%d/%m/%Y %H:%M') no se pudo hacer. Detalle: $RUN_URL"
+          EXISTING="$(gh issue list --repo "${{ github.repository }}" --state open --search "$TITLE in:title" --json number --jq '.[0].number')"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" --body "$BODY"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$TITLE" --body "$BODY"
+          fi

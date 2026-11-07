@@ -1,6 +1,8 @@
+import { after } from "next/server";
 import { AdminConsole } from "@/components/admin-console";
 import { requireAdmin } from "@/lib/auth";
 import { getAdminSnapshot, getCategoriesFresh, getSubcategoriesFresh, getTrashItems } from "@/lib/db";
+import { reconcileMercadoPagoIfDue } from "@/lib/mercadopago-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,8 @@ export default async function AdminPage({
   searchParams: Promise<{ section?: string; detail?: string; order?: string; branch?: string; flash?: string }>;
 }) {
   await requireAdmin();
+  // Con el panel abierto, cada 30 minutos se concilia con Mercado Pago, después de responder (no demora la página).
+  after(() => reconcileMercadoPagoIfDue());
   const [{ products, branches, orders, wholesaleClients }, categories, subcategories, trashItems, resolvedSearchParams] = await Promise.all([
     getAdminSnapshot(),
     getCategoriesFresh(),

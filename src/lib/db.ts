@@ -291,6 +291,15 @@ export async function markOrderPaymentFailedByCode(code: string) {
   return withSync((await getDriver()).markOrderPaymentFailedByCode(code));
 }
 
+// Sin withSync: solo marca el turno de una tarea, el panel no tiene nada que refrescar.
+export async function claimPeriodicTask(key: string, everyMinutes: number) {
+  return (await getDriver()).claimPeriodicTask(key, everyMinutes);
+}
+
+export async function listMercadoPagoOrderCodes(days: number) {
+  return (await getDriver()).listMercadoPagoOrderCodes(days);
+}
+
 export async function releaseExpiredReservations(options: { force?: boolean } = {}) {
   return withSync((await getDriver()).releaseExpiredReservations(options));
 }

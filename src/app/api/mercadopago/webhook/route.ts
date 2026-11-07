@@ -1,10 +1,7 @@
-import { markOrderPaidByCode, markOrderPaymentFailedByCode, markOrderRefundedByCode, releaseExpiredReservations } from "@/lib/db";
-import { getMercadoPagoPayment, isRefundedPayment, mercadoPagoMethodLabel, paymentAmountCents } from "@/lib/mercadopago";
+import { releaseExpiredReservations } from "@/lib/db";
+import { getMercadoPagoPayment } from "@/lib/mercadopago";
+import { applyMercadoPagoPayment } from "@/lib/mercadopago-sync";
 import { hasMercadoPagoWebhookSecret, validateMercadoPagoWebhookSignature } from "@/lib/mercadopago-webhook";
-
-// Estados de un pago que ya no se va a acreditar: liberan la reserva. Un "rejected" NO libera: el cliente
-// puede reintentar con otra tarjeta en el mismo checkout; si no paga, la reserva vence sola a las 12 h.
-const failedPaymentStatuses = new Set(["cancelled", "expired"]);
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
@@ -27,22 +24,8 @@ export async function POST(request: Request) {
     // Aprovecha cada aviso de Mercado Pago para liberar reservas vencidas (liberación perezosa, sin cron).
     await releaseExpiredReservations({ force: true });
     const payment = await getMercadoPagoPayment(paymentId);
-    if (payment.status === "approved" && payment.external_reference) {
-      const amountCents = paymentAmountCents(payment);
-      if (amountCents === null) throw new Error("Mercado Pago no informó un importe válido.");
-      const reconciliation = await markOrderPaidByCode(payment.external_reference, mercadoPagoMethodLabel(payment), amountCents, String(payment.id ?? paymentId));
-      if (reconciliation !== "paid") {
-        console.error("Mercado Pago webhook: pago aprobado que requiere revisión", {
-          paymentId,
-          order: payment.external_reference,
-          reconciliation,
-        });
-      }
-    } else if (payment.external_reference && isRefundedPayment(payment)) {
-      await markOrderRefundedByCode(payment.external_reference, String(payment.id ?? paymentId));
-    } else if (payment.external_reference && failedPaymentStatuses.has(payment.status ?? "")) {
-      await markOrderPaymentFailedByCode(payment.external_reference);
-    }
+    // Mismo criterio que la conciliación periódica (lib/mercadopago-sync.ts).
+    await applyMercadoPagoPayment(payment, paymentId, { fromWebhook: true });
     return Response.json({ ok: true });
   } catch (error) {
     console.error("Mercado Pago webhook error", {

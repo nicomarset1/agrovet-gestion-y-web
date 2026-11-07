@@ -684,6 +684,32 @@ export function hitRateLimit(key: string, limit: number, windowMs: number) {
 
 // En lecturas (tienda, ficha, panel) se revisa como mucho una vez por minuto, y solo escribe si hay algo vencido.
 let lastReservationSweep = 0;
+// Turno de una tarea periódica compartido entre instancias: solo a quien le toca le devuelve true.
+// Guarda el minuto de la última corrida en app_meta, igual que Postgres.
+export function claimPeriodicTask(key: string, everyMinutes: number) {
+  const nowMinutes = Math.floor(Date.now() / 60_000);
+  const row = db.prepare(`
+    INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    WHERE app_meta.value <= ?
+    RETURNING key
+  `).get(key, nowMinutes, nowMinutes - everyMinutes);
+  return Boolean(row);
+}
+
+// Pedidos de la tienda pagados o por pagar con Mercado Pago en los últimos días, para conciliar con Mercado Pago.
+export function listMercadoPagoOrderCodes(days: number) {
+  const rows = db.prepare(`
+    SELECT code FROM orders
+    WHERE source = 'Tienda online' AND payment_method LIKE 'Mercado Pago%'
+      AND created_at > datetime('now', ?)
+    GROUP BY code
+    ORDER BY MAX(created_at) DESC
+    LIMIT 100
+  `).all(`-${Math.max(1, Math.floor(days))} days`) as { code: string }[];
+  return rows.map((row) => row.code);
+}
+
 export function releaseExpiredReservations(options: { force?: boolean } = {}) {
   if (!options.force && Date.now() - lastReservationSweep < 60_000) return 0;
   lastReservationSweep = Date.now();

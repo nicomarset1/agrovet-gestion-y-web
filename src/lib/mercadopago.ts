@@ -21,7 +21,7 @@ type PreferenceResponse = {
   sandbox_init_point?: string;
 };
 
-type MercadoPagoPayment = {
+export type MercadoPagoPayment = {
   id?: number;
   status?: string;
   status_detail?: string;
@@ -131,6 +131,27 @@ export async function getMercadoPagoPayment(paymentId: string) {
     throw new Error(data?.message ?? `No se pudo consultar el pago en Mercado Pago (${response.status}).`);
   }
   return response.json() as Promise<MercadoPagoPayment>;
+}
+
+// Pagos de un pedido (external_reference = código del pedido), del más viejo al más nuevo. Solo lectura.
+export async function searchMercadoPagoPaymentsByReference(code: string) {
+  const params = new URLSearchParams({ external_reference: code, sort: "date_created", criteria: "asc" });
+  const response = await fetch(`https://api.mercadopago.com/v1/payments/search?${params}`, {
+    headers: {
+      authorization: `Bearer ${getAccessToken()}`,
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(data?.message ?? `No se pudieron buscar los pagos en Mercado Pago (${response.status}).`);
+  }
+  const data = await response.json() as { results?: MercadoPagoPayment[] };
+  return (data.results ?? []).filter((payment) => payment.external_reference === code);
+}
+
+export function hasMercadoPagoAccessToken() {
+  return Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN?.trim());
 }
 
 // Devolución o contracargo: la plata ya no está, pero la mercadería puede haber salido. Lo decide una persona.

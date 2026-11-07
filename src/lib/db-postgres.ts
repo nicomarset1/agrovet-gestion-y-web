@@ -710,6 +710,34 @@ export async function hitRateLimit(key: string, limit: number, windowMs: number)
   return { limited, retryAfterSeconds: limited ? Math.max(1, Math.ceil((Number(row.resetAt) - now) / 1000)) : 0, remaining: Math.max(0, limit - count) };
 }
 
+// Turno de una tarea periódica compartido entre instancias: solo a quien le toca le devuelve true.
+// Guarda el minuto de la última corrida en app_meta (minutos y no milisegundos: la columna es INTEGER).
+export async function claimPeriodicTask(key: string, everyMinutes: number) {
+  await ensureSchema();
+  const nowMinutes = Math.floor(Date.now() / 60_000);
+  const rows = await sql`
+    INSERT INTO app_meta (key, value) VALUES (${key}, ${nowMinutes})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    WHERE app_meta.value <= ${nowMinutes - everyMinutes}
+    RETURNING key
+  `;
+  return rows.length > 0;
+}
+
+// Pedidos de la tienda pagados o por pagar con Mercado Pago en los últimos días, para conciliar con Mercado Pago.
+export async function listMercadoPagoOrderCodes(days: number) {
+  await ensureSchema();
+  const rows = await sql`
+    SELECT code FROM orders
+    WHERE source = 'Tienda online' AND payment_method LIKE 'Mercado Pago%'
+      AND created_at > NOW() - make_interval(days => ${days})
+    GROUP BY code
+    ORDER BY MAX(created_at) DESC
+    LIMIT 100
+  ` as unknown as { code: string }[];
+  return rows.map((row) => row.code);
+}
+
 // En lecturas (tienda, ficha, panel) se revisa como mucho una vez por minuto por instancia, y solo
 // escribe si hay algo vencido. createOrder y los pagos la corren siempre dentro de su transacción.
 let lastReservationSweep = 0;
