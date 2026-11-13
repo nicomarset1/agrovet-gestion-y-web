@@ -16,6 +16,7 @@ import { NumberInput } from "@/components/ui/form-controls";
 import { chargeReviewStatus, holdsStock, isExcludedFromIncome, isReviewStatus, parsePaymentRefs, paymentStockReviewStatus, refundReviewStatus } from "@/lib/order-status";
 import { formatReservationTime, mercadoPagoReservationHours, reservedStatus } from "@/lib/reservation";
 import { isSpecialCategorySlug } from "@/lib/special-categories";
+import { canChangeWebPayment, repriceWebOrderItems, webOrderCashDiscount } from "@/lib/order-edit";
 import type { Branch, Category, OrderRecord, Product, TrashItem, WholesaleClient } from "@/lib/types";
 import { saveOrderEditAction, updateOrderAction, updateStockAction } from "@/app/gestion-agrovet/actions";
 import type { OrderEditState } from "@/app/gestion-agrovet/actions";
@@ -445,6 +446,33 @@ export function leafCategories(categories: Category[]) {
 export const PAYMENT_OPTIONS = ["Efectivo", "Tarjeta", "Transferencia", "QR"].map((value) => ({ value, label: value }));
 export const INSTALLMENT_OPTIONS = ["1", "2", "3", "6", "12"].map((value) => ({ value, label: installmentsLabel(value) }));
 
+// Medio guardado en un pedido web, llevado a las opciones de la lista. "Efectivo en sucursal" (lo que elige el
+// cliente en la tienda) se muestra como "Efectivo".
+function parseWebPayment(paymentMethod: string) {
+  const card = /^Tarjeta(?: \((\d+) cuotas?\))?/i.exec(paymentMethod);
+  if (card) return { method: "Tarjeta", installments: card[1] ?? "1" };
+  const known = PAYMENT_OPTIONS.find((option) => option.value.toLowerCase() === paymentMethod.trim().toLowerCase());
+  return { method: known?.value ?? "Efectivo", installments: "1" };
+}
+
+function paymentValue(method: string, installments: string) {
+  return method === "Tarjeta" ? `Tarjeta (${installmentsLabel(installments)})` : method;
+}
+
+// Total de un pedido web cobrado con ese medio: el mismo cálculo que hace el servidor al guardarlo.
+function webOrderTotal(order: OrderRecord, paymentMethod: string, quantities?: number[]) {
+  const { items } = repriceWebOrderItems(order, paymentMethod, order.items);
+  return items.reduce((sum, item, index) => sum + item.unitPriceCents * (quantities?.[index] ?? item.quantity), extrasTotalCents(order.extras));
+}
+
+// Explica por qué cambió el total al elegir otro medio. Vacío si el total no cambia.
+function webPriceNote(order: OrderRecord, paymentMethod: string, fromCents: number, toCents: number) {
+  if (fromCents === toCents) return "";
+  return webOrderCashDiscount(order, paymentMethod)
+    ? `En efectivo lleva el 10% de descuento: el total pasa de ${formatPrice(fromCents)} a ${formatPrice(toCents)}.`
+    : `Con ${paymentMethod.replace(/ \(.*\)$/, "").replace(/^(?!QR$).*/i, (method) => method.toLowerCase())} no lleva el 10% de efectivo: el total pasa de ${formatPrice(fromCents)} a ${formatPrice(toCents)}.`;
+}
+
 export function OrderModal({
   onClose,
   onRequestDelete,
@@ -461,6 +489,14 @@ export function OrderModal({
   const [paymentMethod, setPaymentMethod] = useState(initialPaymentMethod);
   const [installments, setInstallments] = useState(initialInstallments);
   const [itemQuantities, setItemQuantities] = useState(() => order.items.map((item) => String(item.quantity)));
+  // Pedido web pagado en el local: el medio se puede elegir o cambiar, y el 10% de efectivo se pone o se saca.
+  const webPayment = canChangeWebPayment(order) && !isCancelledOrder(order);
+  const initialWebPayment = parseWebPayment(order.paymentMethod);
+  const [webMethod, setWebMethod] = useState(initialWebPayment.method);
+  const [webInstallments, setWebInstallments] = useState(initialWebPayment.installments);
+  const webPaymentValue = paymentValue(webMethod, webInstallments);
+  const webPaymentChanged = webPayment && (webMethod !== initialWebPayment.method || (webMethod === "Tarjeta" && webInstallments !== initialWebPayment.installments));
+  const pricedItems = webPaymentChanged ? repriceWebOrderItems(order, webPaymentValue, order.items).items : order.items;
   // Guardar no navega: se cierra el modal y lo demás queda como estaba (sección, venta en curso, filtros).
   // Los datos nuevos llegan con la misma respuesta de la acción, por el revalidatePath.
   const [editState, saveEdit, savingEdit] = useActionState(async (previous: OrderEditState, formData: FormData) => {
@@ -473,10 +509,12 @@ export function OrderModal({
   const sourceValue = isCashOrder(order)
     ? `Caja / ${paymentMethod}${paymentMethod === "Tarjeta" ? ` (${installmentsLabel(installments)})` : ""}`
     : order.source;
-  const itemTotalCents = order.items.reduce((sum, item, index) => {
+  const itemTotalCents = pricedItems.reduce((sum, item, index) => {
     const quantity = Math.max(1, Number(itemQuantities[index]) || item.quantity);
     return sum + item.unitPriceCents * quantity;
   }, extrasTotalCents(order.extras));
+  const editedQuantities = order.items.map((item, index) => Math.max(1, Number(itemQuantities[index]) || item.quantity));
+  const webNote = webPaymentChanged ? webPriceNote(order, webPaymentValue, webOrderTotal(order, order.paymentMethod, editedQuantities), itemTotalCents) : "";
   const customerSummary = [
     order.customerName,
     order.phone,
@@ -512,6 +550,27 @@ export function OrderModal({
             </div>
           </>
         ) : null}
+        {webPayment ? (
+          <>
+            <div className="admin-field">
+              <span id={`order-${order.id}-web-payment`}>Medio de pago</span>
+              <Select ariaLabelledBy={`order-${order.id}-web-payment`} onChange={setWebMethod} options={PAYMENT_OPTIONS} value={webMethod} />
+            </div>
+            {webMethod === "Tarjeta" ? (
+              <div className="admin-field">
+                <span id={`order-${order.id}-web-installments`}>Cuotas</span>
+                <Select ariaLabelledBy={`order-${order.id}-web-installments`} onChange={setWebInstallments} options={INSTALLMENT_OPTIONS} value={webInstallments} />
+              </div>
+            ) : null}
+            {/* Solo se manda si cambió: "Efectivo en sucursal" queda como lo eligió el cliente mientras nadie lo toque. */}
+            {webPaymentChanged ? <input name="paymentMethod" type="hidden" value={webPaymentValue} /> : null}
+            <div aria-live="polite" className={`admin-pos-reveal admin-span-2${webNote ? " is-open" : ""}`} inert={!webNote}>
+              <div>
+                <p className="admin-order-payment-note">{webNote}</p>
+              </div>
+            </div>
+          </>
+        ) : null}
         <input name="customerName" type="hidden" value={order.customerName} />
         <input name="phone" type="hidden" value={order.phone} />
         <input name="email" type="hidden" value={order.email} />
@@ -534,7 +593,7 @@ export function OrderModal({
             <div className="admin-order-item admin-order-item-edit" key={`${item.variantId}-${item.sku}`}>
               <div>
                 <span>{item.brand} {item.productName}</span>
-                <small>{item.label} | {formatPrice(item.unitPriceCents)}</small>
+                <small>{item.label} | {formatPrice(pricedItems[index]?.unitPriceCents ?? item.unitPriceCents)}</small>
                 {item.allocations?.length ? (
                   <div className="admin-allocation-pills">
                     {item.allocations.map((allocation) => (
@@ -772,8 +831,9 @@ export function WebOrderStatusModal({
   const [refundMethod, setRefundMethod] = useState("");
   const [refundMissing, setRefundMissing] = useState(false);
   const paymentMethodValue = paymentMethod === "Tarjeta" ? `Tarjeta (${installmentsLabel(installments)})` : paymentMethod;
-  // El pedido se guardó con el 10% de efectivo: cobrarlo con otro medio no lo recalcula, y conviene saberlo antes de cobrar.
-  const cashPriceWarning = !isCancellation && isWebOrder(order) && /efectivo/i.test(order.paymentMethod) && order.paidCents < order.totalCents && paymentMethod !== "Efectivo";
+  // Pedido web pagado en el local: el medio elegido pone o saca el 10% de efectivo, y se cobra el total nuevo.
+  const closingTotalCents = !isCancellation && canChangeWebPayment(order) ? webOrderTotal(order, paymentMethodValue) : order.totalCents;
+  const priceNote = isCancellation ? "" : webPriceNote(order, paymentMethodValue, order.totalCents, closingTotalCents);
   return (
     <AdminModal
       dismissible={!submitting}
@@ -852,16 +912,16 @@ export function WebOrderStatusModal({
                 <Select ariaLabelledBy={`web-order-${order.id}-installments`} onChange={setInstallments} options={INSTALLMENT_OPTIONS} value={installments} />
               </div>
             ) : null}
-            <div aria-live="polite" className={`admin-pos-reveal admin-span-2${cashPriceWarning ? " is-open" : ""}`} inert={!cashPriceWarning}>
+            <div aria-live="polite" className={`admin-pos-reveal admin-span-2${priceNote ? " is-open" : ""}`} inert={!priceNote}>
               <div>
-                <p className="admin-order-payment-note">Este pedido tiene el precio con 10% por pago en efectivo. Con otro medio el sistema no lo recalcula: queda en {formatPrice(order.totalCents)}.</p>
+                <p className="admin-order-payment-note">{priceNote}</p>
               </div>
             </div>
           </>
         )}
         <div className="admin-detail-summary compact admin-span-2">
           <strong>{order.code}</strong>
-          <span>{order.customerName} | {formatPrice(order.totalCents)} | {isCancellation ? fixInstallmentsText(order.paymentMethod) : paymentMethodValue}</span>
+          <span>{order.customerName} | {formatPrice(closingTotalCents)} | {isCancellation ? fixInstallmentsText(order.paymentMethod) : paymentMethodValue}</span>
         </div>
         <div className="admin-modal-actions admin-span-2">
           <button className="button button-light" disabled={submitting} onClick={onClose} type="button">Cancelar</button>

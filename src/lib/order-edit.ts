@@ -1,5 +1,32 @@
 // Reglas de editar un pedido ya creado (módulo puro, sin base): las usan los dos drivers.
 
+import { posUnitPriceCents } from "./format";
+
+// Pedido web que se paga en el local (no por Mercado Pago): el medio se elige o se cambia desde el panel.
+export function canChangeWebPayment(order: { source: string; paymentMethod: string }) {
+  return /^Tienda online/i.test(order.source) && !/mercado ?pago/i.test(order.paymentMethod);
+}
+
+// El 10% de la tienda es por retirar y pagar en efectivo en sucursal. Un envío nunca lo lleva.
+export function webOrderCashDiscount(order: { source: string; fulfillment: string }, paymentMethod: string) {
+  return /^Tienda online/i.test(order.source) && order.fulfillment.trim() === "retiro" && /^efectivo/i.test(paymentMethod.trim());
+}
+
+// Precio por unidad de un pedido web según el medio (pedido de Nico, 12/11): efectivo con 10%, cualquier otro a precio
+// de lista. Solo se recalcula si el medio nuevo cambia el 10%; si no, queda lo que ya tenía el pedido.
+export function repriceWebOrderItems<T extends { unitPriceCents: number; listPriceCents: number }>(
+  order: { source: string; fulfillment: string; paymentMethod: string },
+  nextPaymentMethod: string | undefined,
+  items: T[],
+): { changed: boolean; cashDiscount: boolean; items: T[] } {
+  const currentDiscount = webOrderCashDiscount(order, order.paymentMethod);
+  const nextMethod = nextPaymentMethod?.trim();
+  if (!nextMethod || !canChangeWebPayment(order)) return { changed: false, cashDiscount: currentDiscount, items };
+  const cashDiscount = webOrderCashDiscount(order, nextMethod);
+  if (cashDiscount === currentDiscount) return { changed: false, cashDiscount, items };
+  return { changed: true, cashDiscount, items: items.map((item) => ({ ...item, unitPriceCents: posUnitPriceCents(item.listPriceCents, { cashDiscount }) })) };
+}
+
 type Allocation = { branchId: number; quantity: number };
 
 // Lleva el reparto por sucursal a la cantidad nueva. Lo que se agrega sale de la sucursal con más unidades

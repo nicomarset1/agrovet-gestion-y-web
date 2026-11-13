@@ -136,7 +136,7 @@ export function VentasWebSection({
       ) : null}
       <section className="card admin-panel">
         <h2>Retiros en sucursal</h2>
-        <p className="description">Pedidos web pendientes para retirar. Al cerrar uno, elegí el medio de pago.</p>
+        <p className="description">Pedidos web pendientes para retirar. Al cerrar uno, elegí el medio de pago: en efectivo lleva el 10%, con otro medio va a precio de lista.</p>
         <div className="admin-web-branch-grid">
           {branches.map((branch) => {
             const branchOrders = webPickupOrders.filter((order) => orderHasBranch(order, branch.id));

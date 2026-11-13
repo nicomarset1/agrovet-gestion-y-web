@@ -12,7 +12,7 @@ import {
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { cajaLineName, cajaPriceChangedMessage, cajaUnavailableMessage, stockShortageMessage } from "./caja";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
-import { resizeAllocations, settleEditedOrder } from "./order-edit";
+import { repriceWebOrderItems, resizeAllocations, settleEditedOrder } from "./order-edit";
 import { OrderRejectedError, outOfStockError, priceChangedError, productDisplayName, unavailableProductError } from "./order-errors";
 import { chargeReviewStatus, holdsStock, parsePaymentRefs, paymentReviewStatus, paymentStockReviewStatus, planApprovedPayment, refundNeedsReview, refundReviewStatus, webCashPaymentMethod } from "./order-status";
 import type { PaymentReconciliation } from "./order-status";
@@ -39,7 +39,7 @@ let initialized: Promise<void> | null = null;
 
 // Versión del esquema de la base. SUBILA EN 1 CADA VEZ QUE CAMBIES EL DDL de ensureSchema (tablas, columnas,
 // índices): si no, las bases que ya están en esta versión nunca reciben el cambio.
-export const schemaVersion = 3;
+export const schemaVersion = 4;
 
 // Evita correr el DDL en cada arranque en frío: los ALTER toman un lock exclusivo sobre orders y products.
 // Una versión más nueva en la base también cuenta como al día (una reversión de despliegue no la baja).
@@ -290,6 +290,8 @@ async function ensureSchema() {
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_note TEXT NOT NULL DEFAULT ''`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_ref TEXT`;
       await schemaTx`ALTER TABLE orders ADD COLUMN IF NOT EXISTS sale_key TEXT`;
+      // Precio sin el 10% de efectivo: con él se recalcula un pedido web al cambiarle el medio de pago.
+      await schemaTx`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS list_price_cents INTEGER`;
       await schemaTx`CREATE UNIQUE INDEX IF NOT EXISTS orders_sale_key_idx ON orders(sale_key) WHERE sale_key IS NOT NULL`;
       await schemaTx`ALTER TABLE wholesale_clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       await schemaTx`ALTER TABLE products ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ`;
@@ -662,7 +664,7 @@ async function expiredCashPickupIds(db: Db) {
   const candidates = await db`
     SELECT id, created_at AS "createdAt" FROM orders
     WHERE status = 'Pendiente de retiro' AND deleted_at IS NULL AND paid_cents = 0 AND source = 'Tienda online' AND fulfillment = 'retiro'
-      AND payment_method = ${webCashPaymentMethod} AND created_at < NOW() - interval '2 days'
+      AND payment_method NOT ILIKE '%mercado pago%' AND created_at < NOW() - interval '2 days'
   ` as unknown as Array<{ id: number; createdAt: unknown }>;
   return candidates.filter((order) => isCashPickupExpired(order.createdAt)).map((order) => Number(order.id));
 }
@@ -1056,7 +1058,7 @@ async function getAllocationBuckets(orderId: number, db: Db = sql) {
 }
 
 function isPendingCashPickup(order: { status: string; source: string; fulfillment: string; paymentMethod: string; paidCents: number }) {
-  return order.status === "Pendiente de retiro" && /^Tienda online/i.test(order.source) && order.fulfillment === "retiro" && order.paymentMethod === webCashPaymentMethod && !Number(order.paidCents);
+  return order.status === "Pendiente de retiro" && /^Tienda online/i.test(order.source) && order.fulfillment === "retiro" && !/mercado pago/i.test(order.paymentMethod) && !Number(order.paidCents);
 }
 
 async function mapAdminOrders(): Promise<OrderRecord[]> {
@@ -1074,12 +1076,12 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
   if (!visibleOrders.length) return [];
   const items = await sql`
     SELECT oi.order_id AS "orderId", oi.variant_id AS "variantId", p.name AS "productName", p.brand,
-      v.label, v.sku, oi.quantity, oi.unit_price_cents AS "unitPriceCents"
+      v.label, v.sku, oi.quantity, oi.unit_price_cents AS "unitPriceCents", COALESCE(oi.list_price_cents, v.price_cents) AS "listPriceCents"
     FROM order_items oi
     JOIN variants v ON v.id = oi.variant_id
     JOIN products p ON p.id = v.product_id
     ORDER BY oi.order_id DESC, p.brand, p.name, v.label
-  ` as unknown as Array<{ orderId: number; variantId: number; productName: string; brand: string; label: string; sku: string; quantity: number; unitPriceCents: number }>;
+  ` as unknown as Array<{ orderId: number; variantId: number; productName: string; brand: string; label: string; sku: string; quantity: number; unitPriceCents: number; listPriceCents: number }>;
   const allocationRows = await sql`
     SELECT oa.order_id AS "orderId", oa.variant_id AS "variantId", oa.branch_id AS "branchId",
       b.name AS "branchName", oa.quantity
@@ -1109,6 +1111,7 @@ async function mapAdminOrders(): Promise<OrderRecord[]> {
       sku: item.sku,
       quantity: Number(item.quantity),
       unitPriceCents: Number(item.unitPriceCents),
+      listPriceCents: Number(item.listPriceCents),
       allocations: allocations.length ? allocations : undefined,
     });
     itemsByOrder.set(item.orderId, current);
@@ -1731,7 +1734,7 @@ export async function createOrder(input: {
     // Retiro a pagar en efectivo: el 10% lo decide el servidor y queda guardado en cada unidad.
     const isWebCashPickup = !input.cashSale && !isMercadoPago && input.fulfillment === "retiro";
     let totalCents = 0;
-    const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
+    const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; basePrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const [row] = await tx`
         SELECT v.price_cents AS "priceCents", p.brand, p.name, v.label, p.active, p.archived_at AS "archivedAt", p.purged_at AS "purgedAt"
@@ -1759,7 +1762,7 @@ export async function createOrder(input: {
       // El precio manual y el 10% de Caja viven en cashSale: la tienda no puede mandarlos. Su 10% sale de arriba, nunca del navegador.
       const unitPrice = posUnitPriceCents(Number(row.priceCents), { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale ? input.cashSale.cashDiscount : isWebCashPickup });
       totalCents += unitPrice * item.quantity;
-      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, listPrice: Number(row.priceCents), allocations });
+      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice, listPrice: Number(row.priceCents), basePrice: input.cashSale?.manualPrices?.[item.variantId] ?? Number(row.priceCents), allocations });
     }
     // Varios lleva el 10% igual que un producto; se guarda el monto final, como unit_price_cents.
     const extras = (input.cashSale?.extras ?? []).map((extra) => ({ ...extra, amountCents: posUnitPriceCents(extra.amountCents, { cashDiscount: input.cashSale?.cashDiscount }) }));
@@ -1785,7 +1788,7 @@ export async function createOrder(input: {
       }
     }
     for (const line of lines) {
-      await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice})`;
+      await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents, list_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice}, ${line.basePrice})`;
       for (const allocation of line.allocations) {
         // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
         const result = await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId} AND quantity >= ${allocation.quantity}`;
@@ -2057,7 +2060,7 @@ export async function createWholesaleOrder(input: {
       RETURNING id
     `;
     for (const line of linesByVariant.values()) {
-      await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice})`;
+      await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents, list_price_cents) VALUES (${order.id}, ${line.variantId}, ${line.quantity}, ${line.unitPrice}, ${line.unitPrice})`;
       for (const allocation of line.allocations) {
         await tx`UPDATE inventory SET quantity = quantity - ${allocation.quantity}, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ${line.variantId} AND branch_id = ${allocation.branchId}`;
         await insertOrderAllocation(tx, Number(order.id), line.variantId, allocation.branchId, allocation.quantity);
@@ -2109,17 +2112,20 @@ export async function updateOrder(input: {
   await ensureSchema();
   await sql.begin(async (tx) => {
     // FOR UPDATE: dos ediciones o cancelaciones a la vez se hacen de a una y la segunda ve el estado real.
-    const [order] = await tx`SELECT id, branch_id AS "branchId", status, payment_method AS "paymentMethod", paid_cents AS "paidCents", source FROM orders WHERE id = ${input.id} AND deleted_at IS NULL FOR UPDATE` as unknown as { id: number; branchId: number; status: string; paymentMethod: string; paidCents: number; source: string }[];
+    const [order] = await tx`SELECT id, branch_id AS "branchId", status, payment_method AS "paymentMethod", paid_cents AS "paidCents", source, fulfillment FROM orders WHERE id = ${input.id} AND deleted_at IS NULL FOR UPDATE` as unknown as { id: number; branchId: number; status: string; paymentMethod: string; paidCents: number; source: string; fulfillment: string }[];
     if (!order) throw new Error("Pedido inválido: puede estar en la papelera.");
     const isCashSale = /^Caja\b/i.test(order.source);
     if (isCashSale && order.branchId !== input.branchId) throw new Error("No se puede cambiar la sucursal de una venta de caja desde este panel.");
     if (!(await tx`SELECT id FROM branches WHERE id = ${input.branchId}`).length) throw new Error("Sucursal inválida.");
-    const currentItems = await tx`
-      SELECT variant_id AS "variantId", quantity, unit_price_cents AS "unitPriceCents"
-      FROM order_items
-      WHERE order_id = ${input.id}
-      ORDER BY variant_id
-    ` as unknown as Array<{ variantId: number; quantity: number; unitPriceCents: number }>;
+    const storedItems = await tx`
+      SELECT oi.variant_id AS "variantId", oi.quantity, oi.unit_price_cents AS "unitPriceCents", COALESCE(oi.list_price_cents, v.price_cents) AS "listPriceCents"
+      FROM order_items oi
+      JOIN variants v ON v.id = oi.variant_id
+      WHERE oi.order_id = ${input.id}
+      ORDER BY oi.variant_id
+    ` as unknown as Array<{ variantId: number; quantity: number; unitPriceCents: number; listPriceCents: number }>;
+    // Pedido web: si el medio nuevo pone o saca el 10% de efectivo, cada unidad vuelve a calcularse desde su precio de lista.
+    const currentItems = repriceWebOrderItems(order, input.paymentMethod, storedItems.map((item) => ({ ...item, unitPriceCents: Number(item.unitPriceCents), listPriceCents: Number(item.listPriceCents) }))).items;
     const currentExtras = await tx`SELECT amount_cents AS "amountCents" FROM order_extras WHERE order_id = ${input.id}` as unknown as Array<{ amountCents: number }>;
     const extrasCents = extrasTotalCents(currentExtras.map((extra) => ({ amountCents: Number(extra.amountCents) })));
     if (!currentItems.length && !currentExtras.length) throw new Error("El pedido no tiene productos.");
@@ -2201,7 +2207,7 @@ export async function updateOrder(input: {
     await tx`DELETE FROM order_items WHERE order_id = ${input.id}`;
     await tx`DELETE FROM order_item_allocations WHERE order_id = ${input.id}`;
     for (const item of nextItems) {
-      await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (${input.id}, ${item.variantId}, ${item.quantity}, ${Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0)})`;
+      await tx`INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents, list_price_cents) VALUES (${input.id}, ${item.variantId}, ${item.quantity}, ${Number(currentMap.get(item.variantId)?.unitPriceCents ?? 0)}, ${Number(currentMap.get(item.variantId)?.listPriceCents ?? 0)})`;
       const nextAllocations = nextAllocationMap.get(item.variantId) ?? [{ branchId: input.branchId, quantity: item.quantity }];
       for (const allocation of nextAllocations) await insertOrderAllocation(tx, input.id, item.variantId, allocation.branchId, allocation.quantity);
     }

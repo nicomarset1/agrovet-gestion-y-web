@@ -164,6 +164,8 @@ export type OrderItemRecord = {
   sku: string;
   quantity: number;
   unitPriceCents: number;
+  /** Precio por unidad sin el 10% de efectivo. En pedidos anteriores al 12/11 es el precio actual del catálogo. */
+  listPriceCents: number;
   allocations?: {
     branchId: number;
     branchName: string;

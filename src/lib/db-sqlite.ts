@@ -13,7 +13,7 @@ import {
 import { buildCustomerCatalogMenu } from "./customer-catalog-menu";
 import { cajaLineName, cajaPriceChangedMessage, cajaUnavailableMessage, stockShortageMessage } from "./caja";
 import { deliveryMinimumCents, deliveryMinimumMessage, extrasTotalCents, posUnitPriceCents } from "./format";
-import { resizeAllocations, settleEditedOrder } from "./order-edit";
+import { repriceWebOrderItems, resizeAllocations, settleEditedOrder } from "./order-edit";
 import { OrderRejectedError, outOfStockError, priceChangedError, productDisplayName, unavailableProductError } from "./order-errors";
 import { chargeReviewStatus, holdsStock, parsePaymentRefs, paymentReviewStatus, paymentStockReviewStatus, planApprovedPayment, refundNeedsReview, refundReviewStatus, webCashPaymentMethod } from "./order-status";
 import type { PaymentReconciliation } from "./order-status";
@@ -204,6 +204,8 @@ ensureColumn("orders", "refund_method", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "refund_note", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("orders", "payment_ref", "TEXT");
 ensureColumn("orders", "sale_key", "TEXT");
+// Precio sin el 10% de efectivo: con él se recalcula un pedido web al cambiarle el medio de pago.
+ensureColumn("order_items", "list_price_cents", "INTEGER");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS orders_sale_key_idx ON orders(sale_key) WHERE sale_key IS NOT NULL");
 // Relleno único al crear la columna (los pedidos viejos estaban cobrados). Correrlo en cada arranque marcaba
 // como pagos los pedidos de Mercado Pago sin cobro (reservados, esperando pago) cada vez que se reiniciaba el servidor.
@@ -637,7 +639,7 @@ function releaseExpiredReservationsIn() {
   return released.length + pickups;
 }
 
-const pendingCashPickupFilter = `status = 'Pendiente de retiro' AND deleted_at = '' AND paid_cents = 0 AND source = 'Tienda online' AND fulfillment = 'retiro' AND payment_method = '${webCashPaymentMethod}'`;
+const pendingCashPickupFilter = `status = 'Pendiente de retiro' AND deleted_at = '' AND paid_cents = 0 AND source = 'Tienda online' AND fulfillment = 'retiro' AND payment_method NOT LIKE '%mercado pago%'`;
 
 // Pedidos web en efectivo sin cobrar. Los días hábiles se calculan en código: SQL solo descarta los que
 // todavía no pueden haber vencido (nunca pasan menos de 3 días corridos), así se revisan muy pocos.
@@ -955,7 +957,7 @@ export function deleteWholesaleClient(id: number) {
 }
 
 function isPendingCashPickup(order: { status: string; source: string; fulfillment: string; paymentMethod: string; paidCents: number }) {
-  return order.status === "Pendiente de retiro" && /^Tienda online/i.test(order.source) && order.fulfillment === "retiro" && order.paymentMethod === webCashPaymentMethod && !Number(order.paidCents);
+  return order.status === "Pendiente de retiro" && /^Tienda online/i.test(order.source) && order.fulfillment === "retiro" && !/mercado pago/i.test(order.paymentMethod) && !Number(order.paidCents);
 }
 
 function mapAdminOrders(): OrderRecord[] {
@@ -973,12 +975,12 @@ function mapAdminOrders(): OrderRecord[] {
   if (!visibleOrders.length) return [];
   const items = db.prepare(`
     SELECT oi.order_id AS orderId, oi.variant_id AS variantId, p.name AS productName, p.brand,
-      v.label, v.sku, oi.quantity, oi.unit_price_cents AS unitPriceCents
+      v.label, v.sku, oi.quantity, oi.unit_price_cents AS unitPriceCents, COALESCE(oi.list_price_cents, v.price_cents) AS listPriceCents
     FROM order_items oi
     JOIN variants v ON v.id = oi.variant_id
     JOIN products p ON p.id = v.product_id
     ORDER BY oi.order_id DESC, p.brand, p.name, v.label
-  `).all() as Array<{ orderId: number; variantId: number; productName: string; brand: string; label: string; sku: string; quantity: number; unitPriceCents: number }>;
+  `).all() as Array<{ orderId: number; variantId: number; productName: string; brand: string; label: string; sku: string; quantity: number; unitPriceCents: number; listPriceCents: number }>;
   const itemsByOrder = new Map<number, OrderRecord["items"]>();
   const allocationBuckets = new Map<number, Map<number, OrderItemAllocation[]>>();
   const allocationRows = db.prepare(`
@@ -1009,6 +1011,7 @@ function mapAdminOrders(): OrderRecord[] {
       sku: item.sku,
       quantity: item.quantity,
       unitPriceCents: item.unitPriceCents,
+      listPriceCents: item.listPriceCents,
       allocations: allocations.length ? allocations : undefined,
     });
     itemsByOrder.set(item.orderId, current);
@@ -1657,7 +1660,7 @@ export function createOrder(input: {
     // Retiro a pagar en efectivo: el 10% lo decide el servidor y queda guardado en cada unidad.
     const isWebCashPickup = !input.cashSale && !isMercadoPago && input.fulfillment === "retiro";
     let totalCents = 0;
-    const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
+    const lines: { variantId: number; quantity: number; unitPrice: number; listPrice: number; basePrice: number; allocations: { branchId: number; quantity: number }[] }[] = [];
     for (const item of input.items) {
       const row = db.prepare(`
         SELECT v.price_cents AS priceCents, p.brand, p.name, v.label, p.active, p.archived_at AS archivedAt, p.purged_at AS purgedAt
@@ -1686,7 +1689,7 @@ export function createOrder(input: {
       // El precio manual y el 10% de Caja viven en cashSale: la tienda no puede mandarlos. Su 10% sale de arriba, nunca del navegador.
       const priceCents = posUnitPriceCents(row.priceCents, { manualCents: input.cashSale?.manualPrices?.[item.variantId], cashDiscount: input.cashSale ? input.cashSale.cashDiscount : isWebCashPickup });
       totalCents += priceCents * item.quantity;
-      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, listPrice: row.priceCents, allocations });
+      lines.push({ variantId: item.variantId, quantity: item.quantity, unitPrice: priceCents, listPrice: row.priceCents, basePrice: input.cashSale?.manualPrices?.[item.variantId] ?? row.priceCents, allocations });
     }
     // Varios lleva el 10% igual que un producto; se guarda el monto final, como unit_price_cents.
     const extras = (input.cashSale?.extras ?? []).map((extra) => ({ ...extra, amountCents: posUnitPriceCents(extra.amountCents, { cashDiscount: input.cashSale?.cashDiscount }) }));
@@ -1711,10 +1714,10 @@ export function createOrder(input: {
         if (attempt >= 2 || !isOrderCodeConflict(error)) throw error;
       }
     }
-    const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (?, ?, ?, ?)");
+    const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents, list_price_cents) VALUES (?, ?, ?, ?, ?)");
     const deduct = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ? AND quantity >= ?");
     for (const line of lines) {
-      insertLine.run(order.lastInsertRowid, line.variantId, line.quantity, line.unitPrice);
+      insertLine.run(order.lastInsertRowid, line.variantId, line.quantity, line.unitPrice, line.basePrice);
       for (const allocation of line.allocations) {
         // Mismo UPDATE condicional para efectivo y Mercado Pago: la última unidad nunca se vende dos veces.
         const result = deduct.run(allocation.quantity, line.variantId, allocation.branchId, allocation.quantity);
@@ -1986,10 +1989,10 @@ export function createWholesaleOrder(input: {
       paidCents,
     );
 
-    const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (?, ?, ?, ?)");
+    const insertLine = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents, list_price_cents) VALUES (?, ?, ?, ?, ?)");
     const deduct = db.prepare("UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND branch_id = ?");
     for (const line of linesByVariant.values()) {
-      insertLine.run(order.lastInsertRowid, line.variantId, line.quantity, line.unitPrice);
+      insertLine.run(order.lastInsertRowid, line.variantId, line.quantity, line.unitPrice, line.unitPrice);
       for (const allocation of line.allocations) {
         deduct.run(allocation.quantity, line.variantId, allocation.branchId);
         insertOrderAllocation.run(order.lastInsertRowid, line.variantId, allocation.branchId, allocation.quantity);
@@ -2041,19 +2044,22 @@ export function updateOrder(input: {
   allocations?: { variantId: number; allocations: { branchId: number; quantity: number }[] }[];
 }) {
   return db.transaction(() => {
-    const order = db.prepare("SELECT id, branch_id AS branchId, status, payment_method AS paymentMethod, paid_cents AS paidCents, source FROM orders WHERE id = ? AND deleted_at = ''").get(input.id) as { id: number; branchId: number; status: string; paymentMethod: string; paidCents: number; source: string } | undefined;
+    const order = db.prepare("SELECT id, branch_id AS branchId, status, payment_method AS paymentMethod, paid_cents AS paidCents, source, fulfillment FROM orders WHERE id = ? AND deleted_at = ''").get(input.id) as { id: number; branchId: number; status: string; paymentMethod: string; paidCents: number; source: string; fulfillment: string } | undefined;
     if (!order) throw new Error("Pedido inválido: puede estar en la papelera.");
     const isCashSale = /^Caja\b/i.test(order.source);
     if (isCashSale && order.branchId !== input.branchId) throw new Error("No se puede cambiar la sucursal de una venta de caja desde este panel.");
     const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(input.branchId);
     if (!branch) throw new Error("Sucursal inválida.");
 
-    const currentItems = db.prepare(`
-      SELECT variant_id AS variantId, quantity, unit_price_cents AS unitPriceCents
-      FROM order_items
-      WHERE order_id = ?
-      ORDER BY variant_id
-    `).all(input.id) as Array<{ variantId: number; quantity: number; unitPriceCents: number }>;
+    const storedItems = db.prepare(`
+      SELECT oi.variant_id AS variantId, oi.quantity, oi.unit_price_cents AS unitPriceCents, COALESCE(oi.list_price_cents, v.price_cents) AS listPriceCents
+      FROM order_items oi
+      JOIN variants v ON v.id = oi.variant_id
+      WHERE oi.order_id = ?
+      ORDER BY oi.variant_id
+    `).all(input.id) as Array<{ variantId: number; quantity: number; unitPriceCents: number; listPriceCents: number }>;
+    // Pedido web: si el medio nuevo pone o saca el 10% de efectivo, cada unidad vuelve a calcularse desde su precio de lista.
+    const currentItems = repriceWebOrderItems(order, input.paymentMethod, storedItems).items;
     const currentExtras = db.prepare("SELECT amount_cents AS amountCents FROM order_extras WHERE order_id = ?").all(input.id) as Array<{ amountCents: number }>;
     const extrasCents = extrasTotalCents(currentExtras);
     if (!currentItems.length && !currentExtras.length) throw new Error("El pedido no tiene productos.");
@@ -2173,12 +2179,12 @@ export function updateOrder(input: {
     );
 
     const deleteItems = db.prepare("DELETE FROM order_items WHERE order_id = ?");
-    const insertItem = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents) VALUES (?, ?, ?, ?)");
+    const insertItem = db.prepare("INSERT INTO order_items (order_id, variant_id, quantity, unit_price_cents, list_price_cents) VALUES (?, ?, ?, ?, ?)");
     const deleteAllocations = db.prepare("DELETE FROM order_item_allocations WHERE order_id = ?");
     deleteItems.run(input.id);
     deleteAllocations.run(input.id);
     for (const item of nextItems) {
-      insertItem.run(input.id, item.variantId, item.quantity, currentMap.get(item.variantId)?.unitPriceCents ?? 0);
+      insertItem.run(input.id, item.variantId, item.quantity, currentMap.get(item.variantId)?.unitPriceCents ?? 0, currentMap.get(item.variantId)?.listPriceCents ?? 0);
       const nextAllocations = nextAllocationMap.get(item.variantId) ?? [{ branchId: input.branchId, quantity: item.quantity }];
       for (const allocation of nextAllocations) {
         insertOrderAllocation.run(input.id, item.variantId, allocation.branchId, allocation.quantity);
